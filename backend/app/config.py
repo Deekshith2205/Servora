@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     llm_provider: str = "anthropic"
     anthropic_api_key: str = ""
+    llm_model: str = "claude-opus-5"
 
     database_url: str = "sqlite:///./servora.db"
     frontend_origin: str = "http://localhost:5173"
