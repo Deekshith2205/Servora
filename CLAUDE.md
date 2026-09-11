@@ -88,16 +88,25 @@ docs/ARCHITECTURE.md   the agent graph + design rationale, in full
   all have push/triage rights.
 - **Issue #2** ("[P0] Wire a real LLM provider into the agent stubs")
   implemented: `app/llm.py::call_llm()`, text + structured-output modes,
-  bumped `anthropic` 0.34.2 → 1.5.0. PR open:
-  https://github.com/Deekshith2205/Servora/pull/24 — **not yet merged**,
-  and **not yet verified against a real Anthropic API key** (none
-  available in the session that built it). Whoever merges should run
-  `backend/scripts/check_llm.py` with their own key first.
+  bumped `anthropic` 0.34.2 → 1.5.0. PR:
+  https://github.com/Deekshith2205/Servora/pull/24 — **merged**. It was
+  *not* verified against a real Anthropic API key by the session that
+  built it (none available there) — unclear whether whoever merged it
+  ran `backend/scripts/check_llm.py` with a real key first. Worth
+  double-checking before relying on `call_llm()` actually working.
+- `CLAUDE.md` itself added — PR #25, merged.
+- **CI added**: `.github/workflows/ci.yml` runs backend `pytest` +
+  frontend `npm run build` on every PR and push to `main`. Runs with no
+  `ANTHROPIC_API_KEY` on purpose — confirmed `test_llm.py` passes without
+  one. This is a status check only, not yet a *required* one — nobody in
+  this session had admin rights on GitHub.com to flip that branch
+  protection setting; see Open questions below.
 
 ## Next up (in priority order)
 
-1. Merge PR #24 (after real-key verification via `scripts/check_llm.py`).
-2. Issue #3 — Classifier Agent (depends on #2).
+1. Confirm PR #24's `call_llm()` actually works against a real key
+   (run `backend/scripts/check_llm.py`) — flag it if it doesn't.
+2. Issue #3 — Classifier Agent (depends on #2, now merged).
 3. Issue #5 — real tool-calling for specialists (depends on #2; can run
    in parallel with #3).
 4. Issue #4 — Planner/Orchestrator routing (depends on #3).
@@ -107,5 +116,8 @@ docs/ARCHITECTURE.md   the agent graph + design rationale, in full
 
 ## Open questions / blockers
 
-- None currently. If something blocks a session, add it here with enough
-  context that a different session (or teammate) can pick it up cold.
+- **CI is not a required check yet.** Someone with admin access on
+  github.com/Deekshith2205/Servora needs to go to Settings → Branches →
+  add a branch protection rule on `main` → require the `Backend tests`
+  and `Frontend build` status checks before merging. Nobody in this
+  session had admin rights to do it directly.

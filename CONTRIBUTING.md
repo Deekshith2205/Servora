@@ -10,6 +10,18 @@
 4. Open a PR into `main` referencing the issue (`Closes #<number>`).
 5. Backend: run `pytest` from `backend/` before opening the PR.
    Frontend: run `npm run build` from `frontend/` before opening the PR.
+   (CI runs both automatically on every PR — see below — but running them
+   locally first gives you faster feedback than waiting on CI.)
+
+## CI
+
+Every PR automatically runs `.github/workflows/ci.yml`: backend `pytest`
+and frontend `npm run build`. Check the PR page for the status — a red
+check means something's broken, don't merge until it's green (or you
+understand why it's failing). CI runs with no `ANTHROPIC_API_KEY`, so
+never write a test that requires a real key — `scripts/check_llm.py` is
+the manual, real-key smoke test and intentionally isn't part of the
+suite.
 
 ## Running locally
 
