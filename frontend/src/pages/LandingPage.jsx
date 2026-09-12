@@ -53,36 +53,12 @@ export default function LandingPage() {
           </div>
 
           {/* Product Preview */}
-          <div className="product-preview">
-            <div className="preview-header">
-              <div className="preview-dot"></div>
-              <div className="preview-dot"></div>
-              <div className="preview-dot"></div>
-            </div>
-            <div className="preview-body">
-              <div className="preview-sidebar">
-                <div className="sidebar-item active"></div>
-                <div className="sidebar-item"></div>
-                <div className="sidebar-item"></div>
-                <div style={{ marginTop: 'auto' }} className="sidebar-item"></div>
-              </div>
-              <div className="preview-content">
-                <div className="preview-message customer">
-                  Where is my order? What is the current status?
-                </div>
-                <div className="preview-message system">
-                  Let me check your recent orders.
-                  <div className="preview-trace">
-                    <div>[Planner] Category: order. Deciding next step...</div>
-                    <div>[Specialist] Calling tool: get_customer_orders</div>
-                    <div>[Result] Found order 99, status: shipped</div>
-                  </div>
-                </div>
-                <div className="preview-message system">
-                  Your order (Smart Watch) has been shipped. It should arrive shortly.
-                </div>
-              </div>
-            </div>
+          <div className="hero-screenshot-container">
+            <img 
+              src="/assets/chat-preview.png" 
+              alt="Servora Customer Chat interface showing autonomous investigation" 
+              className="product-screenshot"
+            />
           </div>
         </div>
       </section>
@@ -163,8 +139,8 @@ export default function LandingPage() {
                       <li>Provides clear reasoning for its score</li>
                     </ul>
                   </div>
-                  <div className="tab-visual">
-                    {`{\n  "category": "order",\n  "sentiment": "negative",\n  "urgency": 8,\n  "reasoning": "Customer reports missing item"\n}`}
+                  <div className="tab-image-container">
+                    <img src="/assets/chat-preview.png" alt="Customer chat showing intent analysis" className="tab-screenshot" />
                   </div>
                 </>
               )}
@@ -179,8 +155,8 @@ export default function LandingPage() {
                       <li>Can take action (e.g. issue refund)</li>
                     </ul>
                   </div>
-                  <div className="tab-visual">
-                    {`[Tool Called]: get_customer_orders({"customer_id": 1})\n[Result]: [{"id": 99, "status": "shipped"}]\n\nAction: Inform customer of status.`}
+                  <div className="tab-image-container">
+                    <img src="/assets/chat-preview.png" alt="Customer chat showing tool execution trace" className="tab-screenshot" />
                   </div>
                 </>
               )}
@@ -195,8 +171,8 @@ export default function LandingPage() {
                       <li>Proposes root-cause hypothesis</li>
                     </ul>
                   </div>
-                  <div className="tab-visual">
-                    {`Escalation Packet:\n- Situation: Order marked delivered but missing.\n- Attempted: Checked carrier status.\n- Recommendation: Issue replacement.`}
+                  <div className="tab-image-container">
+                    <img src="/assets/dashboard-preview.png" alt="Staff dashboard showing escalation context" className="tab-screenshot" />
                   </div>
                 </>
               )}
@@ -209,10 +185,16 @@ export default function LandingPage() {
       <section className="section">
         <div className="container values-grid">
           <div className="value-card">
+            <div className="value-image">
+              <img src="/assets/chat-preview.png" alt="Customer chat" />
+            </div>
             <h3>For your customers</h3>
             <p>One coherent conversation. Context is retained, investigation replaces repeated questioning, and resolutions happen instantly when possible.</p>
           </div>
           <div className="value-card">
+            <div className="value-image">
+              <img src="/assets/dashboard-preview.png" alt="Staff dashboard" />
+            </div>
             <h3>For your support team</h3>
             <p>Escalations arrive with rich context. Staff members instantly see category, sentiment, urgency, and prior troubleshooting steps. No cold transfers.</p>
           </div>
