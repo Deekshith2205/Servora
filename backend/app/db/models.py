@@ -53,6 +53,13 @@ class Ticket(Base):
     status: Mapped[str] = mapped_column(String, default="open")  # open|resolved|escalated
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # Issue #14: JSON-encoded snapshots of the reasoning trace and handoff
+    # packet from the /api/chat call that created this ticket (only set on
+    # tickets created by a real escalation — nullable so the seeded demo
+    # tickets, which never went through the pipeline, are unaffected).
+    trace_json: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    handoff_packet_json: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+
     customer: Mapped["Customer"] = relationship(back_populates="tickets")
 
 

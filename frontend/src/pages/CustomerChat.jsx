@@ -19,7 +19,13 @@ export default function CustomerChat() {
       const result = await sendChatMessage(DEMO_CUSTOMER_ID, userMessage.text);
       setMessages((prev) => [
         ...prev,
-        { role: "agent", text: result.reply, status: result.status, trace: result.trace },
+        {
+          role: "agent",
+          text: result.reply,
+          status: result.status,
+          trace: result.trace,
+          handoffPacket: result.handoff_packet, // issue #13 — populated only when status === "escalated"
+        },
       ]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "agent", text: `Error: ${err.message}` }]);
@@ -36,6 +42,23 @@ export default function CustomerChat() {
           <div key={i} className={`bubble ${m.role}`}>
             <p>{m.text}</p>
             {m.status && <span className={`status-tag ${m.status}`}>{m.status}</span>}
+            {/* Issue #13: show the real handoff packet on escalation instead of
+                leaving the customer with just the generic reply text above. */}
+            {m.handoffPacket && (
+              <div className="handoff-card">
+                <p className="handoff-card-title">What we're passing to a human agent</p>
+                <dl>
+                  <dt>Situation</dt>
+                  <dd>{m.handoffPacket.situation}</dd>
+                  <dt>Likely cause</dt>
+                  <dd>{m.handoffPacket.root_cause_hypothesis}</dd>
+                  <dt>Recommended next step</dt>
+                  <dd>{m.handoffPacket.recommended_action}</dd>
+                  <dt>Urgency</dt>
+                  <dd>{m.handoffPacket.urgency}/10</dd>
+                </dl>
+              </div>
+            )}
           </div>
         ))}
         {loading && <div className="bubble agent">…thinking</div>}
