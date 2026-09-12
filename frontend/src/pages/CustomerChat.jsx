@@ -4,39 +4,7 @@ import { sendChatMessage } from "../api/client";
 // Demo customer — issue "Wire up real auth / customer identity" replaces this.
 const DEMO_CUSTOMER_ID = 1;
 
-function InvestigationPanel({ trace }) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  if (!trace || trace.length === 0) return null;
-
-  return (
-    <div className="investigation-panel">
-      <div 
-        className={`investigation-header ${isOpen ? 'open' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          {isOpen ? <polyline points="6 9 12 15 18 9"></polyline> : <polyline points="9 18 15 12 9 6"></polyline>}
-        </svg>
-        Investigation details
-      </div>
-      {isOpen && (
-        <div className="investigation-content">
-          {trace.map((t, idx) => (
-            <div key={idx} className="investigation-step">
-              <div className="investigation-step-icon">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div>{t}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+import InvestigationTimeline from "../components/InvestigationTimeline";
 
 export default function CustomerChat() {
   const [messages, setMessages] = useState([]);
@@ -128,7 +96,7 @@ export default function CustomerChat() {
               </div>
               
               {m.role === 'agent' && m.trace && m.trace.length > 0 && (
-                <InvestigationPanel trace={m.trace} />
+                <InvestigationTimeline trace={m.trace} />
               )}
             </div>
           ))}
