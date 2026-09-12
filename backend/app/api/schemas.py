@@ -11,10 +11,23 @@ class TraceStepOut(BaseModel):
     output: str
 
 
+class HandoffPacketOut(BaseModel):
+    """Mirrors app.agents.escalation.HandoffPacket. Issue #13: exposes it
+    through the API so the frontend can show a real handoff summary
+    instead of the generic "a human agent will follow up" text."""
+
+    situation: str
+    attempted_fixes: list[str]
+    root_cause_hypothesis: str
+    recommended_action: str
+    urgency: int
+
+
 class ChatResponse(BaseModel):
     reply: str
     status: str
     trace: list[TraceStepOut]
+    handoff_packet: HandoffPacketOut | None = None
 
 
 class TicketOut(BaseModel):
