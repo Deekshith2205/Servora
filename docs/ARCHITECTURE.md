@@ -76,3 +76,22 @@ just returns a placeholder. Each stub has a `# TODO(issue: ...)` pointing
 at the GitHub issue that replaces it. Do not change the function
 signatures / return shapes without updating `orchestrator.py` and the
 frontend trace rendering — several issues depend on the current contract.
+
+### LLM tool-calling (Issue #5 — implemented)
+
+`backend/app/llm.py::call_llm()` now supports an optional `tools` argument
+that drives a full Anthropic tool-calling loop. Specialist agents pass
+`(tool_schemas, tool_handlers)` — obtained from
+`app.tools.tool_registry.build_tool_registry(db)` — so they can ground
+every factual claim through a real database query instead of answering from
+model memory.
+
+Rules:
+- Specialists must use `call_llm(..., tools=...)` for any factual claim;
+  never call the Anthropic SDK directly.
+- All normal automated CI tests (`pytest`) are **network-free** and do not
+  require `ANTHROPIC_API_KEY`. The tool-calling loop is tested by mocking
+  the Anthropic client.
+- The manual real-API smoke test lives in
+  `backend/scripts/check_tool_calling.py`. Run it with a real key before
+  opening a PR that changes the tool-calling infrastructure.
