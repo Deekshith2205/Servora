@@ -192,22 +192,58 @@ from the day before):
   including `"Customer ID: {id}"` in every specialist's message content
   (the known-profile-facts context from #11 goes in right alongside it).
 
+### 2026-09-13 (continued) — P2 complete (#12-#14), a SECOND real bug found
+
+All three P2 issues implemented, stacked #12 → #13 → #14 (each branched
+on top of the previous, since each literally builds on what the last
+one produced):
+
+- **#12** (Escalation Agent) — `build_handoff_packet()` makes one LLM
+  call to produce situation/root_cause_hypothesis/recommended_action;
+  `attempted_fixes`/`urgency` are passed straight through by the caller.
+  `ChatResult` gained a `handoff_packet` field. Scope call: this agent
+  doesn't re-decide resolve-vs-escalate (Planner/Verification already
+  did) — cites `verification.CONFIDENCE_THRESHOLD` (made public for
+  this) instead of duplicating it. PR:
+  https://github.com/Deekshith2205/Servora/pull/43 — open.
+- **#13** (expose the packet via the API) — `ChatResponse` gained
+  `handoff_packet`; `CustomerChat.jsx` renders a real handoff card on
+  escalation instead of the generic text. PR:
+  https://github.com/Deekshith2205/Servora/pull/44 — open.
+- **#14** (Staff Dashboard detail) — **`/api/chat` never created or
+  touched a `Ticket` row before this** — the dashboard's queue only ever
+  showed seeded demo data. `Ticket` gained `trace_json`/
+  `handoff_packet_json`; every escalation now persists a real ticket;
+  new `GET /api/escalations/{id}`; `StaffDashboard.jsx` click-to-expand
+  detail view. PR: https://github.com/Deekshith2205/Servora/pull/45 —
+  open.
+
+  **A second real bug, found the same way as #11's**: writing #14's
+  tests (the first ones needing *real* seeded DB data through a bare
+  `TestClient(app)`) revealed that a bare `TestClient(app)` — used at
+  module level in `test_health.py`/`test_tickets_api.py` — does **not**
+  reliably trigger FastAPI's ASGI lifespan (`create_all()` +
+  `seed_if_empty()`) in this environment. Every earlier test avoided
+  this by mocking every DB-touching agent, or building its own isolated
+  in-memory engine. Fixed with `tests/conftest.py` (a `pytest_configure`
+  hook that creates+seeds the schema once, unconditionally). **Unlike
+  #11's bug, a real API key would NOT have caught this one** — it's a
+  test-infrastructure gap, not an LLM-behavior gap. Worth remembering:
+  "mock everything LLM-related" hides more than one kind of blind spot.
+
 ## Next up (in priority order)
 
-1. **This is no longer just a nagging reminder — it just caused a real
-   bug.** Nobody has confirmed `call_llm()` against a real Anthropic API
-   key across ANY of #2, #3, #4, #6, #7, #8, #9, #10, or #11. Run
-   `scripts/check_llm.py`, `check_classifier.py`, `check_planner.py`,
-   `check_billing.py`, `check_specialists.py`, and `check_memory.py`
-   with a real key before merging #39/#40/#41 — there may be more gaps
-   like the customer-ID one waiting to be found.
-2. Merge PRs #39, #40, #41 (in that order — #40 and #41 each assume #39
-   is already in, since #41 was branched with #39 merged in locally to
-   avoid a specialists.py conflict; #40 doesn't touch specialists.py at
-   all so it can go in anytime).
-3. P1 is done. Next up is P2: issue #12 (Escalation Agent + confidence
-   threshold), #13 (structured handoff memo), #14 (Staff Dashboard
-   escalation detail view).
+1. **Still the single highest-priority loose thread, now spanning
+   TWELVE issues (#2, #3, #4, #6-#14)**: nobody has confirmed
+   `call_llm()` against a real Anthropic API key. Every `scripts/
+   check_*.py` script is sitting there ready to run with one. Two real
+   bugs have now been found by *writing tests more carefully* — a real
+   key might well find a third.
+2. Merge PRs #39, #40, #41 (P1) then #43, #44, #45 (P2), in that order —
+   each stacks on the previous within its batch.
+3. P2 is done. Next up is P3: issue #15 (root-cause clustering across
+   tickets), #16 (analytics dashboard), #17 (Learning Agent — draft KB
+   updates from resolved escalations).
 4. Issue #30 (landing page design) — separate track, in parallel with
    all of the above, whenever the teammate doing frontend visual design
    (via Antigravity) picks it up.
@@ -215,10 +251,10 @@ from the day before):
 ## Open questions / blockers
 
 - **`call_llm()` has never been confirmed against a real Anthropic API
-  key, by any session, across nine P0/P1 issues.** This already caused
-  one real bug (the missing customer ID in specialist prompts, found and
-  fixed in #11) that every mocked test missed. This is now the single
-  most important thing to close — see Next up #1.
+  key, by any session, across twelve P0/P1/P2 issues.** This has already
+  caused two real, independently-discovered bugs (missing customer ID
+  in #11; the TestClient lifespan gap in #14). Top priority — see Next
+  up #1.
 - **CI is not a required check yet.** Someone with admin access on
   github.com/Deekshith2205/Servora needs to go to Settings → Branches →
   add a branch protection rule on `main` → require the CI status checks
