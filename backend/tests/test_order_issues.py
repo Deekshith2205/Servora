@@ -114,7 +114,7 @@ def test_order_specialist_cancelled(db_session, monkeypatch):
 
     monkeypatch.setattr("app.agents.specialists.call_llm", mock_call_llm)
 
-    response = _run_specialist(db_session, _ORDER_SYSTEM_PROMPT, customer.id, "Where is my tablet?")
+    response = _run_specialist(db_session, _ORDER_SYSTEM_PROMPT, customer.id, "Where is my tablet?", specialist="order")
     assert "Your order is cancelled" in response.reply
     assert "check_order_issue" in response.used_tools
     assert response.root_cause == "Order was cancelled."
@@ -148,7 +148,7 @@ def test_order_specialist_inventory(db_session, monkeypatch):
 
     monkeypatch.setattr("app.agents.specialists.call_llm", mock_call_llm)
 
-    response = _run_specialist(db_session, _ORDER_SYSTEM_PROMPT, customer.id, "Where is my keyboard?")
+    response = _run_specialist(db_session, _ORDER_SYSTEM_PROMPT, customer.id, "Where is my keyboard?", specialist="order")
     assert "Fulfillment failed" in response.reply
     assert "check_order_issue" in response.used_tools
     assert response.root_cause == "Order fulfillment failed because inventory was unavailable."

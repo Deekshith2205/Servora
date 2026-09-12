@@ -1,13 +1,23 @@
-"""Specialist resolution agents. All four implemented (issues #6-#9).
+"""Specialist resolution agents. All four implemented (issues #6-#9); tool
+access locked down per-specialist in issue [P6] "Enforce specialist-specific
+tool permissions".
 
 Rules for the real implementation (carried over from the architecture doc,
 see docs/ARCHITECTURE.md):
   - Must call tools from app/tools/mock_tools.py (via
-    app.tools.tool_registry.build_tool_registry) for any factual claim
-    (order status, refund policy, account details) — never answer from
-    model memory alone.
+    app.tools.tool_registry.build_filtered_tool_registry) for any factual
+    claim (order status, refund policy, account details) — never answer
+    from model memory alone.
   - Must return a `used_tools` list so the reasoning trace in the Staff
     Dashboard can show exactly what was looked up.
+  - Each specialist only ever receives the tools
+    app.tools.tool_registry.SPECIALIST_TOOL_PERMISSIONS allows it —
+    enforced in code (see _run_specialist below), not left to the system
+    prompt alone. The prompts below still describe each specialist's
+    *intended* flow (which tool to call when, in what order) — that's
+    still useful guidance for a well-behaved model — but the actual
+    security boundary (e.g. "the Account specialist can never issue a
+    refund") is real regardless of what any prompt says.
 """
 from dataclasses import dataclass, field
 
@@ -15,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.memory import load_profile
 from app.llm import call_llm
-from app.tools.tool_registry import build_tool_registry
+from app.tools.tool_registry import build_filtered_tool_registry
 
 # Tools that only *ground an answer* (look something up) rather than take an
 # irreversible action. Used by _estimate_confidence — see its docstring.
@@ -52,12 +62,29 @@ def _estimate_confidence(used_tools: list[str]) -> float:
 
 
 def _run_specialist(
-    db: Session, system_prompt: str, customer_id: int, message: str, max_tokens: int = 1500
+    db: Session,
+    system_prompt: str,
+    customer_id: int,
+    message: str,
+    max_tokens: int = 1500,
+    *,
+    specialist: str,
 ) -> SpecialistResponse:
-    """Shared plumbing for a tool-calling specialist: wires the DB-bound
-    tool registry into call_llm(), captures which tools were actually used,
-    and derives a confidence score from that — so each specialist function
-    only needs to supply its own system prompt.
+    """Shared plumbing for a tool-calling specialist: wires the DB-bound,
+    PERMISSION-FILTERED tool registry into call_llm(), captures which
+    tools were actually used, and derives a confidence score from that —
+    so each specialist function only needs to supply its own system
+    prompt (and its own name, for the permission lookup).
+
+    ``specialist`` selects the allowlist from
+    ``app.tools.tool_registry.SPECIALIST_TOOL_PERMISSIONS`` — this is the
+    actual security boundary (issue [P6]): the tool schemas sent to the
+    LLM and the handlers the tool-calling loop can execute are both
+    filtered down to just that specialist's permitted tools before
+    call_llm() ever runs, so a specialist that isn't "billing" cannot
+    reach issue_refund no matter what its prompt says or what the model
+    decides to try. Keyword-only so a call site can't accidentally pass
+    the wrong positional string where `max_tokens` used to be.
 
     Also builds the user-facing message content: the customer's ID (so the
     model can actually call get_customer_orders/get_customer with the
@@ -68,7 +95,7 @@ def _run_specialist(
     file, a short list of previously learned facts about this customer.
     """
     profile = load_profile(customer_id, db)
-    tool_schemas, tool_handlers = build_tool_registry(db)
+    tool_schemas, tool_handlers = build_filtered_tool_registry(db, specialist)
     used_tools: list[str] = []
     
     root_cause = None
@@ -151,7 +178,7 @@ and policy, don't just say "I checked and it's fine."
 
 
 def resolve_billing(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _BILLING_SYSTEM_PROMPT, customer_id, message)
+    return _run_specialist(db, _BILLING_SYSTEM_PROMPT, customer_id, message, specialist="billing")
 
 
 _TECHNICAL_SYSTEM_PROMPT = """You are the Technical specialist agent in an \
@@ -179,7 +206,7 @@ in what search_kb actually returned.
 
 
 def resolve_technical(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _TECHNICAL_SYSTEM_PROMPT, customer_id, message)
+    return _run_specialist(db, _TECHNICAL_SYSTEM_PROMPT, customer_id, message, specialist="technical")
 
 
 _ORDER_SYSTEM_PROMPT = """You are the Order specialist agent in an autonomous \
@@ -210,7 +237,7 @@ what policy applies. Do not reveal hidden tool data.
 
 
 def resolve_order(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _ORDER_SYSTEM_PROMPT, customer_id, message)
+    return _run_specialist(db, _ORDER_SYSTEM_PROMPT, customer_id, message, specialist="order")
 
 
 _ACCOUNT_SYSTEM_PROMPT = """You are the Account specialist agent in an \
@@ -233,7 +260,7 @@ explanation.
 
 
 def resolve_account(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _ACCOUNT_SYSTEM_PROMPT, customer_id, message)
+    return _run_specialist(db, _ACCOUNT_SYSTEM_PROMPT, customer_id, message, specialist="account")
 
 
 SPECIALISTS = {
