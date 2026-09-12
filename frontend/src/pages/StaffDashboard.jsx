@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { approveKBArticle, fetchEscalationDetail, fetchEscalations, resolveEscalation } from "../api/client";
+import BookingsPanel from "./BookingsPanel";
 
 // Helper to determine badge class
 function getBadgeClass(type, value) {
@@ -342,6 +343,9 @@ export default function StaffDashboard() {
           </div>
         ) : null}
       </div>
+
+      {/* Issue #20: staff review/edit UI for bookings the Booking Agent (#18) drafted. */}
+      <BookingsPanel />
 
       {/* Escalation Detail Drawer */}
       {selectedEscalation && (

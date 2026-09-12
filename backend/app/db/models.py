@@ -6,6 +6,7 @@ hallucinating. Extend as issues need more fields, don't redesign the shape
 without flagging it in #base-scaffold first since several agents will read
 these directly.
 """
+import json
 from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
@@ -84,7 +85,13 @@ class Room(Base):
 
 
 class Booking(Base):
-    """Backs the hotel-booking stretch feature — ignore until that issue is picked up."""
+    """Backs the hotel-booking stretch feature. Issue #18 (Booking Agent)
+    creates rows here at status="AI_DRAFTED"; issue #20 (staff review/edit)
+    is what actually reads/writes `edit_log_json` and drives the rest of
+    the state machine (see docs/ARCHITECTURE.md): every edit made once a
+    booking exists is logged (old value -> new value), and issue #21
+    consumes that log to tell the customer exactly what changed.
+    """
 
     __tablename__ = "bookings"
 
@@ -96,7 +103,19 @@ class Booking(Base):
     guests: Mapped[int] = mapped_column(Integer, default=1)
     total_price: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String, default="AI_DRAFTED")  # AI_DRAFTED|STAFF_REVIEWED|CONFIRMED
+    # Issue #20: JSON-encoded list of {field, old_value, new_value, at} —
+    # every staff edit appended, oldest first. A flat log (not a richer
+    # schema) since the only consumer (#21's notification diff) just needs
+    # to render "field changed from X to Y".
+    edit_log_json: Mapped[str] = mapped_column(String, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    @property
+    def edit_log(self) -> list[dict]:
+        """Parsed view of `edit_log_json` — lets BookingDetailOut's Pydantic
+        `from_attributes` mode read it like any other attribute instead of
+        every caller having to `json.loads` it themselves."""
+        return json.loads(self.edit_log_json) if self.edit_log_json else []
 
 
 class CustomerMemory(Base):
