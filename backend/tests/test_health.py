@@ -4,6 +4,7 @@ from app.agents.classifier import ClassificationResult
 from app.agents.escalation import HandoffPacket
 from app.agents.planner import PlanDecision
 from app.agents.specialists import SpecialistResponse
+from app.llm import LLMError
 from app.main import app
 
 client = TestClient(app)
@@ -85,3 +86,28 @@ def test_chat_endpoint_exposes_handoff_packet_on_escalation(monkeypatch):
     assert body["handoff_packet"]["root_cause_hypothesis"] == "test root cause"
     assert body["handoff_packet"]["recommended_action"] == "test action"
     assert body["handoff_packet"]["urgency"] == 8
+
+
+def test_chat_endpoint_llm_error_becomes_502_not_an_unhandled_500(monkeypatch):
+    """Found live with a real API key once the account ran out of credit:
+    classify() degrades gracefully on its own (issue #57's fallback), but
+    plan()/specialists/build_handoff_packet() don't, and this endpoint
+    never caught LLMError at all — any of those failing crashed the whole
+    request as an unhandled 500, which bypasses CORSMiddleware (the
+    browser only ever sees an opaque "Failed to fetch", not the actual
+    reason). Same regression-guard pattern already used for issue #18's
+    POST /api/booking."""
+    def _raise(classification, customer_id, db):
+        raise LLMError("Anthropic API error (400): credit balance too low.")
+
+    monkeypatch.setattr(
+        "app.orchestrator.classify",
+        lambda message: ClassificationResult(
+            category="order", sentiment="neutral", urgency=3, reasoning="mocked for test", confidence=0.9
+        ),
+    )
+    monkeypatch.setattr("app.orchestrator.plan", _raise)
+
+    resp = client.post("/api/chat", json={"customer_id": 1, "message": "Where is my order?"})
+    assert resp.status_code == 502
+    assert "credit balance" in resp.json()["detail"]
