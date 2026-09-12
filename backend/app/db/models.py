@@ -35,7 +35,14 @@ class Order(Base):
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
     product: Mapped[str] = mapped_column(String)
     amount: Mapped[float] = mapped_column(Float)
-    status: Mapped[str] = mapped_column(String, default="processing")  # processing|shipped|delivered|refunded
+    
+    # Fulfillment state
+    status: Mapped[str] = mapped_column(String, default="processing")  # processing|shipped|delivered|failed|refunded
+    
+    # Issue #59: Payment state
+    payment_status: Mapped[str] = mapped_column(String, default="paid")  # paid|failed|refunded
+    duplicate_of: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True, default=None)
+    
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     customer: Mapped["Customer"] = relationship(back_populates="orders")

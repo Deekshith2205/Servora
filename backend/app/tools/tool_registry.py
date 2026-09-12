@@ -183,6 +183,23 @@ TOOL_SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "check_payment_issue",
+        "description": (
+            "Check an order for payment anomalies, such as duplicate charges or payment/fulfillment mismatches. "
+            "Call this BEFORE deciding to refund an order."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {
+                    "type": "integer",
+                    "description": "The unique numeric ID of the order to check.",
+                }
+            },
+            "required": ["order_id"],
+        },
+    },
+    {
         "name": "issue_refund",
         "description": (
             "Mark an order as refunded in the database. Only call this after you "
@@ -265,11 +282,15 @@ def build_tool_registry(
             handler=lambda args: mock_tools.search_kb(db, args["query"]),
         ),
         _BoundTool(
-            schema=TOOL_SCHEMAS[4],  # issue_refund
+            schema=TOOL_SCHEMAS[4],  # check_payment_issue
+            handler=lambda args: mock_tools.check_payment_issue(db, args["order_id"]),
+        ),
+        _BoundTool(
+            schema=TOOL_SCHEMAS[5],  # issue_refund
             handler=lambda args: mock_tools.issue_refund(db, args["order_id"]),
         ),
         _BoundTool(
-            schema=TOOL_SCHEMAS[5],  # check_room_availability
+            schema=TOOL_SCHEMAS[6],  # check_room_availability
             handler=lambda args: mock_tools.check_room_availability(db, args["room_type"]),
         ),
     ]
