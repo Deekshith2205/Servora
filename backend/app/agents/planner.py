@@ -92,10 +92,9 @@ def _summarize_recent_tickets(tickets: list) -> str:
 
 
 def plan(classification: ClassificationResult, customer_id: int, db: Session) -> PlanDecision:
-    # `load_profile` returns {} today (issue: customer-memory not yet
-    # implemented) — wiring it in now means no changes are needed here once
-    # it is.
-    profile = load_profile(customer_id)
+    # load_profile is real now (issue #11) — gained a `db` param, see
+    # memory.py's module docstring for why.
+    profile = load_profile(customer_id, db)
     recent_tickets = mock_tools.get_customer_tickets(db, customer_id)
 
     context = (

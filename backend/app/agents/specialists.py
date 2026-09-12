@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from app.agents.memory import load_profile
 from app.llm import call_llm
 from app.tools.tool_registry import build_tool_registry
 
@@ -48,18 +49,34 @@ def _estimate_confidence(used_tools: list[str]) -> float:
     return 0.2
 
 
-def _run_specialist(db: Session, system_prompt: str, message: str, max_tokens: int = 1500) -> SpecialistResponse:
+def _run_specialist(
+    db: Session, system_prompt: str, customer_id: int, message: str, max_tokens: int = 1500
+) -> SpecialistResponse:
     """Shared plumbing for a tool-calling specialist: wires the DB-bound
     tool registry into call_llm(), captures which tools were actually used,
     and derives a confidence score from that — so each specialist function
     only needs to supply its own system prompt.
+
+    Also builds the user-facing message content: the customer's ID (so the
+    model can actually call get_customer_orders/get_customer with the
+    right ID — this was silently missing before issue #11 wired it in;
+    every specialist was previously relying on the model to guess or ask,
+    which a real API call would have surfaced immediately, and no session
+    had a key to catch it) and, when issue #11's memory has anything on
+    file, a short list of previously learned facts about this customer.
     """
+    profile = load_profile(customer_id, db)
     tool_schemas, tool_handlers = build_tool_registry(db)
     used_tools: list[str] = []
 
+    context_lines = [f"Customer ID: {customer_id}"]
+    if profile.get("facts"):
+        context_lines.append("Known facts about this customer from past interactions: " + "; ".join(profile["facts"]))
+    context_lines.append(f"Customer message: {message}")
+
     reply = call_llm(
         system_prompt=system_prompt,
-        messages=[{"role": "user", "content": message}],
+        messages=[{"role": "user", "content": "\n".join(context_lines)}],
         tools=(tool_schemas, tool_handlers),
         tool_call_log=used_tools,
         max_tokens=max_tokens,
@@ -92,7 +109,7 @@ and policy, don't just say "I checked and it's fine."
 
 
 def resolve_billing(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _BILLING_SYSTEM_PROMPT, message)
+    return _run_specialist(db, _BILLING_SYSTEM_PROMPT, customer_id, message)
 
 
 _TECHNICAL_SYSTEM_PROMPT = """You are the Technical specialist agent in an \
@@ -120,7 +137,7 @@ in what search_kb actually returned.
 
 
 def resolve_technical(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _TECHNICAL_SYSTEM_PROMPT, message)
+    return _run_specialist(db, _TECHNICAL_SYSTEM_PROMPT, customer_id, message)
 
 
 _ORDER_SYSTEM_PROMPT = """You are the Order specialist agent in an \
@@ -148,7 +165,7 @@ already applied a discount, since that would not be true.
 
 
 def resolve_order(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _ORDER_SYSTEM_PROMPT, message)
+    return _run_specialist(db, _ORDER_SYSTEM_PROMPT, customer_id, message)
 
 
 _ACCOUNT_SYSTEM_PROMPT = """You are the Account specialist agent in an \
@@ -171,7 +188,7 @@ explanation.
 
 
 def resolve_account(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _ACCOUNT_SYSTEM_PROMPT, message)
+    return _run_specialist(db, _ACCOUNT_SYSTEM_PROMPT, customer_id, message)
 
 
 SPECIALISTS = {

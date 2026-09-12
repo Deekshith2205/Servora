@@ -1,4 +1,4 @@
-"""Wires classify -> plan -> specialist -> verify into one call.
+"""Wires classify -> plan -> specialist -> verify -> memory into one call.
 
 This already runs end-to-end today (against the stubs), so the frontend has
 something real to hit from day one. As each agent issue lands, this file
@@ -6,15 +6,23 @@ should need minimal changes — mostly the stub bodies get replaced.
 
 Issue #4 changed plan()'s signature (now takes customer_id and db, so it
 can weigh ticket history) — updated the one call site below accordingly.
+
+Issue #11 added the memory-write step (previously nothing called
+memory.py at all) after a successful resolution — see _update_memory().
+Deliberately best-effort: a failed extraction must never break the
+customer-facing response, so LLMError is caught here rather than left to
+propagate.
 """
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
 from app.agents.classifier import classify
+from app.agents.memory import extract_facts, merge_profile
 from app.agents.planner import plan
 from app.agents.specialists import SPECIALISTS
 from app.agents.verification import verify
+from app.llm import LLMError
 
 
 @dataclass
@@ -54,4 +62,21 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
         trace.append(TraceStep("escalation", "Verification failed — escalating to a human agent."))
         return ChatResult(reply="A human agent will follow up shortly.", status="escalated", trace=trace)
 
+    _update_memory(customer_id, message, response.reply, db, trace)
+
     return ChatResult(reply=response.reply, status="resolved", trace=trace)
+
+
+def _update_memory(customer_id: int, message: str, reply: str, db: Session, trace: list[TraceStep]) -> None:
+    """Best-effort: extraction failures must never break the customer's
+    response — they're logged in the trace instead of raised."""
+    try:
+        facts = extract_facts(message, reply)
+    except LLMError as exc:
+        trace.append(TraceStep("memory", f"Skipped — fact extraction failed: {exc}"))
+        return
+
+    merge_profile(customer_id, facts, db)
+    trace.append(
+        TraceStep("memory", f"Learned: {facts}" if facts else "Nothing new worth remembering from this turn.")
+    )

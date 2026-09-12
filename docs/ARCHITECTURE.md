@@ -70,20 +70,29 @@ price). See the `Booking` model in `backend/app/db/models.py`.
 
 ## Current state of this repo
 
-Classifier, Planner, and all four specialists (Billing, Technical, Order,
-Account) are implemented (issues #3, #4, #6-#9). Only Verification,
-Escalation, and Memory in `backend/app/agents/*.py` are still **stubs** —
-the pipeline runs end-to-end today regardless (see
-`backend/tests/test_health.py`), each remaining stub returns a
-placeholder with a `# TODO(issue: ...)` pointing at the GitHub issue that
-replaces it. Do not change a function's signature / return shape without
-updating `orchestrator.py` and the frontend trace rendering — several
-issues depend on the current contracts (the Planner's already changed
-once, adding `customer_id`/`db` params — see PR #34 for why). All four
-specialists kept their `resolve_x(db, customer_id, message) ->
-SpecialistResponse` shape as originally stubbed, and share a private
-`_run_specialist()` helper in `specialists.py` — only the system prompt
-differs per specialist.
+All of P0 and P1 are implemented: Classifier, Planner, all four
+specialists (Billing, Technical, Order, Account), Verification, and
+Memory (issues #3, #4, #6-#11). Only Escalation in
+`backend/app/agents/*.py` is still a **stub** — the pipeline runs
+end-to-end today regardless (see `backend/tests/test_health.py`); its
+stub returns a placeholder with a `# TODO(issue: ...)` pointing at the
+GitHub issue that replaces it. Do not change a function's signature /
+return shape without updating `orchestrator.py` and the frontend trace
+rendering — several issues depend on the current contracts (the
+Planner's already changed once, adding `customer_id`/`db` params — see PR
+#34; `memory.py`'s `load_profile`/`merge_profile` gained a `db` param too
+— see PR for #11). All four specialists kept their `resolve_x(db,
+customer_id, message) -> SpecialistResponse` shape as originally stubbed,
+and share a private `_run_specialist()` helper in `specialists.py` — only
+the system prompt differs per specialist.
+
+**Bug fixed alongside #11**: `_run_specialist()` never actually told the
+model the customer's ID — every specialist tool call that needs one
+(`get_customer_orders`, `get_customer`, ...) was relying on the model to
+guess it. Wiring in the customer-memory context (#11) touched this exact
+code path, so it was fixed at the same time. This had gone unnoticed
+because no session verifying these issues has had a real Anthropic API
+key — see the real-key verification gap tracked in `CLAUDE.md`.
 
 ### LLM tool-calling (Issue #5 — implemented)
 
