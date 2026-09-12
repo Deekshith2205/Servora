@@ -33,6 +33,10 @@ export function fetchEscalations() {
   return request("/api/escalations");
 }
 
+export function fetchResolvedHistory() {
+  return request("/api/tickets/resolved");
+}
+
 export function fetchEscalationDetail(ticketId) {
   return request(`/api/escalations/${ticketId}`);
 }

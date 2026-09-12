@@ -6,17 +6,21 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadData = () => {
-    setLoading(true);
-    setError(null);
+  const doFetch = () => {
     fetchAnalyticsSummary()
       .then(setSummary)
       .catch((err) => setError(err.message || "Failed to load analytics"))
       .finally(() => setLoading(false));
   };
 
+  const loadData = () => {
+    setLoading(true);
+    setError(null);
+    doFetch();
+  };
+
   useEffect(() => {
-    loadData();
+    doFetch();
   }, []);
 
   const isNotImplemented = summary && summary.status === "not_implemented";

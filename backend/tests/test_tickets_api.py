@@ -78,3 +78,25 @@ def test_escalation_detail_for_a_real_escalation_has_trace_and_packet(monkeypatc
     assert len(body["trace"]) >= 3  # classifier, planner, escalation
     assert body["handoff_packet"]["root_cause_hypothesis"] == "test root cause"
     assert body["handoff_packet"]["recommended_action"] == "test action"
+
+
+def test_list_resolved_tickets_excludes_open_and_escalated():
+    db = SessionLocal()
+    ticket_resolved = Ticket(customer_id=1, category="order", subject="resolved ticket", message="m", status="resolved")
+    ticket_open = Ticket(customer_id=1, category="order", subject="open ticket", message="m", status="open")
+    ticket_escalated = Ticket(customer_id=1, category="order", subject="escalated ticket", message="m", status="escalated")
+    db.add_all([ticket_resolved, ticket_open, ticket_escalated])
+    db.commit()
+    
+    resp = client.get("/api/tickets/resolved")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) >= 1
+    assert any(t["subject"] == "resolved ticket" for t in body)
+    assert all(t["status"] == "resolved" for t in body)
+
+def test_list_escalations_excludes_resolved():
+    resp = client.get("/api/escalations")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert not any(t["status"] == "resolved" for t in body)

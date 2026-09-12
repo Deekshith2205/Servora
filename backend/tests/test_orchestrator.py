@@ -112,7 +112,11 @@ def test_verification_failure_escalate_produces_a_populated_handoff_packet_with_
     assert len(captured["attempted_fixes"]) == 4  # classifier, planner, specialist, verification
 
 
-def test_resolved_path_has_no_handoff_packet(monkeypatch):
+def test_resolved_path_creates_a_real_ticket_and_has_no_handoff_packet(monkeypatch, db_session):
+    customer = Customer(name="Alice Rao", email="alice@example.com", tier="vip")
+    db_session.add(customer)
+    db_session.commit()
+    db_session.refresh(customer)
     monkeypatch.setattr(orchestrator_module, "classify", lambda message: _classification())
     monkeypatch.setattr(
         orchestrator_module,
@@ -133,10 +137,19 @@ def test_resolved_path_has_no_handoff_packet(monkeypatch):
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="ok"))
     monkeypatch.setattr(orchestrator_module, "extract_facts", lambda message, reply: [])
 
-    result = handle_message(MagicMock(), 1, "something")
+    result = handle_message(db_session, customer.id, "something")
 
     assert result.status == "resolved"
     assert result.handoff_packet is None
+    assert result.ticket_id is not None
+
+    ticket = db_session.get(Ticket, result.ticket_id)
+    assert ticket is not None
+    assert ticket.customer_id == customer.id
+    assert ticket.status == "resolved"
+    assert ticket.handoff_packet_json is None
+    trace = json.loads(ticket.trace_json)
+    assert len(trace) > 0
 
 
 # ---------------------------------------------------------------------------
