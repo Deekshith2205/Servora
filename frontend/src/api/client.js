@@ -61,3 +61,18 @@ export function sendBookingMessage(customerId, messages) {
     body: JSON.stringify({ customer_id: customerId, messages }),
   });
 }
+
+export function fetchBookings() {
+  return request("/api/bookings");
+}
+
+export function updateBooking(bookingId, changes) {
+  return request(`/api/bookings/${bookingId}`, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+}
+
+export function confirmBooking(bookingId) {
+  return request(`/api/bookings/${bookingId}/confirm`, { method: "POST" });
+}

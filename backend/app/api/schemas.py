@@ -134,3 +134,30 @@ class BookingOut(BaseModel):
 class BookingChatResponse(BaseModel):
     reply: str
     booking: BookingOut | None = None
+
+
+class BookingEditLogEntry(BaseModel):
+    """One entry from Booking.edit_log_json — issue #20. Values are always
+    strings (the log itself doesn't care about the field's real type, only
+    about rendering "changed from X to Y" — issue #21's notification diff
+    consumes this directly)."""
+
+    field: str
+    old_value: str
+    new_value: str
+    at: str
+
+
+class BookingDetailOut(BookingOut):
+    edit_log: list[BookingEditLogEntry] = []
+
+
+class UpdateBookingRequest(BaseModel):
+    """Issue #20: all fields optional — PATCH semantics, only the fields the
+    staff member actually changed should be sent (and therefore logged)."""
+
+    room_type: str | None = None
+    check_in: str | None = None
+    check_out: str | None = None
+    guests: int | None = None
+    total_price: float | None = None
