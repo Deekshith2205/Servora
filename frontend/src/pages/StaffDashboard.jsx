@@ -68,12 +68,7 @@ export default function StaffDashboard() {
   const [kbApproved, setKbApproved] = useState(false);
   const [kbApproveError, setKbApproveError] = useState(null);
 
-  const loadData = () => {
-    setLoading(true);
-    setError(null);
-    setResolvedLoading(true);
-    setResolvedError(null);
-    
+  const doFetch = () => {
     Promise.all([
       fetchEscalations().then((data) => {
         const records = Array.isArray(data) ? data : data.value || [];
@@ -89,8 +84,16 @@ export default function StaffDashboard() {
     });
   };
 
+  const loadData = () => {
+    setLoading(true);
+    setError(null);
+    setResolvedLoading(true);
+    setResolvedError(null);
+    doFetch();
+  };
+
   useEffect(() => {
-    loadData();
+    doFetch();
   }, []);
 
   useEffect(() => {
