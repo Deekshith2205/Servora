@@ -13,14 +13,12 @@ function getBadgeClass(type, value) {
   }
   
   if (type === 'urgency') {
-    // In this backend, urgency is numeric out of 10
     const num = parseInt(val, 10);
     if (!isNaN(num)) {
       if (num >= 8) return 'badge-warning';
       if (num >= 5) return 'badge-info';
       return 'badge-success';
     }
-    // Fallback if string labels were used
     if (val === 'high') return 'badge-warning';
     if (val === 'medium') return 'badge-info';
     return 'badge-success';
@@ -48,7 +46,6 @@ export default function StaffDashboard() {
     setError(null);
     fetchEscalations()
       .then((data) => {
-        // Handle standard backend structure
         const records = Array.isArray(data) ? data : data.value || [];
         setTickets(records);
       })
@@ -60,7 +57,6 @@ export default function StaffDashboard() {
     loadData();
   }, []);
 
-  // Handle Escape key to close drawer
   useEffect(() => {
     const handleEsc = (e) => {
       if (e.key === "Escape") setSelectedEscalation(null);
@@ -69,7 +65,6 @@ export default function StaffDashboard() {
     return () => window.removeEventListener("keydown", handleEsc);
   }, []);
 
-  // Calculate metrics accurately from real data
   const metrics = useMemo(() => {
     if (!tickets || tickets.length === 0) return null;
     
@@ -95,18 +90,21 @@ export default function StaffDashboard() {
   }, [tickets]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', flex: 1 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, paddingBottom: '2rem' }}>
       
       {/* Human Handoff Context Banner */}
       <div className="handoff-banner">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
-          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-        </svg>
-        <span>
-          <strong>Servora Handoff:</strong> Autonomous investigation complete &rarr; Human attention required &rarr; Support team reviews context
-        </span>
+        <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, color: 'var(--app-primary)'}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          Servora Handoff
+        </div>
+        <div className="handoff-banner-text">
+          Autonomous investigation complete <span className="arrow">&rarr;</span> Human attention required <span className="arrow">&rarr;</span> Support team reviews context
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -115,26 +113,39 @@ export default function StaffDashboard() {
           <div className="summary-card">
             <span className="summary-card-title">Active Escalations</span>
             <span className="summary-card-value">{metrics.active}</span>
+            <span className="summary-card-desc">Currently open or in progress</span>
           </div>
           <div className="summary-card">
             <span className="summary-card-title">High Priority</span>
-            <span className="summary-card-value" style={{color: metrics.highPriority > 0 ? 'var(--app-danger-text)' : 'inherit'}}>
-              {metrics.highPriority}
-            </span>
+            <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+              <span className="summary-card-value" style={{color: metrics.highPriority > 0 ? 'var(--app-danger-text)' : 'inherit'}}>
+                {metrics.highPriority}
+              </span>
+              {metrics.highPriority > 0 && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--app-danger-text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginTop: '4px'}}>
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+              )}
+            </div>
+            <span className="summary-card-desc">Urgency requiring attention</span>
           </div>
           <div className="summary-card">
             <span className="summary-card-title">Requires Attention</span>
             <span className="summary-card-value">{metrics.requiresAttention}</span>
+            <span className="summary-card-desc">Open cases</span>
           </div>
           <div className="summary-card">
             <span className="summary-card-title">Total Escalations</span>
             <span className="summary-card-value">{metrics.total}</span>
+            <span className="summary-card-desc">Loaded from support queue</span>
           </div>
         </div>
       )}
 
       {/* Main Panel */}
-      <div className="app-panel">
+      <div style={{marginTop: '4px'}}>
         {error && (
           <div className="app-error-banner">
             <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
@@ -151,66 +162,89 @@ export default function StaffDashboard() {
         )}
         
         {loading ? (
-          <div className="app-table-container">
-            {[1, 2, 3, 4].map(i => <div key={i} className="skeleton-row"></div>)}
+          <div className="app-panel-fit">
+            <div className="app-table-container">
+              {[1, 2, 3, 4].map(i => <div key={i} className="skeleton-row"></div>)}
+            </div>
           </div>
         ) : tickets.length > 0 ? (
-          <div className="app-table-container">
-            <table className="app-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Category</th>
-                  <th>Subject</th>
-                  <th>Sentiment</th>
-                  <th>Urgency</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tickets.map((t) => {
-                  const isHighPriority = parseInt(t.urgency, 10) >= 8;
-                  return (
-                    <tr 
-                      key={t.id} 
-                      onClick={() => setSelectedEscalation(t)}
-                      style={{background: selectedEscalation?.id === t.id ? 'var(--app-surface-hover)' : ''}}
-                    >
-                      <td style={{fontWeight: 600, color: 'var(--app-text-secondary)'}}>
-                        {isHighPriority && <span className="priority-indicator" title="High Priority"></span>}
-                        #{t.id}
-                      </td>
-                      <td>{t.category}</td>
-                      <td style={{fontWeight: 500}}>{t.subject}</td>
-                      <td>
-                        <span className={`app-badge ${getBadgeClass('sentiment', t.sentiment)}`}>
-                          {t.sentiment}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`app-badge ${getBadgeClass('urgency', t.urgency)}`}>
-                          {t.urgency}/10
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`app-badge ${getBadgeClass('status', t.status)}`}>
-                          {t.status}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="app-panel-fit">
+            <div className="escalations-header">
+              <div>
+                <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Escalations</h3>
+                <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Cases handed off from Servora for human review.</p>
+              </div>
+              <div className="escalations-count">{tickets.length} {tickets.length === 1 ? 'case' : 'cases'}</div>
+            </div>
+            
+            <div className="app-table-container">
+              <table className="app-table">
+                <thead>
+                  <tr>
+                    <th style={{width: '80px'}}>ID</th>
+                    <th style={{width: '120px'}}>Category</th>
+                    <th>Subject</th>
+                    <th style={{width: '120px'}}>Sentiment</th>
+                    <th style={{width: '120px'}}>Urgency</th>
+                    <th style={{width: '120px'}}>Status</th>
+                    <th style={{width: '40px'}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tickets.map((t) => {
+                    const isHighPriority = parseInt(t.urgency, 10) >= 8;
+                    return (
+                      <tr 
+                        key={t.id} 
+                        onClick={() => setSelectedEscalation(t)}
+                        className={`escalation-row ${selectedEscalation?.id === t.id ? 'active' : ''}`}
+                      >
+                        <td className="col-id">
+                          {isHighPriority && <span className="priority-indicator" title="High Priority"></span>}
+                          #{t.id}
+                        </td>
+                        <td className="col-category">{t.category}</td>
+                        <td className="col-subject">{t.subject}</td>
+                        <td>
+                          <span className={`app-badge ${getBadgeClass('sentiment', t.sentiment)}`}>
+                            {t.sentiment}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`app-badge ${getBadgeClass('urgency', t.urgency)}`}>
+                            {t.urgency}/10
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`app-badge ${getBadgeClass('status', t.status)}`}>
+                            {t.status}
+                          </span>
+                        </td>
+                        <td className="col-action">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                          </svg>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="escalations-footer">
+              Showing {tickets.length} {tickets.length === 1 ? 'escalation' : 'escalations'}
+            </div>
           </div>
         ) : !error ? (
-          <div className="app-empty-state">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-            <h3 style={{color: 'var(--app-text-primary)', margin: '0 0 0.5rem 0'}}>You're all caught up.</h3>
-            <p style={{margin: 0}}>No escalations currently require human attention.</p>
+          <div className="app-panel-fit" style={{justifyContent: 'center', minHeight: '300px'}}>
+            <div className="app-empty-state" style={{padding: '2rem'}}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+              <h3 style={{color: 'var(--app-text-primary)', margin: '0 0 0.5rem 0'}}>You're all caught up.</h3>
+              <p style={{margin: 0}}>No escalations currently require human attention.</p>
+            </div>
           </div>
         ) : null}
       </div>
