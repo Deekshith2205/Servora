@@ -55,6 +55,13 @@ export function approveKBArticle(draft) {
   });
 }
 
+export function sendBookingMessage(customerId, messages) {
+  return request("/api/booking", {
+    method: "POST",
+    body: JSON.stringify({ customer_id: customerId, messages }),
+  });
+}
+
 export function fetchBookings() {
   return request("/api/bookings");
 }
