@@ -18,30 +18,39 @@ nav {
 }
 
 nav button {
-  background: #f0f0f0;
-  border: none;
-  border-radius: 6px;
+  background: var(--s-bg-surface);
+  border: 1px solid var(--s-border-strong);
+  color: var(--s-text-primary);
+  border-radius: var(--s-radius-sm);
   padding: 0.5rem 1rem;
   cursor: pointer;
+  transition: background 0.2s;
+}
+
+nav button:hover {
+  background: var(--s-bg-surface-hover);
 }
 
 nav button.active {
-  background: #333;
-  color: white;
+  background: var(--s-accent-primary);
+  border-color: var(--s-accent-primary);
+  color: #000;
 }
 
 .panel {
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid var(--s-border-strong);
+  border-radius: var(--s-radius-md);
   padding: 1rem;
+  background: var(--s-bg-surface);
 }
 
 .chat-window {
   min-height: 300px;
   max-height: 400px;
   overflow-y: auto;
-  border: 1px solid #eee;
-  border-radius: 6px;
+  border: 1px solid var(--s-border-subtle);
+  background: var(--s-bg-base);
+  border-radius: var(--s-radius-sm);
   padding: 0.75rem;
   margin-bottom: 0.75rem;
 }
@@ -49,17 +58,22 @@ nav button.active {
 .bubble {
   margin-bottom: 0.5rem;
   padding: 0.5rem 0.75rem;
-  border-radius: 6px;
+  border-radius: var(--s-radius-sm);
   max-width: 80%;
+  font-size: 0.95rem;
 }
 
 .bubble.customer {
-  background: #dbeafe;
+  background: var(--s-accent-soft);
+  border: 1px solid var(--s-border-accent);
+  color: var(--s-text-primary);
   margin-left: auto;
 }
 
 .bubble.agent {
-  background: #f3f4f6;
+  background: var(--s-bg-elevated);
+  border: 1px solid var(--s-border-strong);
+  color: var(--s-text-primary);
 }
 
 .status-tag {
@@ -68,14 +82,19 @@ nav button.active {
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
   margin-left: 0.5rem;
+  font-weight: 600;
 }
 
 .status-tag.resolved {
-  background: #dcfce7;
+  background: var(--s-success-bg);
+  color: var(--s-success-text);
+  border: 1px solid rgba(52, 211, 153, 0.3);
 }
 
 .status-tag.escalated {
-  background: #fee2e2;
+  background: var(--s-warning-bg);
+  color: var(--s-warning-text);
+  border: 1px solid rgba(251, 191, 36, 0.3);
 }
 
 .chat-input-row {
@@ -85,7 +104,26 @@ nav button.active {
 
 .chat-input-row input {
   flex: 1;
-  padding: 0.5rem;
+  padding: 0.75rem;
+  background: var(--s-bg-base);
+  border: 1px solid var(--s-border-strong);
+  color: var(--s-text-primary);
+  border-radius: var(--s-radius-sm);
+}
+
+.chat-input-row input:focus {
+  outline: none;
+  border-color: var(--s-accent-primary);
+}
+
+.chat-input-row button {
+  background: var(--s-accent-primary);
+  color: #000;
+  border: none;
+  padding: 0 1.5rem;
+  border-radius: var(--s-radius-sm);
+  font-weight: 600;
+  cursor: pointer;
 }
 
 table {
@@ -96,10 +134,20 @@ table {
 th,
 td {
   text-align: left;
-  padding: 0.4rem;
-  border-bottom: 1px solid #eee;
+  padding: 0.75rem 0.4rem;
+  border-bottom: 1px solid var(--s-border-strong);
+}
+
+th {
+  color: var(--s-text-secondary);
+  font-size: 0.85rem;
+  text-transform: uppercase;
 }
 
 .error {
-  color: #b91c1c;
+  color: var(--s-danger-text);
+  background: var(--s-danger-bg);
+  padding: 0.5rem;
+  border-radius: var(--s-radius-sm);
+  border: 1px solid rgba(248, 113, 113, 0.3);
 }
