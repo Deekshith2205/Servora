@@ -1,4 +1,5 @@
 import string
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.db.database import get_db
@@ -27,7 +28,13 @@ def normalize_text(text: str) -> set[str]:
 
 @router.get("/analytics/summary")
 def analytics_summary(db: Session = Depends(get_db)) -> dict:
-    open_tickets = db.query(Ticket).filter(Ticket.status == "open").all()
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=30)
+    
+    open_tickets = db.query(Ticket).filter(
+        Ticket.status == "open",
+        Ticket.created_at >= cutoff
+    ).all()
     
     # Pre-compute data for each ticket
     ticket_data = []
