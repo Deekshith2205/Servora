@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolvedHistory, resolveEscalation } from "../api/client";
 import BookingsPanel from "./BookingsPanel";
+import InvestigationTimeline from "../components/InvestigationTimeline";
 
 // Helper to determine badge class
 function getBadgeClass(type, value) {
@@ -558,14 +559,7 @@ export default function StaffDashboard() {
                 <>
                   {detail.trace && detail.trace.length > 0 ? (
                     <div className="drawer-section">
-                      <div className="drawer-section-title">Servora Investigation</div>
-                      <ul style={{margin: 0, paddingLeft: '1.2rem', color: 'var(--app-text-secondary)', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                        {detail.trace.map((step, i) => (
-                          <li key={i}>
-                            <strong style={{color: 'var(--app-text-primary)'}}>{step.agent}:</strong> {step.output}
-                          </li>
-                        ))}
-                      </ul>
+                      <InvestigationTimeline trace={detail.trace} />
                     </div>
                   ) : (
                     <div className="drawer-section" style={{background: 'transparent', border: '1px dashed var(--app-border)', textAlign: 'center'}}>
