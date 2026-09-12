@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { fetchEscalations } from "../api/client";
+import { fetchEscalationDetail, fetchEscalations } from "../api/client";
 
 // Helper to determine badge class
 function getBadgeClass(type, value) {
@@ -39,7 +39,11 @@ export default function StaffDashboard() {
   const [tickets, setTickets] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  
   const [selectedEscalation, setSelectedEscalation] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailError, setDetailError] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const loadData = () => {
     setLoading(true);
@@ -64,6 +68,33 @@ export default function StaffDashboard() {
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
   }, []);
+
+  const handleSelectEscalation = (ticket) => {
+    setSelectedEscalation(ticket);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    
+    fetchEscalationDetail(ticket.id)
+      .then((res) => {
+        setSelectedEscalation((curr) => {
+          if (curr && curr.id === ticket.id) {
+            setDetail(res);
+            setDetailLoading(false);
+          }
+          return curr;
+        });
+      })
+      .catch((err) => {
+        setSelectedEscalation((curr) => {
+          if (curr && curr.id === ticket.id) {
+            setDetailError(err.message || "Failed to load escalation detail");
+            setDetailLoading(false);
+          }
+          return curr;
+        });
+      });
+  };
 
   const metrics = useMemo(() => {
     if (!tickets || tickets.length === 0) return null;
@@ -196,7 +227,7 @@ export default function StaffDashboard() {
                     return (
                       <tr 
                         key={t.id} 
-                        onClick={() => setSelectedEscalation(t)}
+                        onClick={() => handleSelectEscalation(t)}
                         className={`escalation-row ${selectedEscalation?.id === t.id ? 'active' : ''}`}
                       >
                         <td className="col-id">
@@ -316,6 +347,56 @@ export default function StaffDashboard() {
                   </div>
                 </div>
               )}
+
+              {/* Data fetched from detail API */}
+              {detailLoading ? (
+                <div className="drawer-section" style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+                  <div className="skeleton-row" style={{height: '16px', width: '120px', borderRadius: '4px', border: 'none'}}></div>
+                  <div className="skeleton-row" style={{height: '100px', borderRadius: '8px', border: 'none'}}></div>
+                </div>
+              ) : detailError ? (
+                <div className="app-error-banner">
+                  <span>{detailError}</span>
+                </div>
+              ) : detail ? (
+                <>
+                  {detail.trace && detail.trace.length > 0 ? (
+                    <div className="drawer-section">
+                      <div className="drawer-section-title">Servora Investigation</div>
+                      <ul style={{margin: 0, paddingLeft: '1.2rem', color: 'var(--app-text-secondary)', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                        {detail.trace.map((step, i) => (
+                          <li key={i}>
+                            <strong style={{color: 'var(--app-text-primary)'}}>{step.agent}:</strong> {step.output}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className="drawer-section" style={{background: 'transparent', border: '1px dashed var(--app-border)', textAlign: 'center'}}>
+                      <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-muted)'}}>No reasoning trace on file for this escalation.</p>
+                    </div>
+                  )}
+
+                  {detail.handoff_packet && (
+                    <div className="drawer-section handoff-card" style={{margin: 0}}>
+                      <div className="drawer-section-title handoff-card-title">Human Handoff</div>
+                      <dl className="handoff-card-dl" style={{display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '0.5rem 1rem', margin: 0, fontSize: '0.9rem'}}>
+                        <dt style={{fontWeight: 600, color: 'var(--app-text-secondary)'}}>Situation</dt>
+                        <dd style={{margin: 0, color: 'var(--app-text-primary)'}}>{detail.handoff_packet.situation}</dd>
+                        
+                        <dt style={{fontWeight: 600, color: 'var(--app-text-secondary)'}}>Likely cause</dt>
+                        <dd style={{margin: 0, color: 'var(--app-text-primary)'}}>{detail.handoff_packet.root_cause_hypothesis}</dd>
+                        
+                        <dt style={{fontWeight: 600, color: 'var(--app-text-secondary)'}}>Recommended next step</dt>
+                        <dd style={{margin: 0, color: 'var(--app-text-primary)'}}>{detail.handoff_packet.recommended_action}</dd>
+                        
+                        <dt style={{fontWeight: 600, color: 'var(--app-text-secondary)'}}>Urgency</dt>
+                        <dd style={{margin: 0, color: 'var(--app-text-primary)'}}>{detail.handoff_packet.urgency}/10</dd>
+                      </dl>
+                    </div>
+                  )}
+                </>
+              ) : null}
               
             </div>
           </div>

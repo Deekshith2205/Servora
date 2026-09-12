@@ -320,6 +320,42 @@
   border-top: 1px solid var(--app-border);
 }
 
+/* Issue #13 — structured handoff packet shown on an escalated reply */
+.handoff-card {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(180, 83, 9, 0.2);
+  border-radius: var(--app-radius-md);
+  background: var(--app-warning-bg);
+  font-size: 0.85rem;
+}
+
+.handoff-card-title {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--app-warning-text);
+  letter-spacing: 0.05em;
+}
+
+.handoff-card dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+}
+
+.handoff-card dt {
+  font-weight: 600;
+  color: var(--app-text-secondary);
+}
+
+.handoff-card dd {
+  margin: 0;
+  color: var(--app-text-primary);
+}
+
 .chat-input-row {
   display: flex;
   gap: 0.75rem;

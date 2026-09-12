@@ -67,6 +67,7 @@ export default function CustomerChat() {
           text: result.reply, 
           status: result.status, 
           trace: result.trace,
+          handoffPacket: result.handoff_packet,
           timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
         },
       ]);
@@ -100,6 +101,23 @@ export default function CustomerChat() {
               <div className={`chat-bubble ${m.role}`}>
                 {m.text}
               </div>
+              
+              {m.handoffPacket && (
+                <div className="handoff-card">
+                  <p className="handoff-card-title">What we're passing to a human agent</p>
+                  <dl>
+                    <dt>Situation</dt>
+                    <dd>{m.handoffPacket.situation}</dd>
+                    <dt>Likely cause</dt>
+                    <dd>{m.handoffPacket.root_cause_hypothesis}</dd>
+                    <dt>Recommended next step</dt>
+                    <dd>{m.handoffPacket.recommended_action}</dd>
+                    <dt>Urgency</dt>
+                    <dd>{m.handoffPacket.urgency}/10</dd>
+                  </dl>
+                </div>
+              )}
+
               <div className="chat-meta">
                 {m.timestamp && <span>{m.timestamp}</span>}
                 {m.status && (

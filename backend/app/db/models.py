@@ -53,6 +53,13 @@ class Ticket(Base):
     status: Mapped[str] = mapped_column(String, default="open")  # open|resolved|escalated
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # Issue #14: JSON-encoded snapshots of the reasoning trace and handoff
+    # packet from the /api/chat call that created this ticket (only set on
+    # tickets created by a real escalation — nullable so the seeded demo
+    # tickets, which never went through the pipeline, are unaffected).
+    trace_json: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    handoff_packet_json: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+
     customer: Mapped["Customer"] = relationship(back_populates="tickets")
 
 
@@ -90,3 +97,19 @@ class Booking(Base):
     total_price: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String, default="AI_DRAFTED")  # AI_DRAFTED|STAFF_REVIEWED|CONFIRMED
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CustomerMemory(Base):
+    """Backs issue #11 (customer memory write/merge) — see app/agents/memory.py.
+
+    One row per customer. `facts_json` is a JSON-encoded list of short,
+    durable fact strings (preferences, exceptions granted, recurring
+    patterns) — deliberately a flat list, not a rich schema, since the only
+    operation that matters is a set-union merge.
+    """
+
+    __tablename__ = "customer_memory"
+
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), primary_key=True)
+    facts_json: Mapped[str] = mapped_column(String, default="[]")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

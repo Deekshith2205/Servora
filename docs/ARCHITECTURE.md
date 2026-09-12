@@ -70,12 +70,86 @@ price). See the `Booking` model in `backend/app/db/models.py`.
 
 ## Current state of this repo
 
-Everything in `backend/app/agents/*.py` is a **stub** — the pipeline runs
-end-to-end today (see `backend/tests/test_health.py`), but every agent
-just returns a placeholder. Each stub has a `# TODO(issue: ...)` pointing
-at the GitHub issue that replaces it. Do not change the function
-signatures / return shapes without updating `orchestrator.py` and the
-frontend trace rendering — several issues depend on the current contract.
+All of P0 and P1 are implemented (issues #3, #4, #6-#11), and P2 is
+underway: the Escalation Agent (#12) now builds a real `HandoffPacket` at
+both points a conversation escalates. `docs/ARCHITECTURE.md`'s "Current
+state" note stays scoped to `backend/app/agents/*.py` — see `CLAUDE.md`
+for exactly which numbered issues are merged vs. open at any given
+moment; that file is the one kept current session-to-session. Do not
+change a function's signature / return shape without updating
+`orchestrator.py` and the frontend trace rendering — several issues
+depend on the current contracts (the Planner's already changed once,
+adding `customer_id`/`db` params — see PR #34; `memory.py`'s
+`load_profile`/`merge_profile` gained a `db` param too — see PR #41).
+All four specialists kept their `resolve_x(db, customer_id, message) ->
+SpecialistResponse` shape as originally stubbed, and share a private
+`_run_specialist()` helper in `specialists.py` — only the system prompt
+differs per specialist. Verification's `verify(response) ->
+VerificationResult` also needed no contract change — the original stub
+signature was already exactly what `orchestrator.py` calls.
+`ChatResult` (orchestrator.py) gained a `handoff_packet` field (#12,
+default `None` — additive, not a breaking change).
+
+**Bug fixed alongside #11**: `_run_specialist()` never actually told the
+model the customer's ID — every specialist tool call that needs one
+(`get_customer_orders`, `get_customer`, ...) was relying on the model to
+guess it. Wiring in the customer-memory context (#11) touched this exact
+code path, so it was fixed at the same time. This had gone unnoticed
+because no session verifying these issues has had a real Anthropic API
+key — see the real-key verification gap tracked in `CLAUDE.md`.
+
+### Escalation Agent (Issue #12 — implemented)
+
+`build_handoff_packet()` takes the trace-so-far as `attempted_fixes`, the
+classifier's `urgency`, and (when a specialist ran) its `confidence`, and
+makes one LLM call to produce `situation` / `root_cause_hypothesis` /
+`recommended_action` — the fields that actually need summarizing.
+`attempted_fixes` and `urgency` are passed straight through, not derived
+by the LLM. Scope note: this agent doesn't decide *whether* to escalate
+(that's already Planner/Verification's job) — it turns an
+already-made decision into something a human can act on. Issue #13
+exposed the packet via the API and the customer chat bubble; issue #14
+(below) persists it against a real Ticket for the Staff Dashboard.
+
+### Staff Dashboard escalation detail (Issue #14 — implemented)
+
+Before this, `/api/chat` never created or touched a `Ticket` row at all —
+the Staff Dashboard's queue only ever showed the seeded demo tickets from
+`db/seed.py`. Now, `orchestrator.py::_create_escalation_ticket()` persists
+a real `Ticket` at both escalation points, with the reasoning trace and
+handoff packet JSON-encoded onto two new nullable columns
+(`Ticket.trace_json`, `Ticket.handoff_packet_json` — nullable so the
+seeded tickets, which never went through the pipeline, are unaffected).
+`GET /api/escalations/{id}` (new) returns the parsed trace + packet;
+`StaffDashboard.jsx` lets a staff member click a row to see them instead
+of just the summary fields.
+
+**Real bug found while writing this issue's tests, fixed in the same
+PR**: `test_health.py`/`test_tickets_api.py` both instantiate a bare
+`TestClient(app)` at module level — this does **not** reliably trigger
+FastAPI's ASGI lifespan (`Base.metadata.create_all()` +
+`seed_if_empty()`) in this environment; only `with TestClient(app) as
+client:` is guaranteed to. Every test written before #14 happened to
+avoid this gap (every DB-touching agent was mocked, or the test built
+its own isolated in-memory engine directly) — #14's tests are the first
+to need real seeded data through a bare `TestClient`, which is what
+surfaced it. Fixed with `tests/conftest.py`: a `pytest_configure` hook
+that creates+seeds the schema once before any test runs, independent of
+whichever TestClient pattern a given test file uses. This is the second
+bug of this shape found this way — see the customer-ID fix noted above
+(#11) — both are exactly the kind of gap the long-standing real-API-key
+verification issue (tracked in `CLAUDE.md`) exists to catch.
+
+### Verification Agent (Issue #10 — implemented)
+
+`verify()` runs two deterministic checks — no second LLM call, so it's
+network-free to test and instant in production: a confidence threshold
+(0.5, see `specialists.py::_estimate_confidence()`), and a narrow
+"completed-action" phrase check that catches a reply claiming e.g. "I've
+issued a refund" when `issue_refund` was never actually called. This is
+a documented approximation, not a semantic check — a real
+second-LLM-judge pass would catch more, at the cost of another network
+call per verification.
 
 ### LLM tool-calling (Issue #5 — implemented)
 

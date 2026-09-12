@@ -121,28 +121,140 @@ docs/ARCHITECTURE.md   the agent graph + design rationale, in full
   no fabricated stats/testimonials/awards, since this is a hackathon
   project with no real customers. **No dependency on any backend issue —
   can run fully in parallel.**
+- The team merged **issue #5** ("Real tool-calling") and **issue #23**
+  ("Deployment readiness") independently in parallel — `call_llm()` now
+  supports a full Anthropic tool-calling loop (`app/tools/tool_registry.py`
+  builds the schemas/handlers), and `CONTRIBUTING.md`/`README.md` got a
+  proper prerequisites/setup rewrite (Python 3.12, Node 22 pinned — matches
+  CI). Specialist agents (`app/agents/specialists.py`) are **not yet**
+  wired to use tool-calling — that's still each specialist's own issue
+  (#6-#9).
+- **Issue #4** ("[P0] Implement Planner/Orchestrator routing") implemented:
+  `plan()` now calls the real LLM, weighing ticket history + urgency +
+  fixability (not sentiment alone) to decide resolve/clarify/escalate.
+  **Contract change**: `plan()` now takes `(classification, customer_id,
+  db)` instead of just `(classification)` — `orchestrator.py` updated.
+  PR: https://github.com/Deekshith2205/Servora/pull/34 — **merged**.
+  Added `scripts/check_planner.py`.
+- **Issue #6** ("[P1] Implement Billing specialist agent") implemented:
+  `resolve_billing()` runs a real tool-calling loop (order lookup → KB
+  policy check → `issue_refund`), never calling the refund tool
+  speculatively. Added `_run_specialist()` in `specialists.py` — a small
+  shared helper the remaining specialist issues (#7-#9) reused — and
+  `_estimate_confidence()` (0.9 action taken / 0.6 grounded-only / 0.2 no
+  tools used), the signal Verification consumes. `call_llm()` gained an
+  optional `tool_call_log` param (purely additive) to back
+  `SpecialistResponse.used_tools`. PR #36 — **merged**.
+
+### 2026-09-13 — P1 complete (#7-#11), one real bug found and fixed
+
+All six P1 issues are now implemented (five in one session, on top of #6
+from the day before):
+
+- **#7/#8/#9** (Technical/Order/Account specialists) — bundled into one
+  PR since all three just add a system prompt + a one-line
+  `resolve_x()`, reusing `_run_specialist()` from #6 untouched. Technical
+  grounds in `search_kb` (low-but-not-zero confidence on no KB match, per
+  the issue — a lookup was still attempted). Order proactively checks the
+  delay policy and offers the courtesy discount without a tool to
+  actually issue one (the reply states eligibility, never claims the
+  discount was applied). Account is read-only, refuses anything
+  account-modifying since no such tool exists. PR:
+  https://github.com/Deekshith2205/Servora/pull/39 — open.
+- **#10** (Verification Agent) — two deterministic checks, no second LLM
+  call: a confidence threshold (0.5), and a narrow "completed-action"
+  phrase check that catches a reply claiming "I've issued a refund" when
+  `issue_refund` was never actually called. Documented as an
+  approximation (a real semantic/second-LLM-judge check would catch
+  more) rather than silently overclaiming what it does. First P1 issue
+  that needed **no** real-API-key verification at all — `verify()` never
+  touches the LLM. PR: https://github.com/Deekshith2205/Servora/pull/40
+  — open.
+- **#11** (customer memory write/merge) — new `CustomerMemory` DB table
+  (one row per customer, a flat JSON fact list), real
+  `load_profile`/`merge_profile`/`extract_facts` in `memory.py`, and a
+  **new orchestrator step** (nothing called `memory.py` at all before
+  this) after a successful resolution — wrapped in try/except so a
+  failed extraction never breaks the customer's response. **Contract
+  change**: both memory functions gained a `db: Session` param;
+  `planner.py` and `specialists.py::_run_specialist` updated. PR:
+  https://github.com/Deekshith2205/Servora/pull/41 — open.
+
+  **Real bug found and fixed alongside #11** (not originally in scope,
+  but the fix touched the exact same code path): `_run_specialist()`
+  never actually told the model the customer's ID — every specialist
+  tool call needing one (`get_customer_orders`, `get_customer`, ...) was
+  relying on the model to guess it. This had gone completely unnoticed
+  because **no session working on issues #2 through #11 has ever run
+  any of this against a real Anthropic API key** — every test mocks the
+  Anthropic client, which correctly proves the *plumbing* works but
+  can't catch "the model has no way to know this fact." Fixed by
+  including `"Customer ID: {id}"` in every specialist's message content
+  (the known-profile-facts context from #11 goes in right alongside it).
+
+### 2026-09-13 (continued) — P2 complete (#12-#14), a SECOND real bug found
+
+All three P2 issues implemented, stacked #12 → #13 → #14 (each branched
+on top of the previous, since each literally builds on what the last
+one produced):
+
+- **#12** (Escalation Agent) — `build_handoff_packet()` makes one LLM
+  call to produce situation/root_cause_hypothesis/recommended_action;
+  `attempted_fixes`/`urgency` are passed straight through by the caller.
+  `ChatResult` gained a `handoff_packet` field. Scope call: this agent
+  doesn't re-decide resolve-vs-escalate (Planner/Verification already
+  did) — cites `verification.CONFIDENCE_THRESHOLD` (made public for
+  this) instead of duplicating it. PR:
+  https://github.com/Deekshith2205/Servora/pull/43 — open.
+- **#13** (expose the packet via the API) — `ChatResponse` gained
+  `handoff_packet`; `CustomerChat.jsx` renders a real handoff card on
+  escalation instead of the generic text. PR:
+  https://github.com/Deekshith2205/Servora/pull/44 — open.
+- **#14** (Staff Dashboard detail) — **`/api/chat` never created or
+  touched a `Ticket` row before this** — the dashboard's queue only ever
+  showed seeded demo data. `Ticket` gained `trace_json`/
+  `handoff_packet_json`; every escalation now persists a real ticket;
+  new `GET /api/escalations/{id}`; `StaffDashboard.jsx` click-to-expand
+  detail view. PR: https://github.com/Deekshith2205/Servora/pull/45 —
+  open.
+
+  **A second real bug, found the same way as #11's**: writing #14's
+  tests (the first ones needing *real* seeded DB data through a bare
+  `TestClient(app)`) revealed that a bare `TestClient(app)` — used at
+  module level in `test_health.py`/`test_tickets_api.py` — does **not**
+  reliably trigger FastAPI's ASGI lifespan (`create_all()` +
+  `seed_if_empty()`) in this environment. Every earlier test avoided
+  this by mocking every DB-touching agent, or building its own isolated
+  in-memory engine. Fixed with `tests/conftest.py` (a `pytest_configure`
+  hook that creates+seeds the schema once, unconditionally). **Unlike
+  #11's bug, a real API key would NOT have caught this one** — it's a
+  test-infrastructure gap, not an LLM-behavior gap. Worth remembering:
+  "mock everything LLM-related" hides more than one kind of blind spot.
 
 ## Next up (in priority order)
 
-1. **Still outstanding**: verify `call_llm()` against a real API key
-   (`scripts/check_llm.py` and `scripts/check_classifier.py`) — merged
-   twice now without that confirmation ever happening.
-2. Issue #4 — Planner/Orchestrator routing (depends on #3, merged).
-3. Issue #5 — real tool-calling for specialists (depends on #2, merged;
-   can run in parallel with #4).
-4. Then the P1 specialist agents (#6–#9) can be split across teammates in
-   parallel — each only touches its own function in
-   `app/agents/specialists.py`.
-5. Issue #30 (landing page design) — separate track, in parallel with all
-   of the above, whenever the teammate doing frontend visual design picks
-   it up.
+1. **Still the single highest-priority loose thread, now spanning
+   TWELVE issues (#2, #3, #4, #6-#14)**: nobody has confirmed
+   `call_llm()` against a real Anthropic API key. Every `scripts/
+   check_*.py` script is sitting there ready to run with one. Two real
+   bugs have now been found by *writing tests more carefully* — a real
+   key might well find a third.
+2. Merge PRs #39, #40, #41 (P1) then #43, #44, #45 (P2), in that order —
+   each stacks on the previous within its batch.
+3. P2 is done. Next up is P3: issue #15 (root-cause clustering across
+   tickets), #16 (analytics dashboard), #17 (Learning Agent — draft KB
+   updates from resolved escalations).
+4. Issue #30 (landing page design) — separate track, in parallel with
+   all of the above, whenever the teammate doing frontend visual design
+   (via Antigravity) picks it up.
 
 ## Open questions / blockers
 
 - **`call_llm()` has never been confirmed against a real Anthropic API
-  key**, by any session, across both #2 and #3. Everything is verified
-  by mocked/offline tests only so far. High priority to close before more
-  agents are built on top of it — see Next up #1.
+  key, by any session, across twelve P0/P1/P2 issues.** This has already
+  caused two real, independently-discovered bugs (missing customer ID
+  in #11; the TestClient lifespan gap in #14). Top priority — see Next
+  up #1.
 - **CI is not a required check yet.** Someone with admin access on
   github.com/Deekshith2205/Servora needs to go to Settings → Branches →
   add a branch protection rule on `main` → require the CI status checks
