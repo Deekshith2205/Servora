@@ -105,27 +105,37 @@ docs/ARCHITECTURE.md   the agent graph + design rationale, in full
   `classify()` now calls the real LLM via `call_llm()` with a
   structured-output schema (category/sentiment/urgency/reasoning).
   Contract unchanged, so `orchestrator.py` needed no changes. PR:
-  https://github.com/Deekshith2205/Servora/pull/28 — open, not yet
-  merged. Added `scripts/check_classifier.py` for manual real-key
-  verification (same pattern as `scripts/check_llm.py`). The existing
-  end-to-end chat test now mocks `classify()` so CI stays network-free —
-  worth remembering for issue #5 (tool-calling) and the P1 specialist
-  agents: each one that starts calling the real LLM will need the same
-  treatment (mock it in `test_health.py`'s end-to-end test, add its own
-  unit tests with a mocked `call_llm`).
+  https://github.com/Deekshith2205/Servora/pull/28 — **merged**. Added
+  `scripts/check_classifier.py` for manual real-key verification (same
+  pattern as `scripts/check_llm.py`). The existing end-to-end chat test
+  now mocks `classify()` so CI stays network-free — worth remembering
+  for issue #5 (tool-calling) and the P1 specialist agents: each one
+  that starts calling the real LLM will need the same treatment (mock it
+  in `test_health.py`'s end-to-end test, add its own unit tests with a
+  mocked `call_llm`).
+- **New issue #30** — "[Design] Marketing landing page — visual identity
+  inspired by AWS Connect Customer"
+  (https://github.com/Deekshith2205/Servora/issues/30). A teammate is
+  building the frontend visual design (via Antigravity). Scoped to
+  borrow *layout patterns only* from the reference page — original copy,
+  no fabricated stats/testimonials/awards, since this is a hackathon
+  project with no real customers. **No dependency on any backend issue —
+  can run fully in parallel.**
 
 ## Next up (in priority order)
 
-1. Merge PR #28 (after real-key verification via `scripts/check_classifier.py`)
-   — and, while someone has a key handy, verify PR #24's `call_llm()` too
-   via `scripts/check_llm.py`, since that's *still* never been confirmed
-   against the real API by any session.
-2. Issue #4 — Planner/Orchestrator routing (depends on #3).
+1. **Still outstanding**: verify `call_llm()` against a real API key
+   (`scripts/check_llm.py` and `scripts/check_classifier.py`) — merged
+   twice now without that confirmation ever happening.
+2. Issue #4 — Planner/Orchestrator routing (depends on #3, merged).
 3. Issue #5 — real tool-calling for specialists (depends on #2, merged;
    can run in parallel with #4).
 4. Then the P1 specialist agents (#6–#9) can be split across teammates in
    parallel — each only touches its own function in
    `app/agents/specialists.py`.
+5. Issue #30 (landing page design) — separate track, in parallel with all
+   of the above, whenever the teammate doing frontend visual design picks
+   it up.
 
 ## Open questions / blockers
 
