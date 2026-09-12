@@ -22,6 +22,13 @@ def seed_if_empty() -> None:
             [
                 Order(customer_id=alice.id, product="Wireless Headphones", amount=129.99, status="shipped"),
                 Order(customer_id=alice.id, product="Phone Case", amount=19.99, status="delivered"),
+                # Issue #22: backs demo scenario 2 (see docs/DEMO_SCRIPT.md) —
+                # a billing duplicate-charge complaint the Billing specialist
+                # can investigate and actually refund. Alice, not Bob, since
+                # the Customer Chat UI is hardcoded to DEMO_CUSTOMER_ID=1
+                # (CustomerChat.jsx/BookingChat.jsx) — every live-demo
+                # scenario has to be something *she* can trigger.
+                Order(customer_id=alice.id, product="Bluetooth Speaker", amount=79.99, status="processing"),
                 Order(customer_id=bob.id, product="Smart Watch", amount=249.00, status="processing"),
             ]
         )
@@ -81,6 +88,32 @@ def seed_if_empty() -> None:
                     sentiment="negative",
                     urgency=6,
                     status="open",
+                ),
+                # Issue #22: backs demo scenario 3 (see docs/DEMO_SCRIPT.md) —
+                # two PRIOR, RESOLVED tickets about the same underlying
+                # problem (a package never arriving), so the Planner Agent's
+                # "was this already tried and failed?" signal has something
+                # real to weigh when the live demo message reports a THIRD
+                # occurrence. Deliberately calm/neutral wording on both — the
+                # point of this scenario is that a repeated, serious problem
+                # must still escalate even without an angry tone.
+                Ticket(
+                    customer_id=alice.id,
+                    category="order",
+                    subject="Package never arrived",
+                    message="My package was marked delivered but never actually arrived. Can you help?",
+                    sentiment="neutral",
+                    urgency=5,
+                    status="resolved",
+                ),
+                Ticket(
+                    customer_id=alice.id,
+                    category="order",
+                    subject="Second package also never arrived",
+                    message="Similar to last time, this package also shows delivered but I never received it.",
+                    sentiment="neutral",
+                    urgency=5,
+                    status="resolved",
                 ),
             ]
         )
