@@ -39,6 +39,7 @@ class TicketOut(BaseModel):
     sentiment: str
     urgency: int
     status: str
+    confidence: float | None = None
 
     class Config:
         from_attributes = True
@@ -60,6 +61,7 @@ class EscalationDetailOut(BaseModel):
     sentiment: str
     urgency: int
     status: str
+    confidence: float | None = None
     trace: list[TraceStepOut] | None = None
     handoff_packet: HandoffPacketOut | None = None
 

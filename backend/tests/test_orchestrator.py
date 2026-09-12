@@ -41,7 +41,7 @@ def db_session():
 
 
 def _classification(**overrides):
-    defaults = dict(category="account", sentiment="neutral", urgency=7, reasoning="test reasoning")
+    defaults = dict(category="account", sentiment="neutral", urgency=7, reasoning="test reasoning", confidence=1.0)
     defaults.update(overrides)
     return ClassificationResult(**defaults)
 
@@ -155,7 +155,7 @@ def test_escalation_creates_a_real_ticket_with_trace_and_packet(monkeypatch, db_
     monkeypatch.setattr(
         orchestrator_module,
         "classify",
-        lambda message: ClassificationResult(category="account", sentiment="negative", urgency=9, reasoning="serious"),
+        lambda message: ClassificationResult(category="account", sentiment="negative", urgency=9, reasoning="serious", confidence=0.8),
     )
     monkeypatch.setattr(
         orchestrator_module,
@@ -206,7 +206,7 @@ def test_ticket_subject_is_truncated_for_a_long_message(monkeypatch, db_session)
     monkeypatch.setattr(
         orchestrator_module,
         "classify",
-        lambda message: ClassificationResult(category="general", sentiment="neutral", urgency=5, reasoning="r"),
+        lambda message: ClassificationResult(category="general", sentiment="neutral", urgency=5, reasoning="r", confidence=0.9),
     )
     monkeypatch.setattr(
         orchestrator_module,

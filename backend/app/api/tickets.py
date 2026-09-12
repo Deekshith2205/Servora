@@ -42,6 +42,7 @@ def get_escalation_detail(ticket_id: int, db: Session = Depends(get_db)) -> Esca
         sentiment=ticket.sentiment,
         urgency=ticket.urgency,
         status=ticket.status,
+        confidence=ticket.confidence,
         trace=json.loads(ticket.trace_json) if ticket.trace_json else None,
         handoff_packet=json.loads(ticket.handoff_packet_json) if ticket.handoff_packet_json else None,
     )

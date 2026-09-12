@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
-from app.llm import call_llm
+from app.llm import LLMError, call_llm
 
 VALID_CATEGORIES = ("billing", "technical", "order", "account", "general")
 VALID_SENTIMENTS = ("positive", "neutral", "negative")
@@ -44,6 +44,7 @@ class ClassificationResult:
     sentiment: str
     urgency: int
     reasoning: str
+    confidence: float
 
 
 class _ClassificationSchema(BaseModel):
@@ -51,25 +52,43 @@ class _ClassificationSchema(BaseModel):
     sentiment: str = Field(description="One of: positive, neutral, negative")
     urgency: int = Field(ge=1, le=10, description="1 = no rush, 10 = critical")
     reasoning: str = Field(description="Why these values — cite the specific signal in the message")
+    confidence: float = Field(ge=0.0, le=1.0, description="Confidence in this classification, from 0.0 to 1.0")
 
 
 def classify(message: str) -> ClassificationResult:
-    result = call_llm(
-        system_prompt=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": message}],
-        response_schema=_ClassificationSchema,
-        max_tokens=500,
-    )
+    try:
+        result = call_llm(
+            system_prompt=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": message}],
+            response_schema=_ClassificationSchema,
+            max_tokens=500,
+        )
 
-    # Defensive clamping: the schema already constrains these, but an agent
-    # downstream should never crash on an out-of-range value.
-    category = result.category if result.category in VALID_CATEGORIES else "general"
-    sentiment = result.sentiment if result.sentiment in VALID_SENTIMENTS else "neutral"
-    urgency = max(1, min(10, result.urgency))
+        category = result.category if result.category in VALID_CATEGORIES else "general"
+        sentiment = result.sentiment if result.sentiment in VALID_SENTIMENTS else "neutral"
+        urgency = max(1, min(10, result.urgency))
+        confidence = max(0.0, min(1.0, result.confidence))
+        reasoning = result.reasoning
+    except LLMError:
+        msg = message.lower()
+        if any(term in msg for term in ("billing", "payment", "refund", "charge", "charged", "invoice")):
+            category = "billing"
+        elif any(term in msg for term in ("order", "shipping", "tracking", "delivery", "shipped", "arrived")):
+            category = "order"
+        elif any(term in msg for term in ("booking", "room", "reservation", "hotel")):
+            category = "booking"
+        else:
+            category = "general"
+            
+        sentiment = "neutral"
+        urgency = 5
+        confidence = 0.0
+        reasoning = "LLM classification unavailable; deterministic fallback classification used."
 
     return ClassificationResult(
         category=category,
         sentiment=sentiment,
         urgency=urgency,
-        reasoning=result.reasoning,
+        reasoning=reasoning,
+        confidence=confidence,
     )

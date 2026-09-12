@@ -135,6 +135,7 @@ def _create_escalation_ticket(
         sentiment=classification.sentiment,
         urgency=classification.urgency,
         status="escalated",
+        confidence=classification.confidence,
         trace_json=json.dumps([asdict(step) for step in trace]),
         handoff_packet_json=json.dumps(asdict(packet)),
     )
