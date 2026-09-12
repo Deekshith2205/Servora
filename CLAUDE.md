@@ -134,20 +134,34 @@ docs/ARCHITECTURE.md   the agent graph + design rationale, in full
   fixability (not sentiment alone) to decide resolve/clarify/escalate.
   **Contract change**: `plan()` now takes `(classification, customer_id,
   db)` instead of just `(classification)` — `orchestrator.py` updated.
-  PR: https://github.com/Deekshith2205/Servora/pull/34 — open, not yet
-  merged. Added `scripts/check_planner.py`.
+  PR: https://github.com/Deekshith2205/Servora/pull/34 — **merged**.
+  Added `scripts/check_planner.py`.
+- **Issue #6** ("[P1] Implement Billing specialist agent") implemented:
+  `resolve_billing()` runs a real tool-calling loop (order lookup → KB
+  policy check → `issue_refund`), never calling the refund tool
+  speculatively. Added `_run_specialist()` in `specialists.py` — a small
+  shared helper the remaining specialist issues (#7-#9) can reuse — and
+  `_estimate_confidence()` (0.9 action taken / 0.6 grounded-only / 0.2 no
+  tools used), the signal Verification/Escalation will consume later.
+  `call_llm()` gained an optional `tool_call_log` param (purely additive)
+  to back `SpecialistResponse.used_tools`. PR:
+  https://github.com/Deekshith2205/Servora/pull/36 — open, not yet
+  merged. Tests mock only the Anthropic client and run everything else
+  (DB, tool registry) for real, against an in-memory SQLite DB — proving
+  the seeded order actually flips to `refunded`, not just that functions
+  were called. Added `scripts/check_billing.py`.
 
 ## Next up (in priority order)
 
-1. **Still outstanding, now three issues deep (#2, #3, #4)**: nobody has
-   confirmed `call_llm()` against a real Anthropic API key. Run
-   `scripts/check_llm.py`, `check_classifier.py`, and `check_planner.py`
-   with a real key — this is the single highest-priority loose thread.
-2. Merge PR #34 (issue #4).
-3. The P1 specialist agents (#6-#9) can now be split across teammates in
-   parallel — each touches only its own function in
-   `app/agents/specialists.py`, and can now use real tool-calling via
-   `app.tools.tool_registry.build_tool_registry(db)` (issue #5, merged).
+1. **Still outstanding, now FOUR issues deep (#2, #3, #4, #6)**: nobody
+   has confirmed `call_llm()` against a real Anthropic API key. Run
+   `scripts/check_llm.py`, `check_classifier.py`, `check_planner.py`, and
+   `check_billing.py` with a real key — this is the single
+   highest-priority loose thread, repeatedly flagged and still open.
+2. Merge PR #36 (issue #6).
+3. Issues #7-#9 (technical/order/account specialists) — each can reuse
+   `specialists.py::_run_specialist()`, only needs its own system prompt.
+   Can be split across teammates in parallel.
 4. Issue #30 (landing page design) — separate track, in parallel with all
    of the above, whenever the teammate doing frontend visual design picks
    it up.
@@ -155,7 +169,7 @@ docs/ARCHITECTURE.md   the agent graph + design rationale, in full
 ## Open questions / blockers
 
 - **`call_llm()` has never been confirmed against a real Anthropic API
-  key**, by any session, across #2, #3, and now #4. Everything is
+  key**, by any session, across #2, #3, #4, and now #6. Everything is
   verified by mocked/offline tests only so far. This is the top priority
   to close before more agents are built on top of it — see Next up #1.
 - **CI is not a required check yet.** Someone with admin access on
