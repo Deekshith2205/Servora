@@ -81,10 +81,12 @@ return shape without updating `orchestrator.py` and the frontend trace
 rendering — several issues depend on the current contracts (the
 Planner's already changed once, adding `customer_id`/`db` params — see PR
 #34; `memory.py`'s `load_profile`/`merge_profile` gained a `db` param too
-— see PR for #11). All four specialists kept their `resolve_x(db,
+— see PR #41). All four specialists kept their `resolve_x(db,
 customer_id, message) -> SpecialistResponse` shape as originally stubbed,
 and share a private `_run_specialist()` helper in `specialists.py` — only
-the system prompt differs per specialist.
+the system prompt differs per specialist. Verification's `verify(response)
+-> VerificationResult` also needed no contract change — the original stub
+signature was already exactly what `orchestrator.py` calls.
 
 **Bug fixed alongside #11**: `_run_specialist()` never actually told the
 model the customer's ID — every specialist tool call that needs one
@@ -93,6 +95,17 @@ guess it. Wiring in the customer-memory context (#11) touched this exact
 code path, so it was fixed at the same time. This had gone unnoticed
 because no session verifying these issues has had a real Anthropic API
 key — see the real-key verification gap tracked in `CLAUDE.md`.
+
+### Verification Agent (Issue #10 — implemented)
+
+`verify()` runs two deterministic checks — no second LLM call, so it's
+network-free to test and instant in production: a confidence threshold
+(0.5, see `specialists.py::_estimate_confidence()`), and a narrow
+"completed-action" phrase check that catches a reply claiming e.g. "I've
+issued a refund" when `issue_refund` was never actually called. This is
+a documented approximation, not a semantic check — a real
+second-LLM-judge pass would catch more, at the cost of another network
+call per verification.
 
 ### LLM tool-calling (Issue #5 — implemented)
 
