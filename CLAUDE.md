@@ -279,32 +279,124 @@ scope:
   handler that still emits CORS headers would fix this for good. Not
   done yet.
 
+### 2026-09-13 (continued) — P3 complete (#16, #17): a THIRD real bug found, this one live in the browser
+
+- **#16** (analytics dashboard beyond clustering) implemented:
+  `compute_churn_signals()` (per-customer escalation-count buckets —
+  medium ≥2, high ≥4 — over the trailing window) and `compute_trend()`
+  (daily ticket-volume counts) added to `app/api/analytics.py`;
+  `analytics_summary()`'s response gained `churn_signals`/`trend` keys.
+  `Analytics.jsx` renders a Ticket Volume Trend bar chart and a Churn
+  Risk table. 10 new backend tests. PR:
+  https://github.com/Deekshith2205/Servora/pull/49 — open.
+
+  **A CSS bug found live, not in tests**: the trend chart's bars
+  (flex-item `div`s with an inline `height`) rendered at 0px despite a
+  correct inline style, no overriding CSS rule (checked via
+  `document.styleSheets`), and a correctly-sized flex container —
+  root cause never fully isolated. Fixed by switching the bars to SVG
+  `<rect>` elements (geometry, not CSS layout) — rendered correctly on
+  the first try. Worth remembering: a flex-item's inline `height` is
+  not always trustworthy for a data viz; SVG sidesteps the whole class
+  of layout bug.
+
+- **#17** (Learning Agent — draft KB updates from resolved escalations)
+  implemented: `app/agents/learning.py::draft_kb_article()` (structured
+  output: should_add + title/body/tags, from category/customer
+  message/resolution notes/handoff-packet context);
+  `POST /api/escalations/{id}/resolve` marks the ticket resolved then
+  best-effort drafts a KB suggestion (`except LLMError: pass` — a
+  drafting failure never blocks resolving the ticket itself); new
+  `app/api/kb.py` router for listing/approving KB articles;
+  `StaffDashboard.jsx`'s escalation drawer gained a Resolution section
+  (notes → Mark Resolved → KB suggestion card with Approve/Dismiss, or
+  a "no suggestion" message). PR:
+  https://github.com/Deekshith2205/Servora/pull/50 — open.
+
+  **A third real bug, and the first one caught live in the browser
+  rather than by writing a test carefully**: `llm.py` swallowed a bare
+  `TypeError`. With zero Anthropic credentials resolvable at all (no
+  API key, no `ant auth login` profile — **the default state of every
+  dev/demo environment used on this project so far**), the SDK's own
+  `_validate_headers` raises a plain `TypeError`, not an `anthropic.*`
+  exception — none of `call_llm()`'s except clauses caught it, so it
+  propagated as an unhandled 500 instead of becoming an `LLMError`.
+  This silently broke the "best-effort, must not break the main
+  request" guarantee for *every* such caller in the codebase (memory
+  extraction #11, escalation packets #12, and now KB drafts #17)
+  whenever no API key was configured — i.e. every time anyone has run
+  this app locally without their own key. Caught by clicking "Mark
+  Resolved" in the actual running app and seeing a bare "Failed to
+  fetch," then reading the backend logs. Fixed with
+  `except LLMError: raise` (don't double-wrap an already-well-formed
+  one) followed by a final `except Exception: raise LLMError(...)`
+  catch-all; two new tests in `test_llm.py`. **This is the CORS/opaque-
+  exception gap flagged (not fixed) in the previous entry, but for the
+  specific exception type — the general FastAPI/CORS interaction for
+  *other* unhandled exceptions is still open, see below.**
+
+  Two more bugs found live in the same verification pass, both in
+  `StaffDashboard.jsx`: (a) a resolved ticket's `kb_suggestion: null`
+  (the Learning Agent legitimately declining to suggest anything — the
+  exact case the bug above produces) was indistinguishable from "not
+  resolved in this session," so it silently fell through to the wrong
+  UI message — fixed with an explicit `justResolved` flag; (b)
+  resolving a ticket patched its status into the local list in place
+  instead of removing it, leaving a stale "Resolved" row (and inflated
+  total count) until the next reload, even though the code's own
+  comment said it shouldn't — `GET /api/escalations` only ever returns
+  open/escalated tickets, so the list now filters the resolved ticket
+  out locally to match.
+
+  Also fixed (infrastructure, not agent behavior): the same test-DB-
+  pollution class of bug as #14, but for test-to-test isolation this
+  time rather than lifespan — several test files call `SessionLocal()`
+  directly and mutate the same file-based `servora.db` the dev server
+  uses, which actively broke a real test this session (an earlier
+  test's cleanup deleted a ticket a later test depended on). Fixed in
+  `conftest.py` by pointing `DATABASE_URL` at an isolated temp-file
+  SQLite DB before `app.config`/the module-level engine is ever
+  imported — verified via `md5sum` that the dev DB is untouched by a
+  `pytest` run.
+
+  **P3 is now fully done** (#15 merged already, #16 and #17 both open
+  as PRs from this session).
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning
-   TWELVE+ issues.** Nobody has confirmed `call_llm()` against a real
-   Anthropic API key. Two real bugs have already been found by careful
-   testing/manual verification alone — a real key might well find a
-   third categorically different one (actual model behavior, which nothing
-   here can substitute for).
-2. Two small, well-scoped fixes identified above, not yet done: (a) a
-   `CONTRIBUTING.md` note about deleting `servora.db` after a schema
-   change, (b) a global FastAPI exception handler so unhandled errors
-   don't come out as an opaque CORS failure in the browser.
-3. P3 continues: #15 is done; #16 (analytics dashboard beyond
-   clustering — churn/anomaly signals) and #17 (Learning Agent — draft
-   KB updates from resolved escalations) are still open.
-4. Issue #30 is done (see above) — no longer on this list.
+   FOURTEEN+ issues.** Nobody has confirmed `call_llm()` against a real
+   Anthropic API key. Three real bugs have now been found without one —
+   missing customer ID (#11), a TestClient lifespan gap (#14), and the
+   bare-`TypeError`/CORS-opaque-error gap (#17) — a real key might still
+   find a fourth, categorically different one (actual model behavior,
+   which nothing here can substitute for).
+2. Merge PRs #49 (#16) and #50 (#17) to close out P3.
+3. Two small, well-scoped fixes identified previously, still not done:
+   (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
+   schema change (`create_all()` doesn't migrate existing SQLite
+   tables), (b) a **general** FastAPI exception handler so an unhandled
+   error of any kind still carries CORS headers back to the browser —
+   #17 fixed the one specific exception *type* that was hitting this,
+   not the general gap.
+4. With P3 done, next is P4: the hotel voice-booking stretch feature
+   (see Key decisions above) — biggest remaining scope item, worth
+   scoping into sub-issues before anyone starts.
+5. Issue #30 is done — no longer on this list.
 
 ## Open questions / blockers
 
 - **`call_llm()` has never been confirmed against a real Anthropic API
-  key, by any session, across every P0/P1/P2 issue.** This has already
-  caused two real, independently-discovered bugs (missing customer ID
-  in #11; the TestClient lifespan gap in #14). Top priority — see Next
-  up #1.
+  key, by any session, across every P0/P1/P2/P3 issue.** This has
+  already caused three real, independently-discovered bugs (missing
+  customer ID in #11; the TestClient lifespan gap in #14; the bare-
+  `TypeError` gap in #17). Top priority — see Next up #1.
 - **CI is not a required check yet.** Someone with admin access on
   github.com/Deekshith2205/Servora needs to go to Settings → Branches →
   add a branch protection rule on `main` → require the CI status checks
   before merging. Nobody in any session so far has had admin rights to
   do it directly.
+- **General unhandled-exception → CORS gap still open** (only the one
+  specific `TypeError` case was fixed in #17) — see Next up #3(b).
+- **`servora.db` schema drift after `create_all()` still requires a
+  manual delete** — see Next up #3(a).
