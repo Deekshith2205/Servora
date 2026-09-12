@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import analytics, chat, tickets
+from app.api import analytics, chat, kb, tickets
 from app.config import settings
 from app.db.database import Base, engine
 from app.db.seed import seed_if_empty
@@ -28,6 +28,7 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(tickets.router)
 app.include_router(analytics.router)
+app.include_router(kb.router)
 
 
 @app.get("/health")

@@ -1,14 +1,20 @@
 """Tests for GET /api/escalations/{id} (issue #14).
 
-Uses the real app + real (seeded) demo DB via TestClient, same as
-test_health.py — the seeded tickets never went through the pipeline, so
-they're the natural case for "trace/handoff_packet is None".
+Uses the real app + real DB via TestClient. A ticket that never went
+through /api/chat (its trace_json/handoff_packet_json columns are left
+at their default None) is the natural case for "trace/handoff_packet is
+None" — created explicitly here rather than assumed from seed data,
+since other test files running earlier in the same session (they all
+share one file-based servora.db — see conftest.py's note) may have
+already cleared the seeded tickets out from under this one.
 """
 from fastapi.testclient import TestClient
 
 from app.agents.classifier import ClassificationResult
 from app.agents.escalation import HandoffPacket
 from app.agents.planner import PlanDecision
+from app.db.database import SessionLocal
+from app.db.models import Ticket
 from app.main import app
 
 client = TestClient(app)
@@ -19,13 +25,16 @@ def test_escalation_detail_404_for_missing_ticket():
     assert resp.status_code == 404
 
 
-def test_escalation_detail_for_a_seeded_ticket_has_no_trace_or_packet():
-    # Seeded tickets (db/seed.py) never went through /api/chat.
-    seeded = client.get("/api/escalations").json()
-    assert len(seeded) > 0
-    ticket_id = seeded[0]["id"]
+def test_escalation_detail_for_a_ticket_with_no_trace_has_none_for_both():
+    # A ticket that never went through /api/chat (e.g. created directly,
+    # like the seeded demo tickets) has no trace_json/handoff_packet_json.
+    db = SessionLocal()
+    ticket = Ticket(customer_id=1, category="order", subject="no-trace ticket", message="m", status="open")
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
 
-    resp = client.get(f"/api/escalations/{ticket_id}")
+    resp = client.get(f"/api/escalations/{ticket.id}")
     assert resp.status_code == 200
     body = resp.json()
     assert body["trace"] is None

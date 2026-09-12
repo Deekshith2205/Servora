@@ -287,6 +287,8 @@ def call_llm(
         # Unreachable — the for-loop raises LLMError before this
         raise LLMError("Unexpected exit from tool-calling loop.")  # pragma: no cover
 
+    except LLMError:
+        raise  # already well-formed (e.g. the tool-loop iteration-limit error) — don't rewrap
     except anthropic.AuthenticationError as e:
         raise LLMError(
             "Anthropic API key is missing or invalid — copy backend/.env.example "
@@ -298,3 +300,14 @@ def call_llm(
         raise LLMError(f"Anthropic API error ({e.status_code}): {e.message}") from e
     except anthropic.APIConnectionError as e:
         raise LLMError("Could not reach the Anthropic API — check your network connection.") from e
+    except Exception as e:  # noqa: BLE001 — see docstring note below
+        # Found while verifying issue #17 live: with no credentials resolvable
+        # at all (as opposed to a live request being rejected), the Anthropic
+        # SDK raises a bare TypeError, not an anthropic.* exception — none of
+        # the clauses above catch it. Every "best-effort" caller in this
+        # codebase (memory extraction, escalation packets, KB drafts) does
+        # `except LLMError: <degrade gracefully>`; without this clause, that
+        # degrade-gracefully path silently never triggered whenever no API
+        # key was configured at all, and the whole request 500'd instead —
+        # exactly the "no API key" case every demo runs into by default.
+        raise LLMError(f"Unexpected error calling the LLM: {type(e).__name__}: {e}") from e

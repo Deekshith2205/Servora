@@ -29,3 +29,17 @@ export function fetchEscalationDetail(ticketId) {
 export function fetchAnalyticsSummary() {
   return request("/api/analytics/summary");
 }
+
+export function resolveEscalation(ticketId, resolutionNotes) {
+  return request(`/api/escalations/${ticketId}/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ resolution_notes: resolutionNotes }),
+  });
+}
+
+export function approveKBArticle(draft) {
+  return request("/api/kb-articles", {
+    method: "POST",
+    body: JSON.stringify({ title: draft.title, body: draft.body, tags: draft.tags }),
+  });
+}

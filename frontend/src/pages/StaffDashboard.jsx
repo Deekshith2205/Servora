@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { fetchEscalationDetail, fetchEscalations } from "../api/client";
+import { approveKBArticle, fetchEscalationDetail, fetchEscalations, resolveEscalation } from "../api/client";
 
 // Helper to determine badge class
 function getBadgeClass(type, value) {
@@ -45,6 +45,24 @@ export default function StaffDashboard() {
   const [detailError, setDetailError] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // Issue #17: resolve-then-suggest-a-KB-article flow, scoped to whichever
+  // escalation is currently open in the drawer.
+  const [resolveNotes, setResolveNotes] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState(null);
+  const [kbSuggestion, setKbSuggestion] = useState(null); // { should_add, title, body, tags } | null
+  // Bug found verifying issue #17 live (no API key configured, the common
+  // default): the Learning Agent degrades gracefully and the resolve
+  // response legitimately carries kb_suggestion: null. That's indistinguishable
+  // from "haven't resolved in this session" if we only look at kbSuggestion
+  // being falsy — this flag disambiguates "resolved just now, no suggestion
+  // came back" from "already resolved, nothing to show" so the right message
+  // renders instead of both collapsing onto the same generic one.
+  const [justResolved, setJustResolved] = useState(false);
+  const [kbApproving, setKbApproving] = useState(false);
+  const [kbApproved, setKbApproved] = useState(false);
+  const [kbApproveError, setKbApproveError] = useState(null);
+
   const loadData = () => {
     setLoading(true);
     setError(null);
@@ -74,7 +92,17 @@ export default function StaffDashboard() {
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
-    
+
+    // Reset the resolve/KB-suggestion flow — it's scoped per escalation.
+    setResolveNotes("");
+    setResolving(false);
+    setResolveError(null);
+    setKbSuggestion(null);
+    setJustResolved(false);
+    setKbApproving(false);
+    setKbApproved(false);
+    setKbApproveError(null);
+
     fetchEscalationDetail(ticket.id)
       .then((res) => {
         setSelectedEscalation((curr) => {
@@ -94,6 +122,41 @@ export default function StaffDashboard() {
           return curr;
         });
       });
+  };
+
+  const handleResolve = () => {
+    if (!selectedEscalation) return;
+    setResolving(true);
+    setResolveError(null);
+
+    resolveEscalation(selectedEscalation.id, resolveNotes)
+      .then((res) => {
+        setSelectedEscalation((curr) =>
+          curr && curr.id === selectedEscalation.id ? { ...curr, status: res.ticket.status } : curr
+        );
+        setKbSuggestion(res.kb_suggestion);
+        setJustResolved(true);
+        // The resolved ticket should drop out of the open-queue list too —
+        // GET /api/escalations only ever returns open/escalated tickets, so
+        // patching status in place (leaving the row in `tickets`) left a
+        // stale "Resolved" row (and an inflated total) in the table until
+        // the next full reload. Filter it out here instead, to match what
+        // a refetch would actually return.
+        setTickets((prev) => prev.filter((t) => t.id !== res.ticket.id));
+      })
+      .catch((err) => setResolveError(err.message || "Failed to resolve this escalation"))
+      .finally(() => setResolving(false));
+  };
+
+  const handleApproveKB = () => {
+    if (!kbSuggestion) return;
+    setKbApproving(true);
+    setKbApproveError(null);
+
+    approveKBArticle(kbSuggestion)
+      .then(() => setKbApproved(true))
+      .catch((err) => setKbApproveError(err.message || "Failed to add this to the knowledge base"))
+      .finally(() => setKbApproving(false));
   };
 
   const metrics = useMemo(() => {
@@ -397,7 +460,99 @@ export default function StaffDashboard() {
                   )}
                 </>
               ) : null}
-              
+
+              {/* Issue #17: resolve this escalation, then let the Learning
+                  Agent suggest a KB article for a human to approve. */}
+              <div className="drawer-section">
+                <div className="drawer-section-title">Resolution</div>
+
+                {justResolved ? (
+                  <div style={{display: "flex", flexDirection: "column", gap: "0.75rem"}}>
+                    <p style={{margin: 0, fontSize: "0.85rem", color: "var(--app-success-text)"}}>
+                      ✓ Marked resolved.
+                    </p>
+
+                    {kbSuggestion === null ? (
+                      <p style={{margin: 0, fontSize: "0.85rem", color: "var(--app-text-muted)"}}>
+                        No knowledge base update suggested for this resolution — the
+                        Learning Agent didn't return a suggestion (e.g. no LLM
+                        provider configured for this environment).
+                      </p>
+                    ) : kbSuggestion.should_add ? (
+                      kbApproved ? (
+                        <p style={{margin: 0, fontSize: "0.85rem", color: "var(--app-success-text)"}}>
+                          ✓ Added to the knowledge base.
+                        </p>
+                      ) : (
+                        <div className="handoff-card" style={{margin: 0}}>
+                          <p className="handoff-card-title">Add to knowledge base?</p>
+                          <p style={{margin: "0 0 0.4rem", fontWeight: 600, fontSize: "0.9rem", color: "var(--app-text-primary)"}}>
+                            {kbSuggestion.title}
+                          </p>
+                          <p style={{margin: "0 0 0.6rem", fontSize: "0.85rem", color: "var(--app-text-primary)", lineHeight: 1.5}}>
+                            {kbSuggestion.body}
+                          </p>
+                          {kbSuggestion.tags?.length > 0 && (
+                            <div style={{display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.6rem"}}>
+                              {kbSuggestion.tags.map((tag) => (
+                                <span key={tag} className="app-badge badge-info">{tag}</span>
+                              ))}
+                            </div>
+                          )}
+                          {kbApproveError && <p className="error" style={{fontSize: "0.8rem"}}>{kbApproveError}</p>}
+                          <div style={{display: "flex", gap: "0.5rem"}}>
+                            <button
+                              onClick={handleApproveKB}
+                              disabled={kbApproving}
+                              style={{background: "var(--app-primary)", color: "#fff", border: "none", padding: "0.4rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem"}}
+                            >
+                              {kbApproving ? "Adding…" : "Approve"}
+                            </button>
+                            <button
+                              onClick={() => setKbSuggestion({ ...kbSuggestion, should_add: false })}
+                              disabled={kbApproving}
+                              style={{background: "var(--app-surface)", border: "1px solid var(--app-border)", padding: "0.4rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem"}}
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    ) : (
+                      <p style={{margin: 0, fontSize: "0.85rem", color: "var(--app-text-muted)"}}>
+                        No knowledge base update suggested for this resolution — the Learning Agent
+                        judged it a one-off, not a reusable pattern.
+                      </p>
+                    )}
+                  </div>
+                ) : selectedEscalation.status === "resolved" ? (
+                  <p style={{margin: 0, fontSize: "0.85rem", color: "var(--app-text-secondary)"}}>
+                    This escalation is marked resolved.
+                  </p>
+                ) : (
+                  <div style={{display: "flex", flexDirection: "column", gap: "0.6rem"}}>
+                    <label style={{fontSize: "0.8rem", fontWeight: 600, color: "var(--app-text-secondary)"}}>
+                      How was this resolved? (optional, but helps the KB suggestion)
+                    </label>
+                    <textarea
+                      value={resolveNotes}
+                      onChange={(e) => setResolveNotes(e.target.value)}
+                      placeholder="e.g. Manually migrated the customer off the legacy billing plan, then issued the refund."
+                      rows={3}
+                      style={{width: "100%", padding: "0.5rem", borderRadius: "6px", border: "1px solid var(--app-border)", fontFamily: "inherit", fontSize: "0.85rem", resize: "vertical"}}
+                    />
+                    {resolveError && <p className="error" style={{fontSize: "0.8rem"}}>{resolveError}</p>}
+                    <button
+                      onClick={handleResolve}
+                      disabled={resolving}
+                      style={{alignSelf: "flex-start", background: "var(--app-primary)", color: "#fff", border: "none", padding: "0.5rem 1.2rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem"}}
+                    >
+                      {resolving ? "Resolving…" : "Mark Resolved"}
+                    </button>
+                  </div>
+                )}
+              </div>
+
             </div>
           </div>
         </div>

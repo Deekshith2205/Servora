@@ -1,24 +1,39 @@
 """Session-wide test setup.
 
-Real bug found while writing issue #14's tests: a bare `TestClient(app)`
-(used at module level in test_health.py and test_tickets_api.py) does
-NOT reliably trigger FastAPI's ASGI lifespan (the `create_all()` +
-`seed_if_empty()` in app/main.py) in this environment — only
-`with TestClient(app) as client:` is guaranteed to. Every test written
-before issue #14 happened to avoid this gap entirely: either every agent
-touching the DB was mocked (test_health.py's existing tests), or the
-test built its own isolated in-memory engine directly
-(test_specialists.py, test_memory.py, test_orchestrator.py) rather than
-going through the app's real file-based DB at all. Issue #14's tests are
-the first to actually need real seeded data through a bare TestClient,
-which is what surfaced this.
+Two real bugs found by writing tests carefully, both fixed here:
 
-Fixing it here rather than converting every test file to a context
-manager: guarantee the schema exists and is seeded once, before any test
-runs, regardless of whether a given TestClient triggers lifespan.
+1. (Issue #14) A bare `TestClient(app)` (used at module level in several
+   test files) does NOT reliably trigger FastAPI's ASGI lifespan (the
+   `create_all()` + `seed_if_empty()` in app/main.py) in this
+   environment — only `with TestClient(app) as client:` is guaranteed
+   to. Fixed by guaranteeing the schema exists and is seeded once here,
+   regardless of whether a given TestClient triggers lifespan.
+
+2. (Issue #17) Several test files call `SessionLocal()` directly and
+   mutate the DB (e.g. `db.query(Ticket).delete()`) — before this fix,
+   that pointed at the SAME file-based `servora.db` the local dev server
+   uses, so running `pytest` wiped real seeded/demo data out from under
+   a running `uvicorn --reload`. This surfaced as a genuine, unrelated
+   test *failure* once enough test files did this (test_tickets_api.py's
+   seeded-ticket test started failing because an earlier test file had
+   already deleted all tickets) — not just a dev-workflow annoyance.
+
+   Fixed by pointing DATABASE_URL at an isolated, throwaway SQLite file
+   before app.config (and therefore app.db.database's module-level
+   engine) is ever imported — this MUST happen at the top of this file,
+   before the imports below, since Settings() and the engine are both
+   read/created once at first import.
 """
-from app.db.database import Base, engine
-from app.db.seed import seed_if_empty
+import os
+import tempfile
+
+_TEST_DB_PATH = os.path.join(tempfile.gettempdir(), "servora_test.db")
+if os.path.exists(_TEST_DB_PATH):
+    os.remove(_TEST_DB_PATH)  # fresh schema/seed every pytest invocation
+os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
+
+from app.db.database import Base, engine  # noqa: E402 (must come after the DATABASE_URL override above)
+from app.db.seed import seed_if_empty  # noqa: E402
 
 
 def pytest_configure(config):

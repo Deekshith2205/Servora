@@ -62,3 +62,41 @@ class EscalationDetailOut(BaseModel):
     status: str
     trace: list[TraceStepOut] | None = None
     handoff_packet: HandoffPacketOut | None = None
+
+
+class ResolveTicketRequest(BaseModel):
+    """Issue #17. `resolution_notes` is free text from the human agent —
+    the Learning Agent needs to know HOW it was fixed, not just what the
+    problem was, to draft a useful KB article."""
+
+    resolution_notes: str = ""
+
+
+class KBArticleDraftOut(BaseModel):
+    """Mirrors app.agents.learning.DraftKBArticle."""
+
+    should_add: bool
+    title: str
+    body: str
+    tags: list[str]
+
+
+class ResolveTicketResponse(BaseModel):
+    ticket: TicketOut
+    kb_suggestion: KBArticleDraftOut | None = None
+
+
+class ApproveKBArticleRequest(BaseModel):
+    title: str
+    body: str
+    tags: list[str] = []
+
+
+class KBArticleOut(BaseModel):
+    id: int
+    title: str
+    body: str
+    tags: str  # comma-separated, matches the KBArticle model's storage shape
+
+    class Config:
+        from_attributes = True
