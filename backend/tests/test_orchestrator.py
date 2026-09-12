@@ -1,4 +1,5 @@
-"""Tests for orchestrator.handle_message()'s escalation wiring (issue #12).
+"""Tests for orchestrator.handle_message()'s escalation wiring (issues
+#12 and #14).
 
 Mocks each agent at the orchestrator boundary — same pattern as
 test_health.py's end-to-end test — since each agent's own LLM/tool
@@ -6,10 +7,16 @@ details are covered by its own test file (test_classifier.py,
 test_planner.py, test_specialists.py, test_verification.py,
 test_escalation.py). This file is specifically about proving
 orchestrator.py wires them together correctly: the right context reaches
-build_handoff_packet() at each of the two escalation points, and the
-resolved path carries no packet at all.
+build_handoff_packet() at each of the two escalation points, the
+resolved path carries no packet at all, and (issue #14) an escalation
+actually persists a real Ticket row with the trace + packet attached.
 """
+import json
 from unittest.mock import MagicMock
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 import app.orchestrator as orchestrator_module
 from app.agents.classifier import ClassificationResult
@@ -17,7 +24,20 @@ from app.agents.escalation import HandoffPacket
 from app.agents.planner import PlanDecision
 from app.agents.specialists import SpecialistResponse
 from app.agents.verification import VerificationResult
+from app.db.database import Base
+from app.db.models import Customer, Ticket
 from app.orchestrator import handle_message
+
+
+@pytest.fixture
+def db_session():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        yield session
+    finally:
+        session.close()
 
 
 def _classification(**overrides):
@@ -117,3 +137,93 @@ def test_resolved_path_has_no_handoff_packet(monkeypatch):
 
     assert result.status == "resolved"
     assert result.handoff_packet is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #14: escalation actually persists a Ticket with trace + packet.
+# Real in-memory DB here (not MagicMock) since we need to verify what was
+# actually written, not just that a call happened.
+# ---------------------------------------------------------------------------
+
+
+def test_escalation_creates_a_real_ticket_with_trace_and_packet(monkeypatch, db_session):
+    customer = Customer(name="Alice Rao", email="alice@example.com", tier="vip")
+    db_session.add(customer)
+    db_session.commit()
+    db_session.refresh(customer)
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "classify",
+        lambda message: ClassificationResult(category="account", sentiment="negative", urgency=9, reasoning="serious"),
+    )
+    monkeypatch.setattr(
+        orchestrator_module,
+        "plan",
+        lambda classification, customer_id, db: PlanDecision(
+            action="escalate", target_agent="none", reasoning="outside policy"
+        ),
+    )
+    monkeypatch.setattr(
+        orchestrator_module,
+        "build_handoff_packet",
+        lambda message, attempted_fixes, urgency, confidence=None: HandoffPacket(
+            situation="s", attempted_fixes=attempted_fixes, root_cause_hypothesis="r", recommended_action="a",
+            urgency=urgency,
+        ),
+    )
+
+    result = handle_message(db_session, customer.id, "please close my account and waive the fee")
+
+    assert result.ticket_id is not None
+
+    ticket = db_session.get(Ticket, result.ticket_id)
+    assert ticket is not None
+    assert ticket.customer_id == customer.id
+    assert ticket.category == "account"
+    assert ticket.sentiment == "negative"
+    assert ticket.urgency == 9
+    assert ticket.status == "escalated"
+    assert ticket.message == "please close my account and waive the fee"
+
+    trace = json.loads(ticket.trace_json)
+    assert len(trace) == 3  # classifier, planner, escalation
+    assert trace[0]["agent"] == "classifier"
+
+    packet = json.loads(ticket.handoff_packet_json)
+    assert packet["root_cause_hypothesis"] == "r"
+    assert packet["recommended_action"] == "a"
+
+
+def test_ticket_subject_is_truncated_for_a_long_message(monkeypatch, db_session):
+    customer = Customer(name="Bob", email="bob2@example.com", tier="standard")
+    db_session.add(customer)
+    db_session.commit()
+    db_session.refresh(customer)
+
+    long_message = "x" * 200
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "classify",
+        lambda message: ClassificationResult(category="general", sentiment="neutral", urgency=5, reasoning="r"),
+    )
+    monkeypatch.setattr(
+        orchestrator_module,
+        "plan",
+        lambda classification, customer_id, db: PlanDecision(action="escalate", target_agent="none", reasoning="r"),
+    )
+    monkeypatch.setattr(
+        orchestrator_module,
+        "build_handoff_packet",
+        lambda message, attempted_fixes, urgency, confidence=None: HandoffPacket(
+            situation="s", attempted_fixes=attempted_fixes, root_cause_hypothesis="r", recommended_action="a",
+            urgency=urgency,
+        ),
+    )
+
+    result = handle_message(db_session, customer.id, long_message)
+
+    ticket = db_session.get(Ticket, result.ticket_id)
+    assert len(ticket.subject) <= 80
+    assert ticket.message == long_message  # full message preserved, only subject is truncated

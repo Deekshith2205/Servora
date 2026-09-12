@@ -42,3 +42,23 @@ class TicketOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EscalationDetailOut(BaseModel):
+    """Issue #14: full detail for one escalated ticket — the trace and
+    handoff packet are parsed out of Ticket.trace_json /
+    handoff_packet_json, which are only ever populated for tickets
+    created by a real /api/chat escalation (see orchestrator.py's
+    _create_escalation_ticket()). Both are None for the seeded demo
+    tickets, which never went through the pipeline."""
+
+    id: int
+    customer_id: int
+    category: str
+    subject: str
+    message: str
+    sentiment: str
+    urgency: int
+    status: str
+    trace: list[TraceStepOut] | None = None
+    handoff_packet: HandoffPacketOut | None = None

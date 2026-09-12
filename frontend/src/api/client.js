@@ -22,6 +22,10 @@ export function fetchEscalations() {
   return request("/api/escalations");
 }
 
+export function fetchEscalationDetail(ticketId) {
+  return request(`/api/escalations/${ticketId}`);
+}
+
 export function fetchAnalyticsSummary() {
   return request("/api/analytics/summary");
 }

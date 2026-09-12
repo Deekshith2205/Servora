@@ -107,9 +107,38 @@ makes one LLM call to produce `situation` / `root_cause_hypothesis` /
 `attempted_fixes` and `urgency` are passed straight through, not derived
 by the LLM. Scope note: this agent doesn't decide *whether* to escalate
 (that's already Planner/Verification's job) — it turns an
-already-made decision into something a human can act on. Issues #13
-(expose it via the API) and #14 (persist it against a Ticket for the
-Staff Dashboard) build on top of this.
+already-made decision into something a human can act on. Issue #13
+exposed the packet via the API and the customer chat bubble; issue #14
+(below) persists it against a real Ticket for the Staff Dashboard.
+
+### Staff Dashboard escalation detail (Issue #14 — implemented)
+
+Before this, `/api/chat` never created or touched a `Ticket` row at all —
+the Staff Dashboard's queue only ever showed the seeded demo tickets from
+`db/seed.py`. Now, `orchestrator.py::_create_escalation_ticket()` persists
+a real `Ticket` at both escalation points, with the reasoning trace and
+handoff packet JSON-encoded onto two new nullable columns
+(`Ticket.trace_json`, `Ticket.handoff_packet_json` — nullable so the
+seeded tickets, which never went through the pipeline, are unaffected).
+`GET /api/escalations/{id}` (new) returns the parsed trace + packet;
+`StaffDashboard.jsx` lets a staff member click a row to see them instead
+of just the summary fields.
+
+**Real bug found while writing this issue's tests, fixed in the same
+PR**: `test_health.py`/`test_tickets_api.py` both instantiate a bare
+`TestClient(app)` at module level — this does **not** reliably trigger
+FastAPI's ASGI lifespan (`Base.metadata.create_all()` +
+`seed_if_empty()`) in this environment; only `with TestClient(app) as
+client:` is guaranteed to. Every test written before #14 happened to
+avoid this gap (every DB-touching agent was mocked, or the test built
+its own isolated in-memory engine directly) — #14's tests are the first
+to need real seeded data through a bare `TestClient`, which is what
+surfaced it. Fixed with `tests/conftest.py`: a `pytest_configure` hook
+that creates+seeds the schema once before any test runs, independent of
+whichever TestClient pattern a given test file uses. This is the second
+bug of this shape found this way — see the customer-ID fix noted above
+(#11) — both are exactly the kind of gap the long-standing real-API-key
+verification issue (tracked in `CLAUDE.md`) exists to catch.
 
 ### Verification Agent (Issue #10 — implemented)
 

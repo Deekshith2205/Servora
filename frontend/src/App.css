@@ -137,3 +137,60 @@ td {
 .error {
   color: #b91c1c;
 }
+
+/* Issue #14 — Staff Dashboard escalation detail panel */
+.dashboard-layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.dashboard-layout > .panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.ticket-row {
+  cursor: pointer;
+}
+
+.ticket-row:hover {
+  background: #f9fafb;
+}
+
+.ticket-row.selected {
+  background: #eff6ff;
+}
+
+.escalation-detail h4 {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  color: #555;
+}
+
+.trace-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+}
+
+.trace-list li {
+  margin-bottom: 0.4rem;
+}
+
+.escalation-detail dl {
+  margin: 0;
+  font-size: 0.85rem;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 0.6rem;
+}
+
+.escalation-detail dt {
+  font-weight: 600;
+}
+
+.escalation-detail dd {
+  margin: 0;
+}
