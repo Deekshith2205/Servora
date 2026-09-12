@@ -501,7 +501,10 @@ def test_tool_exception_returns_error_result_not_crash():
     user_msg = second_call_kwargs["messages"][-1]
     err_block = next(b for b in user_msg["content"] if b.get("type") == "tool_result")
     assert err_block.get("is_error") is True
-    assert "DB connection lost" in err_block["content"]
+    # Raw exception text must NOT be sent to the model (hardened in Issue #5)
+    assert "DB connection lost" not in err_block["content"]
+    # Safe generic message must be present instead
+    assert "Tool execution failed" in err_block["content"]
 
 
 # ---------------------------------------------------------------------------
@@ -593,3 +596,160 @@ def test_get_client_constructs_without_network_call():
             mock_cls.return_value = MagicMock()
             client = get_client()
             assert client is not None
+
+
+# ---------------------------------------------------------------------------
+# H. Argument validation and exception sanitization (hardening — Issue #5)
+# ---------------------------------------------------------------------------
+
+from app.llm import _validate_tool_args  # noqa: E402  (appended after module-level imports)
+
+
+def test_validate_missing_required_arg_returns_error():
+    schema = {
+        "name": "get_customer_orders",
+        "input_schema": {
+            "type": "object",
+            "properties": {"customer_id": {"type": "integer"}},
+            "required": ["customer_id"],
+        },
+    }
+    error = _validate_tool_args("get_customer_orders", {}, schema)
+    assert error is not None
+    assert "customer_id" in error
+    assert "missing" in error.lower()
+
+
+def test_validate_wrong_type_integer_field_returns_error():
+    schema = {
+        "name": "get_customer_orders",
+        "input_schema": {
+            "type": "object",
+            "properties": {"customer_id": {"type": "integer"}},
+            "required": ["customer_id"],
+        },
+    }
+    # LLM sent a string instead of an integer
+    error = _validate_tool_args("get_customer_orders", {"customer_id": "one"}, schema)
+    assert error is not None
+    assert "customer_id" in error
+    assert "integer" in error
+
+
+def test_validate_wrong_type_string_field_returns_error():
+    schema = {
+        "name": "search_kb",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    }
+    error = _validate_tool_args("search_kb", {"query": 42}, schema)
+    assert error is not None
+    assert "query" in error
+    assert "string" in error
+
+
+def test_validate_boolean_rejected_for_integer_field():
+    """Python bool is a subclass of int; validate must explicitly reject it
+    when the schema declares 'integer'."""
+    schema = {
+        "name": "issue_refund",
+        "input_schema": {
+            "type": "object",
+            "properties": {"order_id": {"type": "integer"}},
+            "required": ["order_id"],
+        },
+    }
+    error = _validate_tool_args("issue_refund", {"order_id": True}, schema)
+    assert error is not None
+    assert "boolean" in error
+
+
+def test_validate_correct_args_returns_none():
+    schema = {
+        "name": "get_customer_orders",
+        "input_schema": {
+            "type": "object",
+            "properties": {"customer_id": {"type": "integer"}},
+            "required": ["customer_id"],
+        },
+    }
+    assert _validate_tool_args("get_customer_orders", {"customer_id": 1}, schema) is None
+
+
+def test_validate_none_schema_returns_none():
+    """No schema means no validation — the handler decides."""
+    assert _validate_tool_args("any_tool", {}, None) is None
+
+
+@patch("app.llm._client", None)
+def test_invalid_args_do_not_invoke_handler():
+    """Handler must NOT be called when argument validation fails."""
+    # Schema requires customer_id as integer; we supply a string
+    tool_block = _make_tool_use_block(
+        "tu_bad", "get_customer_orders", {"customer_id": "not-an-int"}
+    )
+    text_block = _make_text_block("I need the correct customer ID.")
+
+    first_response = _make_response([tool_block], stop_reason="tool_use")
+    second_response = _make_response([text_block], stop_reason="end_turn")
+
+    mock_client = MagicMock()
+    mock_client.messages.create.side_effect = [first_response, second_response]
+
+    handler = MagicMock(return_value=[])
+
+    with patch("app.llm.get_client", return_value=mock_client):
+        result = call_llm(
+            system_prompt="Agent",
+            messages=[{"role": "user", "content": "orders?"}],
+            tools=([TOOL_SCHEMAS[1]], {"get_customer_orders": handler}),
+        )
+
+    # Handler must not have been called
+    handler.assert_not_called()
+    # The tool_result must be an error
+    second_call_kwargs = mock_client.messages.create.call_args_list[1][1]
+    user_msg = second_call_kwargs["messages"][-1]
+    err_block = next(b for b in user_msg["content"] if b.get("type") == "tool_result")
+    assert err_block.get("is_error") is True
+    assert "customer_id" in err_block["content"]
+
+
+@patch("app.llm._client", None)
+def test_tool_exception_returns_sanitized_message_not_raw_exception():
+    """Tool execution exceptions must not expose internal details to the model."""
+    tool_block = _make_tool_use_block(
+        "tu_crash", "get_customer_orders", {"customer_id": 1}
+    )
+    text_block = _make_text_block("I'll try another approach.")
+
+    first_response = _make_response([tool_block], stop_reason="tool_use")
+    second_response = _make_response([text_block], stop_reason="end_turn")
+
+    mock_client = MagicMock()
+    mock_client.messages.create.side_effect = [first_response, second_response]
+
+    sensitive_error = "sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table"
+    exploding_handler = MagicMock(side_effect=RuntimeError(sensitive_error))
+
+    with patch("app.llm.get_client", return_value=mock_client):
+        call_llm(
+            system_prompt="Agent",
+            messages=[{"role": "user", "content": "test"}],
+            tools=([TOOL_SCHEMAS[1]], {"get_customer_orders": exploding_handler}),
+        )
+
+    second_call_kwargs = mock_client.messages.create.call_args_list[1][1]
+    user_msg = second_call_kwargs["messages"][-1]
+    err_block = next(b for b in user_msg["content"] if b.get("type") == "tool_result")
+    assert err_block.get("is_error") is True
+    # Must NOT contain any part of the raw exception / SQL details
+    assert "sqlalchemy" not in err_block["content"].lower()
+    assert "sqlite" not in err_block["content"].lower()
+    assert "OperationalError" not in err_block["content"]
+    # Must contain the safe generic message
+    assert "Tool execution failed" in err_block["content"]
+

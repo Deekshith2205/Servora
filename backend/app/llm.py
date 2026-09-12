@@ -6,6 +6,7 @@ agent stubs" and issue [P0] "Real tool-calling" (#5).
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Callable, TypeVar
 
 import anthropic
@@ -16,10 +17,22 @@ from app.config import settings
 T = TypeVar("T", bound=BaseModel)
 
 _client: anthropic.Anthropic | None = None
+_log = logging.getLogger(__name__)
 
 # Maximum number of tool-call ↔ tool-result round-trips before giving up.
 # Prevents runaway loops if the model keeps requesting tools without converging.
 _MAX_TOOL_ITERATIONS = 10
+
+# Map of JSON schema primitive type names to the Python types they represent.
+# Used to validate LLM-supplied tool arguments before they reach the database.
+_JSON_TYPE_MAP: dict[str, type | tuple[type, ...]] = {
+    "integer": int,
+    "number": (int, float),
+    "string": str,
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
 
 
 class LLMError(RuntimeError):
@@ -47,6 +60,67 @@ def get_client() -> anthropic.Anthropic:
             else anthropic.Anthropic()
         )
     return _client
+
+
+def _validate_tool_args(
+    tool_name: str,
+    args: dict,
+    schema: dict | None,
+) -> str | None:
+    """Validate LLM-supplied tool arguments against the tool's ``input_schema``.
+
+    Returns ``None`` when all required arguments are present and have the
+    correct JSON types. Returns a safe human-readable error string (suitable
+    for a ``tool_result`` error message) when validation fails.
+
+    Validation is intentionally lightweight — it only checks:
+      1. Required fields are present.
+      2. Present fields have the type declared in ``input_schema.properties``.
+
+    The goal is to block obviously malformed LLM output from reaching the
+    database, not to implement full JSON Schema validation.
+    """
+    if schema is None:
+        return None  # No schema available — let the handler fail naturally
+
+    input_schema = schema.get("input_schema", {})
+    properties: dict = input_schema.get("properties", {})
+    required: list[str] = input_schema.get("required", [])
+
+    # 1. Check required fields are present
+    missing = [field for field in required if field not in args]
+    if missing:
+        return (
+            f"Tool {tool_name!r} called with missing required argument(s): "
+            + ", ".join(repr(f) for f in missing)
+            + ". Please supply all required arguments and try again."
+        )
+
+    # 2. Check type of each supplied field that has a declared type
+    for field, value in args.items():
+        prop_def = properties.get(field)
+        if prop_def is None:
+            continue  # Extra/unknown fields pass through silently
+        declared_type = prop_def.get("type")
+        if declared_type is None:
+            continue
+        expected_py_type = _JSON_TYPE_MAP.get(declared_type)
+        if expected_py_type is None:
+            continue  # Unknown JSON type — skip
+        # Note: JSON integers are also valid Python bools; exclude bools when
+        # the schema expects a numeric type.
+        if declared_type in ("integer", "number") and isinstance(value, bool):
+            return (
+                f"Tool {tool_name!r} argument {field!r} must be {declared_type}, "
+                f"got boolean. Please provide a numeric value."
+            )
+        if not isinstance(value, expected_py_type):
+            return (
+                f"Tool {tool_name!r} argument {field!r} must be {declared_type}, "
+                f"got {type(value).__name__!r}. Please correct the argument type."
+            )
+
+    return None  # All checks passed
 
 
 def call_llm(
@@ -155,16 +229,35 @@ def call_llm(
                     })
                     continue
 
-                try:
-                    raw_result = tool_handlers[tool_name](tool_input)
-                    result_json = serialize_tool_result(raw_result)
-                except Exception as exc:  # noqa: BLE001
-                    # Tool execution error — report as a safe error result
+                # --- Validate arguments against the tool's input_schema ---- #
+                schema = next(
+                    (s for s in (tool_schemas or []) if s["name"] == tool_name), None
+                )
+                validation_error = _validate_tool_args(tool_name, tool_input, schema)
+                if validation_error:
                     tool_result_content.append({
                         "type": "tool_result",
                         "tool_use_id": tool_use_id,
                         "is_error": True,
-                        "content": f"Tool {tool_name!r} raised an error: {type(exc).__name__}: {exc}",
+                        "content": validation_error,
+                    })
+                    continue
+
+                try:
+                    raw_result = tool_handlers[tool_name](tool_input)
+                    result_json = serialize_tool_result(raw_result)
+                except Exception as exc:  # noqa: BLE001
+                    # Log locally for debugging, but never expose DB details
+                    # or Python tracebacks to the model.
+                    _log.warning(
+                        "Tool %r execution failed: %s: %s",
+                        tool_name, type(exc).__name__, exc,
+                    )
+                    tool_result_content.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "is_error": True,
+                        "content": "Tool execution failed. Please try again or use another tool.",
                     })
                     continue
 
