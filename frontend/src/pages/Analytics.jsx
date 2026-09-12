@@ -23,11 +23,16 @@ export default function Analytics() {
     doFetch();
   }, []);
 
-  const isNotImplemented = summary && summary.status === "not_implemented";
   const hasRecurringIssues = summary && summary.recurring_issues && summary.recurring_issues.length > 0;
   const hasChurnSignals = summary && summary.churn_signals && summary.churn_signals.length > 0;
+  
   const hasTrend = summary && summary.trend && summary.trend.length > 0;
   const trendMax = hasTrend ? Math.max(1, ...summary.trend.map((d) => d.count)) : 1;
+  
+  const hasSentiment = summary && summary.sentiment_trend && summary.sentiment_trend.length > 0;
+  const sentimentMax = hasSentiment ? Math.max(1, ...summary.sentiment_trend.map((d) => Math.max(d.positive, d.neutral, d.negative))) : 1;
+  
+  const hasConfidence = summary && summary.confidence_distribution && summary.confidence_distribution.total > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', flex: 1 }}>
@@ -58,66 +63,41 @@ export default function Analytics() {
              </div>
            </div>
         </div>
-      ) : isNotImplemented ? (
-        <div className="app-panel" style={{ background: 'var(--app-surface)', position: 'relative', overflow: 'hidden' }}>
-          
-          <div style={{position: 'absolute', top: '-100px', right: '-100px', opacity: 0.03, pointerEvents: 'none'}}>
-             <svg width="400" height="400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="20" x2="18" y2="10"></line>
-                <line x1="12" y1="20" x2="12" y2="4"></line>
-                <line x1="6" y1="20" x2="6" y2="14"></line>
-             </svg>
-          </div>
-
-          <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%' }}>
-            
-            <div style={{textAlign: 'center', margin: '3rem 0 4rem'}}>
-              <div style={{display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '64px', height: '64px', background: 'var(--app-surface-blue)', borderRadius: '16px', color: 'var(--app-primary)', marginBottom: '1.5rem'}}>
-                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                 </svg>
-              </div>
-              <h2 style={{fontFamily: "'Syne', sans-serif", fontSize: '2rem', margin: '0 0 1rem 0', color: 'var(--app-text-primary)'}}>Support Intelligence</h2>
-              <p style={{fontSize: '1.1rem', color: 'var(--app-text-secondary)', margin: 0, lineHeight: 1.6}}>
-                Analytics insights are being built for Servora's support operations.<br/>
-                Once available, this space will surface support patterns and outcomes.
-              </p>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-              
-              <div className="analytics-placeholder-card">
-                <div className="analytics-placeholder-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                  </svg>
-                </div>
-                <h3>Recurring issues</h3>
-                <p>Identify patterns across repeated customer requests to proactively address root causes.</p>
-                <div className="analytics-status-badge">In development</div>
-              </div>
-
-              <div className="analytics-placeholder-card">
-                <div className="analytics-placeholder-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                     <circle cx="9" cy="7" r="4"></circle>
-                     <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                     <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                  </svg>
-                </div>
-                <h3>Support signals</h3>
-                <p>Surface meaningful customer signals that may indicate retention risk or friction.</p>
-                <div className="analytics-status-badge">In development</div>
-              </div>
-
-            </div>
-          </div>
-        </div>
       ) : summary ? (
         <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+          
+          <div style={{marginBottom: '0.5rem'}}>
+            <h2 style={{fontFamily: "'Syne', sans-serif", fontSize: '1.75rem', margin: '0 0 0.5rem 0', color: 'var(--app-text-primary)'}}>Support Intelligence</h2>
+            <p style={{margin: 0, color: 'var(--app-text-secondary)'}}>Understand support activity and outcomes.</p>
+          </div>
+          
+          <div className="summary-cards-grid">
+            <div className="summary-card">
+              <span className="summary-card-title">Resolution Rate</span>
+              <span className="summary-card-value">
+                {summary.resolution_rate.total > 0 ? `${Math.round(summary.resolution_rate.rate * 100)}%` : '0%'}
+              </span>
+              <span className="summary-card-desc">
+                {summary.resolution_rate.total > 0 ? `${summary.resolution_rate.resolved} of ${summary.resolution_rate.total} processed` : 'No ticket data'}
+              </span>
+            </div>
+            
+            <div className="summary-card">
+              <span className="summary-card-title">Escalation Rate</span>
+              <span className="summary-card-value">
+                {summary.escalation_rate.total > 0 ? `${Math.round(summary.escalation_rate.rate * 100)}%` : '0%'}
+              </span>
+              <span className="summary-card-desc">
+                {summary.escalation_rate.total > 0 ? `${summary.escalation_rate.escalated} of ${summary.escalation_rate.total} processed` : 'No ticket data'}
+              </span>
+            </div>
+            
+            <div className="summary-card">
+              <span className="summary-card-title">Processed Conversations</span>
+              <span className="summary-card-value">{summary.resolution_rate.total}</span>
+              <span className="summary-card-desc">Resolved + escalated</span>
+            </div>
+          </div>
           <div className="escalations-header">
             <div>
               <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Recurring Issues</h3>
@@ -176,12 +156,6 @@ export default function Analytics() {
               </div>
             </div>
             {hasTrend && (
-              // SVG bars instead of flex-item divs: a flex-row child sized
-              // only by an inline height (px or %) rendered as 0 height in
-              // this app's actual layout context despite every CSS rule
-              // checked agreeing it should be 120px — an SVG rect's y/height
-              // are plain geometry, not layout, so it sidesteps whatever
-              // that was entirely.
               <div className="app-panel" style={{padding: '1rem 1rem 0.5rem'}}>
                 <svg
                   viewBox={`0 0 ${summary.trend.length * 12} 120`}
@@ -208,6 +182,112 @@ export default function Analytics() {
                 </svg>
               </div>
             )}
+          </div>
+
+          <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+            <div className="escalations-header">
+              <div>
+                <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Sentiment Trend</h3>
+                <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Daily ticket sentiment over the last 30 days.</p>
+              </div>
+              <div style={{display: 'flex', gap: '1rem', fontSize: '0.8rem'}}>
+                <span style={{display: 'flex', alignItems: 'center', gap: '0.4rem'}}><span style={{display: 'inline-block', width: '12px', height: '4px', borderRadius: '2px', background: 'var(--app-success-text)'}}></span> Positive</span>
+                <span style={{display: 'flex', alignItems: 'center', gap: '0.4rem'}}><span style={{display: 'inline-block', width: '12px', height: '4px', borderRadius: '2px', background: 'var(--app-warning-text)'}}></span> Neutral</span>
+                <span style={{display: 'flex', alignItems: 'center', gap: '0.4rem'}}><span style={{display: 'inline-block', width: '12px', height: '4px', borderRadius: '2px', background: 'var(--app-danger-text)'}}></span> Negative</span>
+              </div>
+            </div>
+            {hasSentiment && (
+              <div className="app-panel" style={{padding: '1rem 1rem 0.5rem'}}>
+                <svg
+                  viewBox={`0 0 ${summary.sentiment_trend.length * 12} 120`}
+                  width="100%"
+                  height="120"
+                  preserveAspectRatio="none"
+                >
+                  {summary.sentiment_trend.map((day, i) => {
+                    // stack bars
+                    const posH = (day.positive / sentimentMax) * 116;
+                    const neuH = (day.neutral / sentimentMax) * 116;
+                    const negH = (day.negative / sentimentMax) * 116;
+                    
+                    const drawH = Math.max(3, posH + neuH + negH);
+                    const drawNeg = negH > 0 ? Math.max(1, (negH / (posH + neuH + negH)) * drawH) : 0;
+                    const drawNeu = neuH > 0 ? Math.max(1, (neuH / (posH + neuH + negH)) * drawH) : 0;
+                    const drawPos = posH > 0 ? Math.max(1, (posH / (posH + neuH + negH)) * drawH) : 0;
+                    
+                    let y = 120;
+                    const elements = [];
+                    
+                    if (day.positive === 0 && day.neutral === 0 && day.negative === 0) {
+                      return (
+                        <rect key={day.date} x={i * 12} y={120 - 3} width={9} height={3} rx={1.5} style={{ fill: 'var(--app-border)' }} />
+                      );
+                    }
+                    
+                    if (drawPos > 0) {
+                      y -= drawPos;
+                      elements.push(<rect key={`${day.date}-pos`} x={i * 12} y={y} width={9} height={drawPos} fill="var(--app-success-text)" title={`${day.date}: ${day.positive} positive`} />);
+                    }
+                    if (drawNeu > 0) {
+                      y -= drawNeu;
+                      elements.push(<rect key={`${day.date}-neu`} x={i * 12} y={y} width={9} height={drawNeu} fill="var(--app-warning-text)" title={`${day.date}: ${day.neutral} neutral`} />);
+                    }
+                    if (drawNeg > 0) {
+                      y -= drawNeg;
+                      elements.push(<rect key={`${day.date}-neg`} x={i * 12} y={y} width={9} height={drawNeg} fill="var(--app-danger-text)" title={`${day.date}: ${day.negative} negative`} />);
+                    }
+                    
+                    return <g key={day.date}>{elements}</g>;
+                  })}
+                </svg>
+              </div>
+            )}
+          </div>
+
+          <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+            <div className="escalations-header">
+              <div>
+                <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Classifier Confidence</h3>
+                <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Distribution of LLM confidence scores.</p>
+              </div>
+            </div>
+            <div className="app-panel" style={{padding: '1.5rem', display: 'flex', gap: '2rem', alignItems: 'center'}}>
+              {hasConfidence ? (
+                <>
+                  <div style={{flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
+                      <div style={{width: '80px', fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>High (&ge;0.8)</div>
+                      <div style={{flex: 1, height: '8px', background: 'var(--app-surface)', borderRadius: '4px', overflow: 'hidden'}}>
+                        <div style={{width: `${(summary.confidence_distribution.high / summary.confidence_distribution.total) * 100}%`, height: '100%', background: 'var(--app-success-text)', borderRadius: '4px'}}></div>
+                      </div>
+                      <div style={{width: '40px', textAlign: 'right', fontWeight: 600}}>{summary.confidence_distribution.high}</div>
+                    </div>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
+                      <div style={{width: '80px', fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Moderate</div>
+                      <div style={{flex: 1, height: '8px', background: 'var(--app-surface)', borderRadius: '4px', overflow: 'hidden'}}>
+                        <div style={{width: `${(summary.confidence_distribution.moderate / summary.confidence_distribution.total) * 100}%`, height: '100%', background: 'var(--app-warning-text)', borderRadius: '4px'}}></div>
+                      </div>
+                      <div style={{width: '40px', textAlign: 'right', fontWeight: 600}}>{summary.confidence_distribution.moderate}</div>
+                    </div>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
+                      <div style={{width: '80px', fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Low (&lt;0.6)</div>
+                      <div style={{flex: 1, height: '8px', background: 'var(--app-surface)', borderRadius: '4px', overflow: 'hidden'}}>
+                        <div style={{width: `${(summary.confidence_distribution.low / summary.confidence_distribution.total) * 100}%`, height: '100%', background: 'var(--app-danger-text)', borderRadius: '4px'}}></div>
+                      </div>
+                      <div style={{width: '40px', textAlign: 'right', fontWeight: 600}}>{summary.confidence_distribution.low}</div>
+                    </div>
+                  </div>
+                  <div style={{textAlign: 'center', paddingLeft: '2rem', borderLeft: '1px solid var(--app-border)'}}>
+                    <div style={{fontSize: '2rem', fontWeight: 700, color: 'var(--app-text-primary)'}}>{summary.confidence_distribution.total}</div>
+                    <div style={{fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Total tickets</div>
+                  </div>
+                </>
+              ) : (
+                <div style={{width: '100%', textAlign: 'center', padding: '1rem'}}>
+                  <p style={{margin: 0, color: 'var(--app-text-muted)'}}>Classifier confidence data unavailable yet.</p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Issue #16: churn risk — customers with multiple still-unresolved tickets */}

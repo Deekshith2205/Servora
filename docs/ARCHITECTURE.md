@@ -173,3 +173,14 @@ Rules:
 - The manual real-API smoke test lives in
   `backend/scripts/check_tool_calling.py`. Run it with a real key before
   opening a PR that changes the tool-calling infrastructure.
+
+### Support Intelligence Analytics (Issues #15 and #62)
+
+The `GET /api/analytics/summary` endpoint provides the data backing the Analytics dashboard.
+It aggregates data across a consistent **30-day window**. The following metrics are provided:
+- **Recurring Issues**: Root-cause clusters built using deterministic similarity matching on ticket themes and text overlap (Issue #15).
+- **Churn Signals**: Identifies customers with multiple still-unresolved (open or escalated) tickets (Issue #16).
+- **Ticket Volume Trend**: A zero-padded array of daily ticket creation counts (Issue #16).
+- **Resolution & Escalation Rates**: Derived strictly from *processed* conversations within the 30-day window (`resolved` + `escalated`). Open tickets are excluded from the denominator to prevent distorting outcome rates, as they are not yet completed by the pipeline.
+- **Sentiment Trend**: Daily aggregated buckets mapping `Ticket.sentiment` counts (positive, neutral, negative) while safely ignoring missing or invalid sentiment strings.
+- **Classifier Confidence Distribution**: Groups classifier scores (`Ticket.confidence`) into high (>= 0.80), moderate (0.60-0.79), and low (< 0.60). Legacy or seed records with `NULL` confidence are correctly excluded from the denominator.
