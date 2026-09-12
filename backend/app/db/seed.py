@@ -46,6 +46,42 @@ def seed_if_empty() -> None:
                     urgency=4,
                     status="open",
                 ),
+                Ticket(
+                    customer_id=alice.id,
+                    category="order",
+                    subject="Order delayed after shipping label creation",
+                    message="I got a tracking number but the order is delayed after shipping label creation.",
+                    sentiment="negative",
+                    urgency=6,
+                    status="open",
+                ),
+                Ticket(
+                    customer_id=bob.id,
+                    category="order",
+                    subject="Tracking hasn't updated in days",
+                    message="My tracking hasn't updated in days and I need this item soon.",
+                    sentiment="negative",
+                    urgency=7,
+                    status="open",
+                ),
+                Ticket(
+                    customer_id=alice.id,
+                    category="order",
+                    subject="Package stuck at fulfillment stage",
+                    message="The package appears stuck at the fulfillment stage without any movement.",
+                    sentiment="negative",
+                    urgency=5,
+                    status="open",
+                ),
+                Ticket(
+                    customer_id=bob.id,
+                    category="order",
+                    subject="Shipment hasn't moved for a week",
+                    message="My shipment hasn't moved for a week. Can someone check?",
+                    sentiment="negative",
+                    urgency=6,
+                    status="open",
+                ),
             ]
         )
 
