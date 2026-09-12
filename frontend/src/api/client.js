@@ -6,7 +6,18 @@ async function request(path, options = {}) {
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`Request to ${path} failed: ${res.status}`);
+    // FastAPI's HTTPException bodies carry a "detail" string (e.g. issue
+    // #18's "Anthropic API key is missing or invalid...") that used to be
+    // silently discarded here in favor of a bare status code — surface it
+    // when present, since several endpoints now go out of their way to
+    // return a specific, readable detail instead of an opaque 500/502.
+    let detail = null;
+    try {
+      detail = (await res.json()).detail;
+    } catch {
+      // Body wasn't JSON (or was empty) — fall through to the generic message.
+    }
+    throw new Error(detail || `Request to ${path} failed: ${res.status}`);
   }
   return res.json();
 }
@@ -41,5 +52,12 @@ export function approveKBArticle(draft) {
   return request("/api/kb-articles", {
     method: "POST",
     body: JSON.stringify({ title: draft.title, body: draft.body, tags: draft.tags }),
+  });
+}
+
+export function sendBookingMessage(customerId, messages) {
+  return request("/api/booking", {
+    method: "POST",
+    body: JSON.stringify({ customer_id: customerId, messages }),
   });
 }
