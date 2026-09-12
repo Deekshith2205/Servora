@@ -288,7 +288,7 @@ scope:
   `analytics_summary()`'s response gained `churn_signals`/`trend` keys.
   `Analytics.jsx` renders a Ticket Volume Trend bar chart and a Churn
   Risk table. 10 new backend tests. PR:
-  https://github.com/Deekshith2205/Servora/pull/49 — open.
+  https://github.com/Deekshith2205/Servora/pull/49 — **merged**.
 
   **A CSS bug found live, not in tests**: the trend chart's bars
   (flex-item `div`s with an inline `height`) rendered at 0px despite a
@@ -311,7 +311,7 @@ scope:
   `StaffDashboard.jsx`'s escalation drawer gained a Resolution section
   (notes → Mark Resolved → KB suggestion card with Approve/Dismiss, or
   a "no suggestion" message). PR:
-  https://github.com/Deekshith2205/Servora/pull/50 — open.
+  https://github.com/Deekshith2205/Servora/pull/50 — **merged**.
 
   **A third real bug, and the first one caught live in the browser
   rather than by writing a test carefully**: `llm.py` swallowed a bare
@@ -359,38 +359,148 @@ scope:
   imported — verified via `md5sum` that the dev DB is untouched by a
   `pytest` run.
 
-  **P3 is now fully done** (#15 merged already, #16 and #17 both open
-  as PRs from this session).
+  **P3 is now fully done** (#15, #16, #17 all merged).
+
+### 2026-09-13 (continued) — P4 complete (#18-#21) and P5 complete (#22): all originally-scoped issues now implemented
+
+All four P4 (hotel voice-booking stretch feature) issues plus the one P5
+issue are implemented and PR'd, each following the same branch → implement
+→ test → PR workflow, stacked in dependency order (#18 → #19, #18 → #20 →
+#21; #22 independent, off `main`):
+
+- **#18** (Booking Agent) — `app/tools/booking_tools.py`'s
+  `check_availability`/`create_draft_booking` (real overlap-aware
+  availability math against `Room.total_count`, never trusting a prior
+  claim before actually writing a booking) plus
+  `app/agents/booking.py::run_booking_agent()`. **Stateless per call, by
+  design**: unlike the support-ticket specialists (one message in, one
+  reply out), a booking is a multi-turn slot-filling conversation, so the
+  caller (`POST /api/booking`) passes the FULL transcript each turn — the
+  same `{role, content}` shape `call_llm` already accepts — rather than
+  inventing new server-side "in-progress booking" state. PR:
+  https://github.com/Deekshith2205/Servora/pull/51 — **merged** (by the
+  team, not this session).
+
+  **Proactive fix, not reactive this time**: applied issue #17's lesson
+  (a bare `TypeError` from the Anthropic SDK with no credentials at all
+  isn't an `anthropic.*` exception and wasn't converted to `LLMError`)
+  *before* hitting it again — `POST /api/booking` explicitly catches
+  `LLMError` and returns `HTTPException(502, ...)`, since this endpoint
+  has no best-effort degrade path (the reply IS the response). Verified
+  live: a clean 502 with a readable detail, not a raw crash.
+
+- **#19** (browser-mic voice I/O) — new "Book a Room" nav tab
+  (`BookingChat.jsx`): `SpeechRecognition` for the mic button,
+  `SpeechSynthesis` to read replies aloud, both feature-detected (the
+  text path always works regardless of browser support). PR:
+  https://github.com/Deekshith2205/Servora/pull/52 — open.
+
+  **Real bug found and fixed while wiring this up**: `api/client.js`'s
+  shared `request()` helper discarded a failed response's JSON `detail`
+  field in favor of a bare `"Request to X failed: 502"` — every endpoint
+  that goes out of its way to return a specific, readable error (like
+  #18's booking-chat 502 above) was having that message silently thrown
+  away before a user ever saw it. Fixed to surface `detail` when present.
+  Verified live: with no API key configured, the chat now shows the real
+  "Anthropic API key is missing or invalid..." message instead of a bare
+  status code; also confirmed the in-pane mic-permission-denied path
+  degrades gracefully (clear message, button returns to idle, doesn't
+  stick on "Listening…").
+
+- **#20** (staff booking review/edit UI) — new "Bookings" section in the
+  Staff Dashboard (`BookingsPanel.jsx`) + `app/api/bookings.py`
+  (`GET`/`PATCH /bookings/{id}`, `POST /bookings/{id}/confirm`),
+  completing `docs/ARCHITECTURE.md`'s `AI_DRAFTED → STAFF_REVIEWED →
+  CONFIRMED` state machine. `Booking` gained `edit_log_json` (a flat
+  `{field, old_value, new_value, at}` list — only fields that actually
+  changed get logged, no phantom "changed from X to X" entries) and an
+  `edit_log` property so Pydantic's `from_attributes` mode can read it
+  directly. PR: https://github.com/Deekshith2205/Servora/pull/53 — open.
+
+  Verified live end-to-end against the real dev DB (no LLM involved, so
+  no API-key dependency): seeded a booking directly, confirmed it
+  through the UI, then edited a second one and confirmed the drawer's
+  "Edit history" rendered the diff correctly.
+
+- **#21** (customer notification on booking edit) — new
+  `app/services/notifications.py`: `build_booking_edit_diff_message()`
+  composes a plain-language diff from one PATCH's new log entries;
+  `notify_customer_of_booking_edit()` records it as a new `Notification`
+  row (`GET /api/notifications` to list them), wired into `#20`'s
+  `update_booking()` so every real edit produces one. PR:
+  https://github.com/Deekshith2205/Servora/pull/54 — open.
+
+  **A deliberate, explicitly-documented deviation from the issue
+  text**: NOT a real email/SMS send, despite the issue suggesting "the
+  Gmail connector already available in this workspace" — that connector
+  belongs to the chat session that built the feature, not to the
+  deployed FastAPI app, which would need its own Gmail OAuth
+  credentials/consent flow to send mail as part of its own runtime
+  behavior. A recorded, queryable `Notification` row matches this
+  codebase's existing convention for every other external dependency
+  (`mock_tools.py` mocks orders/refunds/room lookups too) — real
+  provider integration is a self-contained follow-up. Verified live:
+  edited a booking's guest count through the actual UI, saw the exact
+  diff message in a new "Customer notified" section, confirmed the
+  `Notification` row via `GET /api/notifications` independently.
+
+  **P4 is now fully implemented** (all four issues; #18 merged, #19/#20/
+  #21 open as PRs from this session).
+
+- **#22** (richer seed data + demo script), the one P5 issue — added a
+  "Bluetooth Speaker" order and two prior *resolved* "package never
+  arrived" tickets for Alice, and wrote `docs/DEMO_SCRIPT.md` covering
+  the exact message to type for each of the 3 required scenarios
+  (autonomous resolve, multi-step investigation + action, escalation
+  with full handoff). **Built deliberately around Alice
+  (`customer_id=1`), not Bob**: `CustomerChat.jsx`/`BookingChat.jsx` both
+  hardcode `DEMO_CUSTOMER_ID = 1`, so every scenario reachable through
+  the actual UI has to be something she can trigger — Bob's existing
+  duplicate-charge ticket isn't demoable live as the UI stands today.
+  PR: https://github.com/Deekshith2205/Servora/pull/55 — open.
+
+  **P5 is now fully implemented too** — every issue from the original
+  22-issue backlog (#2-#22) has been picked up by some session. What's
+  left is exactly the "Next up" list below: merging the remaining open
+  PRs, the real-API-key verification gap, and a couple of small
+  well-scoped fixes.
 
 ## Next up (in priority order)
 
-1. **Still the single highest-priority loose thread, now spanning
-   FOURTEEN+ issues.** Nobody has confirmed `call_llm()` against a real
-   Anthropic API key. Three real bugs have now been found without one —
-   missing customer ID (#11), a TestClient lifespan gap (#14), and the
+1. Merge the remaining open PRs: #52 (#19), #53 (#20), #54 (#21), #55
+   (#22) — #18/#51 is already merged, so #52/#53 (both depend on #18)
+   should now diff cleanly against `main`.
+2. **Still the single highest-priority loose thread, now spanning the
+   ENTIRE backlog.** Nobody has confirmed `call_llm()` against a real
+   Anthropic API key. Real bugs have repeatedly been found without one —
+   missing customer ID (#11), a TestClient lifespan gap (#14), the
    bare-`TypeError`/CORS-opaque-error gap (#17) — a real key might still
-   find a fourth, categorically different one (actual model behavior,
-   which nothing here can substitute for).
-2. Merge PRs #49 (#16) and #50 (#17) to close out P3.
+   find something categorically different (actual model behavior,
+   which nothing here can substitute for). Also the only way to actually
+   run `docs/DEMO_SCRIPT.md`'s 3 scenarios for real.
 3. Two small, well-scoped fixes identified previously, still not done:
    (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite
-   tables), (b) a **general** FastAPI exception handler so an unhandled
-   error of any kind still carries CORS headers back to the browser —
-   #17 fixed the one specific exception *type* that was hitting this,
-   not the general gap.
-4. With P3 done, next is P4: the hotel voice-booking stretch feature
-   (see Key decisions above) — biggest remaining scope item, worth
-   scoping into sub-issues before anyone starts.
-5. Issue #30 is done — no longer on this list.
+   tables — hit repeatedly again this session, once per new
+   migration-touching PR), (b) a **general** FastAPI exception handler
+   so an unhandled error of any kind still carries CORS headers back to
+   the browser — #17 fixed one specific exception *type*, not the
+   general gap.
+4. Optional, not blocking a demo: wire up a real Gmail/SMS provider
+   behind `app/services/notifications.py` (see #21's entry above for
+   why it's mocked today) — self-contained, doesn't change any caller.
+5. With the whole original backlog done, the next real planning step is
+   deciding what's worth adding *beyond* issue #22 before the actual
+   judging — polish, a second stretch feature, or just hardening what
+   exists. Worth a fresh conversation rather than assuming.
 
 ## Open questions / blockers
 
 - **`call_llm()` has never been confirmed against a real Anthropic API
-  key, by any session, across every P0/P1/P2/P3 issue.** This has
-  already caused three real, independently-discovered bugs (missing
-  customer ID in #11; the TestClient lifespan gap in #14; the bare-
-  `TypeError` gap in #17). Top priority — see Next up #1.
+  key, by any session, across the entire backlog.** This has already
+  caused several real, independently-discovered bugs (missing customer
+  ID in #11; the TestClient lifespan gap in #14; the bare-`TypeError`
+  gap in #17). Top priority — see Next up #2.
 - **CI is not a required check yet.** Someone with admin access on
   github.com/Deekshith2205/Servora needs to go to Settings → Branches →
   add a branch protection rule on `main` → require the CI status checks
