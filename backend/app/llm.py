@@ -129,11 +129,13 @@ def call_llm(
     response_schema: type[T] | None = None,
     max_tokens: int = 4096,
     tools: tuple[list[dict], dict[str, Callable[[dict], Any]]] | None = None,
+    tool_call_log: list[str] | None = None,
 ) -> T | str:
     """Call the configured LLM, optionally with Anthropic tool-calling.
 
-    Existing callers are fully backward-compatible — ``tools`` defaults to
-    ``None`` and the plain-text / structured-output paths are unchanged.
+    Existing callers are fully backward-compatible — ``tools`` and
+    ``tool_call_log`` both default to ``None`` and the plain-text /
+    structured-output paths are unchanged.
 
     When ``tools`` is supplied it must be a 2-tuple:
       - ``tool_schemas``: list of Anthropic ToolParam dicts (name, description,
@@ -143,6 +145,12 @@ def call_llm(
         LLM-supplied ``input`` dict and returns a Python value. The result is
         serialized to JSON before being fed back to the model as a
         ``tool_result`` message.
+
+    Pass a mutable list as ``tool_call_log`` to have every tool name the
+    model requests appended to it, in call order (including unknown/failed
+    calls — the log records what was *attempted*, for the reasoning trace).
+    Useful for populating something like a specialist's ``used_tools`` field
+    without changing ``call_llm``'s return type.
 
     Tool-calling loop (repeated up to ``_MAX_TOOL_ITERATIONS`` times):
       1. Send messages + tool schemas to Anthropic.
@@ -218,6 +226,9 @@ def call_llm(
                 tool_name: str = block.name
                 tool_input: dict = block.input  # type: ignore[assignment]
                 tool_use_id: str = block.id
+
+                if tool_call_log is not None:
+                    tool_call_log.append(tool_name)
 
                 if tool_name not in tool_handlers:
                     # Unknown tool — report gracefully so the model can recover
