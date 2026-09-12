@@ -21,6 +21,9 @@ export default function Analytics() {
 
   const isNotImplemented = summary && summary.status === "not_implemented";
   const hasRecurringIssues = summary && summary.recurring_issues && summary.recurring_issues.length > 0;
+  const hasChurnSignals = summary && summary.churn_signals && summary.churn_signals.length > 0;
+  const hasTrend = summary && summary.trend && summary.trend.length > 0;
+  const trendMax = hasTrend ? Math.max(1, ...summary.trend.map((d) => d.count)) : 1;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', flex: 1 }}>
@@ -159,6 +162,99 @@ export default function Analytics() {
               </div>
             </div>
           )}
+
+          {/* Issue #16: ticket volume trend */}
+          <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+            <div className="escalations-header">
+              <div>
+                <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Ticket Volume Trend</h3>
+                <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Daily ticket volume over the last 30 days.</p>
+              </div>
+            </div>
+            {hasTrend && (
+              // SVG bars instead of flex-item divs: a flex-row child sized
+              // only by an inline height (px or %) rendered as 0 height in
+              // this app's actual layout context despite every CSS rule
+              // checked agreeing it should be 120px — an SVG rect's y/height
+              // are plain geometry, not layout, so it sidesteps whatever
+              // that was entirely.
+              <div className="app-panel" style={{padding: '1rem 1rem 0.5rem'}}>
+                <svg
+                  viewBox={`0 0 ${summary.trend.length * 12} 120`}
+                  width="100%"
+                  height="120"
+                  preserveAspectRatio="none"
+                >
+                  {summary.trend.map((day, i) => {
+                    const barHeight = Math.max(3, (day.count / trendMax) * 116);
+                    return (
+                      <rect
+                        key={day.date}
+                        x={i * 12}
+                        y={120 - barHeight}
+                        width={9}
+                        height={barHeight}
+                        rx={1.5}
+                        style={{ fill: 'var(--app-primary)', opacity: day.count ? 1 : 0.15 }}
+                      >
+                        <title>{`${day.date}: ${day.count} ticket${day.count === 1 ? '' : 's'}`}</title>
+                      </rect>
+                    );
+                  })}
+                </svg>
+              </div>
+            )}
+          </div>
+
+          {/* Issue #16: churn risk — customers with multiple still-unresolved tickets */}
+          <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+            <div className="escalations-header">
+              <div>
+                <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Churn Risk</h3>
+                <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Customers with multiple still-unresolved tickets.</p>
+              </div>
+              {hasChurnSignals && (
+                <div className="escalations-count">
+                  {summary.churn_signals.length} flagged
+                </div>
+              )}
+            </div>
+
+            {hasChurnSignals ? (
+              <div className="app-table-container">
+                <table className="app-table">
+                  <thead>
+                    <tr>
+                      <th>Customer</th>
+                      <th>Unresolved</th>
+                      <th>Categories</th>
+                      <th>Risk</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.churn_signals.map((s) => (
+                      <tr key={s.customer_id}>
+                        <td>{s.customer_name || `Customer #${s.customer_id}`}</td>
+                        <td>{s.unresolved_ticket_count}</td>
+                        <td style={{textTransform: 'capitalize'}}>{s.categories.join(', ')}</td>
+                        <td>
+                          <span className={`app-badge ${s.risk_level === 'high' ? 'badge-danger' : 'badge-warning'}`}>
+                            {s.risk_level}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="app-panel-fit" style={{justifyContent: 'center', minHeight: '160px', border: '1px solid var(--app-border)'}}>
+                <div className="app-empty-state" style={{padding: '1.5rem'}}>
+                  <p style={{margin: 0}}>No customers currently show a repeat-unresolved pattern.</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       ) : null}
       

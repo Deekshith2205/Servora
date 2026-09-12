@@ -231,27 +231,75 @@ one produced):
   test-infrastructure gap, not an LLM-behavior gap. Worth remembering:
   "mock everything LLM-related" hides more than one kind of blind spot.
 
+### 2026-09-13 (continued) — everything above merged; teammate redesign + P3 started, verified live
+
+All of #39, #40, #41, #43, #44, #45, and #46 are now **merged**. On top
+of that, while this session was focused on backend agent work, a
+teammate (via Antigravity) delivered far more than issue #30's original
+scope:
+
+- **Issue #30 landing page** — done well beyond spec: a real hero,
+  stat-free "how it works" pipeline diagram matching the actual agent
+  graph, honest customer/staff feature sections using real product
+  screenshots, real resource links, a genuine FAQ, and — correctly — **no
+  fabricated stats, testimonials, or awards** anywhere. Routes to the
+  real app at `/app`. Verified live in-browser, not just reviewed as a
+  diff.
+- **The redesign went far past the landing page** — the whole app shell
+  (sidebar nav, icons), Customer Chat, Staff Dashboard, and Analytics all
+  got a full visual + UX pass across several commits
+  (`fe70a77`, `b56433d`, `2655962`, `d8eb1a0`). This landed *concurrently*
+  with this session's P2 work on the same files (`CustomerChat.jsx`,
+  `StaffDashboard.jsx`, `App.css`) — the teammate/merger already resolved
+  that conflict directly on the design branch (commit `2c358fb`, "fix:
+  resolve main merge conflicts in marketing UI") before merging PR #38.
+  Verified live: the #14 escalation-detail feature (click a ticket → see
+  trace/handoff packet, or the "predates the pipeline" fallback for
+  seeded tickets) still works correctly inside the redesigned dashboard.
+- **Issue #15** (root-cause clustering across tickets, P3) is also
+  **already merged** (PR #47) — deterministic clustering (shared
+  category + theme, or ≥2 shared meaningful tokens) over open tickets
+  from the last 30 days, connected-components grouping, a
+  root-cause-hypothesis string per cluster. `Analytics.jsx` now renders
+  real cluster cards instead of the stub. **P3 is already partway done
+  without this session doing it.**
+- **Found while verifying all this live** (not a code bug, a dev-workflow
+  footgun): `Base.metadata.create_all()` does not retroactively add new
+  columns to an existing SQLite table. A `servora.db` created before a
+  schema change (e.g. #14's `trace_json`/`handoff_packet_json`) will
+  throw `OperationalError: no such column` until the file is deleted and
+  reseeded. Worth a `CONTRIBUTING.md` note: *"pulled changes that touch
+  `models.py`? Delete `backend/servora.db` before restarting."* Not done
+  yet — flagging here so it isn't lost.
+- Also found live: an **unhandled backend exception currently produces a
+  bare "Failed to fetch" in the browser**, not a readable error — FastAPI's
+  default handler for an uncaught exception bypasses `CORSMiddleware`
+  entirely, so the browser can't read the response at all. Affects any
+  unhandled error, not just the missing-API-key case. A global exception
+  handler that still emits CORS headers would fix this for good. Not
+  done yet.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning
-   TWELVE issues (#2, #3, #4, #6-#14)**: nobody has confirmed
-   `call_llm()` against a real Anthropic API key. Every `scripts/
-   check_*.py` script is sitting there ready to run with one. Two real
-   bugs have now been found by *writing tests more carefully* — a real
-   key might well find a third.
-2. Merge PRs #39, #40, #41 (P1) then #43, #44, #45 (P2), in that order —
-   each stacks on the previous within its batch.
-3. P2 is done. Next up is P3: issue #15 (root-cause clustering across
-   tickets), #16 (analytics dashboard), #17 (Learning Agent — draft KB
-   updates from resolved escalations).
-4. Issue #30 (landing page design) — separate track, in parallel with
-   all of the above, whenever the teammate doing frontend visual design
-   (via Antigravity) picks it up.
+   TWELVE+ issues.** Nobody has confirmed `call_llm()` against a real
+   Anthropic API key. Two real bugs have already been found by careful
+   testing/manual verification alone — a real key might well find a
+   third categorically different one (actual model behavior, which nothing
+   here can substitute for).
+2. Two small, well-scoped fixes identified above, not yet done: (a) a
+   `CONTRIBUTING.md` note about deleting `servora.db` after a schema
+   change, (b) a global FastAPI exception handler so unhandled errors
+   don't come out as an opaque CORS failure in the browser.
+3. P3 continues: #15 is done; #16 (analytics dashboard beyond
+   clustering — churn/anomaly signals) and #17 (Learning Agent — draft
+   KB updates from resolved escalations) are still open.
+4. Issue #30 is done (see above) — no longer on this list.
 
 ## Open questions / blockers
 
 - **`call_llm()` has never been confirmed against a real Anthropic API
-  key, by any session, across twelve P0/P1/P2 issues.** This has already
+  key, by any session, across every P0/P1/P2 issue.** This has already
   caused two real, independently-discovered bugs (missing customer ID
   in #11; the TestClient lifespan gap in #14). Top priority — see Next
   up #1.

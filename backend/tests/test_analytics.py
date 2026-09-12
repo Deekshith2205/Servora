@@ -142,3 +142,99 @@ def test_analytics_clustering_is_deterministic():
         assert cluster1["pattern"] == cluster2["pattern"]
         assert cluster1["root_cause_hypothesis"] == cluster2["root_cause_hypothesis"]
         assert cluster1["ticket_ids"] == cluster2["ticket_ids"]
+
+
+# ---------------------------------------------------------------------------
+# Issue #16: churn signals + trend
+# ---------------------------------------------------------------------------
+
+
+def test_churn_signal_below_threshold_is_not_flagged():
+    db = SessionLocal()
+    db.query(Ticket).delete()
+    db.commit()
+
+    db.add(Ticket(customer_id=1, category="order", subject="Where is my order", message="?", status="open"))
+    db.commit()
+
+    with TestClient(app) as client:
+        response = client.get("/api/analytics/summary")
+        assert response.status_code == 200
+        assert response.json()["churn_signals"] == []
+
+
+def test_churn_signal_medium_risk_at_two_unresolved_tickets():
+    db = SessionLocal()
+    db.query(Ticket).delete()
+    db.commit()
+
+    db.add_all([
+        Ticket(customer_id=1, category="order", subject="a", message="a", status="open"),
+        Ticket(customer_id=1, category="billing", subject="b", message="b", status="escalated"),
+    ])
+    db.commit()
+
+    with TestClient(app) as client:
+        data = client.get("/api/analytics/summary").json()
+
+    signals = data["churn_signals"]
+    assert len(signals) == 1
+    assert signals[0]["customer_id"] == 1
+    assert signals[0]["unresolved_ticket_count"] == 2
+    assert signals[0]["risk_level"] == "medium"
+
+
+def test_churn_signal_high_risk_at_four_unresolved_tickets():
+    db = SessionLocal()
+    db.query(Ticket).delete()
+    db.commit()
+
+    db.add_all([
+        Ticket(customer_id=1, category="order", subject=f"t{i}", message="m", status="open") for i in range(4)
+    ])
+    db.commit()
+
+    with TestClient(app) as client:
+        data = client.get("/api/analytics/summary").json()
+
+    signals = data["churn_signals"]
+    assert len(signals) == 1
+    assert signals[0]["risk_level"] == "high"
+    assert signals[0]["unresolved_ticket_count"] == 4
+
+
+def test_churn_signal_resolved_tickets_dont_count():
+    db = SessionLocal()
+    db.query(Ticket).delete()
+    db.commit()
+
+    db.add_all([
+        Ticket(customer_id=1, category="order", subject="a", message="a", status="resolved"),
+        Ticket(customer_id=1, category="order", subject="b", message="b", status="resolved"),
+        Ticket(customer_id=1, category="order", subject="c", message="c", status="resolved"),
+    ])
+    db.commit()
+
+    with TestClient(app) as client:
+        data = client.get("/api/analytics/summary").json()
+
+    assert data["churn_signals"] == []
+
+
+def test_trend_is_zero_padded_across_the_window():
+    db = SessionLocal()
+    db.query(Ticket).delete()
+    db.commit()
+
+    db.add(Ticket(customer_id=1, category="order", subject="a", message="a", status="open"))
+    db.commit()
+
+    with TestClient(app) as client:
+        data = client.get("/api/analytics/summary").json()
+
+    trend = data["trend"]
+    assert len(trend) == 31  # today plus the last 30 days
+    assert sum(day["count"] for day in trend) == 1  # exactly the one ticket just created
+    assert trend[-1]["count"] == 1  # most recent day (today) has it
+    # dates are in ascending order
+    assert [d["date"] for d in trend] == sorted(d["date"] for d in trend)
