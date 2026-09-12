@@ -1,6 +1,4 @@
-"""Specialist resolution agents. Billing implemented (issue #6). The other
-three are still STUBS, each tracked by its own issue: "Implement Technical
-Agent", "Implement Order Agent", "Implement Account Agent".
+"""Specialist resolution agents. All four implemented (issues #6-#9).
 
 Rules for the real implementation (carried over from the architecture doc,
 see docs/ARCHITECTURE.md):
@@ -15,6 +13,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from app.agents.memory import load_profile
 from app.llm import call_llm
 from app.tools.tool_registry import build_tool_registry
 
@@ -50,18 +49,34 @@ def _estimate_confidence(used_tools: list[str]) -> float:
     return 0.2
 
 
-def _run_specialist(db: Session, system_prompt: str, message: str, max_tokens: int = 1500) -> SpecialistResponse:
+def _run_specialist(
+    db: Session, system_prompt: str, customer_id: int, message: str, max_tokens: int = 1500
+) -> SpecialistResponse:
     """Shared plumbing for a tool-calling specialist: wires the DB-bound
     tool registry into call_llm(), captures which tools were actually used,
     and derives a confidence score from that — so each specialist function
     only needs to supply its own system prompt.
+
+    Also builds the user-facing message content: the customer's ID (so the
+    model can actually call get_customer_orders/get_customer with the
+    right ID — this was silently missing before issue #11 wired it in;
+    every specialist was previously relying on the model to guess or ask,
+    which a real API call would have surfaced immediately, and no session
+    had a key to catch it) and, when issue #11's memory has anything on
+    file, a short list of previously learned facts about this customer.
     """
+    profile = load_profile(customer_id, db)
     tool_schemas, tool_handlers = build_tool_registry(db)
     used_tools: list[str] = []
 
+    context_lines = [f"Customer ID: {customer_id}"]
+    if profile.get("facts"):
+        context_lines.append("Known facts about this customer from past interactions: " + "; ".join(profile["facts"]))
+    context_lines.append(f"Customer message: {message}")
+
     reply = call_llm(
         system_prompt=system_prompt,
-        messages=[{"role": "user", "content": message}],
+        messages=[{"role": "user", "content": "\n".join(context_lines)}],
         tools=(tool_schemas, tool_handlers),
         tool_call_log=used_tools,
         max_tokens=max_tokens,
@@ -94,22 +109,86 @@ and policy, don't just say "I checked and it's fine."
 
 
 def resolve_billing(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _BILLING_SYSTEM_PROMPT, message)
+    return _run_specialist(db, _BILLING_SYSTEM_PROMPT, customer_id, message)
+
+
+_TECHNICAL_SYSTEM_PROMPT = """You are the Technical specialist agent in an \
+autonomous customer support pipeline. You handle product/app technical \
+issues: bugs, crashes, errors, and "how do I..." troubleshooting \
+questions. You have no ability to take an action (no refunds, no account \
+changes) — your job is to ground an answer in real documentation, not to \
+fix anything.
+
+You must ground every troubleshooting claim in a tool call — never invent \
+a fix from memory.
+
+Typical flow:
+1. Call search_kb with keywords from the customer's issue to find a \
+relevant troubleshooting article.
+2. Optionally call get_customer_tickets to check whether this customer has \
+reported the same or a related issue before — a repeat, unresolved issue \
+is worth naming explicitly in your reply, since it matters for escalation.
+3. If a relevant KB article is found, walk the customer through it in your \
+reply, citing it directly.
+4. If no relevant KB article is found, say so honestly and suggest the \
+issue may need a human agent — do NOT guess at a fix that isn't grounded \
+in what search_kb actually returned.
+"""
 
 
 def resolve_technical(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    # TODO(issue: technical-agent)
-    return SpecialistResponse(reply="STUB: technical agent not implemented yet.", confidence=0.0)
+    return _run_specialist(db, _TECHNICAL_SYSTEM_PROMPT, customer_id, message)
+
+
+_ORDER_SYSTEM_PROMPT = """You are the Order specialist agent in an \
+autonomous customer support pipeline. You handle order status, delivery, \
+and shipping-delay questions.
+
+You must ground every claim about an order's status or timing in a tool \
+call — never state one from memory alone.
+
+Typical flow:
+1. Call get_customer_orders to find the order(s) the customer means.
+2. If an order looks delayed (still "processing" well past when it should \
+have shipped, or the customer describes an unusually long wait), call \
+search_kb (e.g. query "order delays") to check the delay policy. If the \
+order qualifies, PROACTIVELY mention the courtesy discount in your reply \
+— do not wait for the customer to ask for it.
+3. Reply citing the specific order's status and, when applicable, the \
+delay policy.
+
+Important limitation: you do NOT have a tool that actually issues a \
+discount code. When a discount applies, tell the customer they are \
+eligible and that it will be applied/sent to them — never claim you have \
+already applied a discount, since that would not be true.
+"""
 
 
 def resolve_order(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    # TODO(issue: order-agent): real implementation using mock_tools.get_customer_orders
-    return SpecialistResponse(reply="STUB: order agent not implemented yet.", confidence=0.0)
+    return _run_specialist(db, _ORDER_SYSTEM_PROMPT, customer_id, message)
+
+
+_ACCOUNT_SYSTEM_PROMPT = """You are the Account specialist agent in an \
+autonomous customer support pipeline. You handle profile/account-detail \
+questions (name, email, phone, tier) and are READ-ONLY — you cannot reset \
+a password or change any account detail (there is no tool for that yet).
+
+You must ground every claim about the account in a tool call — never \
+state one from memory alone.
+
+Typical flow:
+1. Call get_customer to look up the account.
+2. Reply with the requested information, citing what get_customer \
+returned.
+3. If the customer asks for something you cannot do (reset a password, \
+change an email, close an account), say so plainly and note a human agent \
+can help with that — do not attempt it and do not refuse without \
+explanation.
+"""
 
 
 def resolve_account(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    # TODO(issue: account-agent)
-    return SpecialistResponse(reply="STUB: account agent not implemented yet.", confidence=0.0)
+    return _run_specialist(db, _ACCOUNT_SYSTEM_PROMPT, customer_id, message)
 
 
 SPECIALISTS = {

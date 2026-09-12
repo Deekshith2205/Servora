@@ -25,7 +25,7 @@ def _mock_llm(schema_instance):
 
 
 def test_plan_resolve_routes_to_target_agent(monkeypatch):
-    monkeypatch.setattr(planner, "load_profile", lambda customer_id: {})
+    monkeypatch.setattr(planner, "load_profile", lambda customer_id, db: {})
     monkeypatch.setattr(planner.mock_tools, "get_customer_tickets", lambda db, customer_id: [])
     monkeypatch.setattr(
         planner,
@@ -42,7 +42,7 @@ def test_plan_resolve_routes_to_target_agent(monkeypatch):
 def test_plan_resolve_without_target_agent_fails_safe_to_escalate(monkeypatch):
     # If the LLM says "resolve" but somehow gives no real target, that's an
     # invalid state — must fail safe to escalation, not guess a specialist.
-    monkeypatch.setattr(planner, "load_profile", lambda customer_id: {})
+    monkeypatch.setattr(planner, "load_profile", lambda customer_id, db: {})
     monkeypatch.setattr(planner.mock_tools, "get_customer_tickets", lambda db, customer_id: [])
     monkeypatch.setattr(
         planner,
@@ -57,7 +57,7 @@ def test_plan_resolve_without_target_agent_fails_safe_to_escalate(monkeypatch):
 
 
 def test_plan_falls_back_on_invalid_action(monkeypatch):
-    monkeypatch.setattr(planner, "load_profile", lambda customer_id: {})
+    monkeypatch.setattr(planner, "load_profile", lambda customer_id, db: {})
     monkeypatch.setattr(planner.mock_tools, "get_customer_tickets", lambda db, customer_id: [])
     monkeypatch.setattr(
         planner,
@@ -76,7 +76,7 @@ def test_plan_passes_ticket_history_into_the_llm_context(monkeypatch):
     ticket = MagicMock(spec=Ticket)
     ticket.status, ticket.category, ticket.subject, ticket.urgency = "open", "billing", "Charged twice", 8
 
-    monkeypatch.setattr(planner, "load_profile", lambda customer_id: {})
+    monkeypatch.setattr(planner, "load_profile", lambda customer_id, db: {})
     monkeypatch.setattr(planner.mock_tools, "get_customer_tickets", lambda db, customer_id: [ticket])
 
     captured = {}

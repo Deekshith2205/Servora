@@ -70,19 +70,42 @@ price). See the `Booking` model in `backend/app/db/models.py`.
 
 ## Current state of this repo
 
-Classifier, Planner, the Billing specialist, and Verification are
-implemented (issues #3, #4, #6, #10 — #7/#8/#9, the remaining
-specialists, are implemented pending merge as of this writing). Escalation
-and Memory in `backend/app/agents/*.py` are still **stubs** —
-the pipeline runs end-to-end today regardless (see
-`backend/tests/test_health.py`), each remaining stub returns a
-placeholder with a `# TODO(issue: ...)` pointing at the GitHub issue that
-replaces it. Do not change a function's signature / return shape without
-updating `orchestrator.py` and the frontend trace rendering — several
-issues depend on the current contracts (the Planner's already changed
-once, adding `customer_id`/`db` params — see PR #34 for why). Billing's
-`resolve_billing(db, customer_id, message) -> SpecialistResponse` shape
-was kept as originally stubbed.
+All of P0 and P1 are implemented: Classifier, Planner, all four
+specialists (Billing, Technical, Order, Account), Verification, and
+Memory (issues #3, #4, #6-#11). Only Escalation in
+`backend/app/agents/*.py` is still a **stub** — the pipeline runs
+end-to-end today regardless (see `backend/tests/test_health.py`); its
+stub returns a placeholder with a `# TODO(issue: ...)` pointing at the
+GitHub issue that replaces it. Do not change a function's signature /
+return shape without updating `orchestrator.py` and the frontend trace
+rendering — several issues depend on the current contracts (the
+Planner's already changed once, adding `customer_id`/`db` params — see PR
+#34; `memory.py`'s `load_profile`/`merge_profile` gained a `db` param too
+— see PR #41). All four specialists kept their `resolve_x(db,
+customer_id, message) -> SpecialistResponse` shape as originally stubbed,
+and share a private `_run_specialist()` helper in `specialists.py` — only
+the system prompt differs per specialist. Verification's `verify(response)
+-> VerificationResult` also needed no contract change — the original stub
+signature was already exactly what `orchestrator.py` calls.
+
+**Bug fixed alongside #11**: `_run_specialist()` never actually told the
+model the customer's ID — every specialist tool call that needs one
+(`get_customer_orders`, `get_customer`, ...) was relying on the model to
+guess it. Wiring in the customer-memory context (#11) touched this exact
+code path, so it was fixed at the same time. This had gone unnoticed
+because no session verifying these issues has had a real Anthropic API
+key — see the real-key verification gap tracked in `CLAUDE.md`.
+
+### Verification Agent (Issue #10 — implemented)
+
+`verify()` runs two deterministic checks — no second LLM call, so it's
+network-free to test and instant in production: a confidence threshold
+(0.5, see `specialists.py::_estimate_confidence()`), and a narrow
+"completed-action" phrase check that catches a reply claiming e.g. "I've
+issued a refund" when `issue_refund` was never actually called. This is
+a documented approximation, not a semantic check — a real
+second-LLM-judge pass would catch more, at the cost of another network
+call per verification.
 
 ### LLM tool-calling (Issue #5 — implemented)
 

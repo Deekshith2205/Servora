@@ -140,38 +140,85 @@ docs/ARCHITECTURE.md   the agent graph + design rationale, in full
   `resolve_billing()` runs a real tool-calling loop (order lookup → KB
   policy check → `issue_refund`), never calling the refund tool
   speculatively. Added `_run_specialist()` in `specialists.py` — a small
-  shared helper the remaining specialist issues (#7-#9) can reuse — and
+  shared helper the remaining specialist issues (#7-#9) reused — and
   `_estimate_confidence()` (0.9 action taken / 0.6 grounded-only / 0.2 no
-  tools used), the signal Verification/Escalation will consume later.
-  `call_llm()` gained an optional `tool_call_log` param (purely additive)
-  to back `SpecialistResponse.used_tools`. PR:
-  https://github.com/Deekshith2205/Servora/pull/36 — open, not yet
-  merged. Tests mock only the Anthropic client and run everything else
-  (DB, tool registry) for real, against an in-memory SQLite DB — proving
-  the seeded order actually flips to `refunded`, not just that functions
-  were called. Added `scripts/check_billing.py`.
+  tools used), the signal Verification consumes. `call_llm()` gained an
+  optional `tool_call_log` param (purely additive) to back
+  `SpecialistResponse.used_tools`. PR #36 — **merged**.
+
+### 2026-09-13 — P1 complete (#7-#11), one real bug found and fixed
+
+All six P1 issues are now implemented (five in one session, on top of #6
+from the day before):
+
+- **#7/#8/#9** (Technical/Order/Account specialists) — bundled into one
+  PR since all three just add a system prompt + a one-line
+  `resolve_x()`, reusing `_run_specialist()` from #6 untouched. Technical
+  grounds in `search_kb` (low-but-not-zero confidence on no KB match, per
+  the issue — a lookup was still attempted). Order proactively checks the
+  delay policy and offers the courtesy discount without a tool to
+  actually issue one (the reply states eligibility, never claims the
+  discount was applied). Account is read-only, refuses anything
+  account-modifying since no such tool exists. PR:
+  https://github.com/Deekshith2205/Servora/pull/39 — open.
+- **#10** (Verification Agent) — two deterministic checks, no second LLM
+  call: a confidence threshold (0.5), and a narrow "completed-action"
+  phrase check that catches a reply claiming "I've issued a refund" when
+  `issue_refund` was never actually called. Documented as an
+  approximation (a real semantic/second-LLM-judge check would catch
+  more) rather than silently overclaiming what it does. First P1 issue
+  that needed **no** real-API-key verification at all — `verify()` never
+  touches the LLM. PR: https://github.com/Deekshith2205/Servora/pull/40
+  — open.
+- **#11** (customer memory write/merge) — new `CustomerMemory` DB table
+  (one row per customer, a flat JSON fact list), real
+  `load_profile`/`merge_profile`/`extract_facts` in `memory.py`, and a
+  **new orchestrator step** (nothing called `memory.py` at all before
+  this) after a successful resolution — wrapped in try/except so a
+  failed extraction never breaks the customer's response. **Contract
+  change**: both memory functions gained a `db: Session` param;
+  `planner.py` and `specialists.py::_run_specialist` updated. PR:
+  https://github.com/Deekshith2205/Servora/pull/41 — open.
+
+  **Real bug found and fixed alongside #11** (not originally in scope,
+  but the fix touched the exact same code path): `_run_specialist()`
+  never actually told the model the customer's ID — every specialist
+  tool call needing one (`get_customer_orders`, `get_customer`, ...) was
+  relying on the model to guess it. This had gone completely unnoticed
+  because **no session working on issues #2 through #11 has ever run
+  any of this against a real Anthropic API key** — every test mocks the
+  Anthropic client, which correctly proves the *plumbing* works but
+  can't catch "the model has no way to know this fact." Fixed by
+  including `"Customer ID: {id}"` in every specialist's message content
+  (the known-profile-facts context from #11 goes in right alongside it).
 
 ## Next up (in priority order)
 
-1. **Still outstanding, now FOUR issues deep (#2, #3, #4, #6)**: nobody
-   has confirmed `call_llm()` against a real Anthropic API key. Run
-   `scripts/check_llm.py`, `check_classifier.py`, `check_planner.py`, and
-   `check_billing.py` with a real key — this is the single
-   highest-priority loose thread, repeatedly flagged and still open.
-2. Merge PR #36 (issue #6).
-3. Issues #7-#9 (technical/order/account specialists) — each can reuse
-   `specialists.py::_run_specialist()`, only needs its own system prompt.
-   Can be split across teammates in parallel.
-4. Issue #30 (landing page design) — separate track, in parallel with all
-   of the above, whenever the teammate doing frontend visual design picks
-   it up.
+1. **This is no longer just a nagging reminder — it just caused a real
+   bug.** Nobody has confirmed `call_llm()` against a real Anthropic API
+   key across ANY of #2, #3, #4, #6, #7, #8, #9, #10, or #11. Run
+   `scripts/check_llm.py`, `check_classifier.py`, `check_planner.py`,
+   `check_billing.py`, `check_specialists.py`, and `check_memory.py`
+   with a real key before merging #39/#40/#41 — there may be more gaps
+   like the customer-ID one waiting to be found.
+2. Merge PRs #39, #40, #41 (in that order — #40 and #41 each assume #39
+   is already in, since #41 was branched with #39 merged in locally to
+   avoid a specialists.py conflict; #40 doesn't touch specialists.py at
+   all so it can go in anytime).
+3. P1 is done. Next up is P2: issue #12 (Escalation Agent + confidence
+   threshold), #13 (structured handoff memo), #14 (Staff Dashboard
+   escalation detail view).
+4. Issue #30 (landing page design) — separate track, in parallel with
+   all of the above, whenever the teammate doing frontend visual design
+   (via Antigravity) picks it up.
 
 ## Open questions / blockers
 
 - **`call_llm()` has never been confirmed against a real Anthropic API
-  key**, by any session, across #2, #3, #4, and now #6. Everything is
-  verified by mocked/offline tests only so far. This is the top priority
-  to close before more agents are built on top of it — see Next up #1.
+  key, by any session, across nine P0/P1 issues.** This already caused
+  one real bug (the missing customer ID in specialist prompts, found and
+  fixed in #11) that every mocked test missed. This is now the single
+  most important thing to close — see Next up #1.
 - **CI is not a required check yet.** Someone with admin access on
   github.com/Deekshith2205/Servora needs to go to Settings → Branches →
   add a branch protection rule on `main` → require the CI status checks
