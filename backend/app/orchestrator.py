@@ -47,6 +47,7 @@ _SUBJECT_MAX_LEN = 80
 class TraceStep:
     agent: str
     output: str
+    root_cause: str | None = None
 
 
 @dataclass
@@ -85,7 +86,10 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
 
     specialist_fn = SPECIALISTS.get(decision.target_agent, SPECIALISTS["technical"])
     response = specialist_fn(db, customer_id, message)
-    trace.append(TraceStep(f"{decision.target_agent}_specialist", response.reply))
+    
+    # Extract root_cause safely if it was populated by the specialist
+    root_cause = getattr(response, "root_cause", None)
+    trace.append(TraceStep(f"{decision.target_agent}_specialist", response.reply, root_cause=root_cause))
 
     verification = verify(response)
     trace.append(TraceStep("verification", verification.reasoning))

@@ -123,6 +123,19 @@ export default function InvestigationTimeline({ trace }) {
                 </button>
                 {isExpanded && (
                   <div id={`step-content-${idx}`} className="timeline-output">
+                    {step.root_cause && (
+                      <div style={{
+                        marginBottom: '0.75rem', 
+                        padding: '0.5rem 0.75rem', 
+                        background: 'var(--app-surface)', 
+                        borderRadius: '4px', 
+                        borderLeft: '3px solid var(--app-warning)',
+                        fontSize: '0.85rem'
+                      }}>
+                        <strong style={{color: 'var(--app-warning-text)'}}>Root Cause: </strong> 
+                        {step.root_cause}
+                      </div>
+                    )}
                     {step.output}
                   </div>
                 )}

@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
 class TraceStepOut(BaseModel):
     agent: str
     output: str
+    root_cause: str | None = None
 
 
 class HandoffPacketOut(BaseModel):

@@ -20,7 +20,7 @@ from app.tools.tool_registry import build_tool_registry
 # Tools that only *ground an answer* (look something up) rather than take an
 # irreversible action. Used by _estimate_confidence — see its docstring.
 _ACTION_TOOLS = {"issue_refund"}
-_GROUNDING_TOOLS = {"get_customer", "get_customer_orders", "get_customer_tickets", "search_kb"}
+_GROUNDING_TOOLS = {"get_customer", "get_customer_orders", "get_customer_tickets", "search_kb", "check_payment_issue"}
 
 
 @dataclass
@@ -28,6 +28,7 @@ class SpecialistResponse:
     reply: str
     used_tools: list[str] = field(default_factory=list)
     confidence: float = 0.0  # 0-1, consumed by the Verification/Escalation agents
+    root_cause: str | None = None
 
 
 def _estimate_confidence(used_tools: list[str]) -> float:
@@ -68,6 +69,20 @@ def _run_specialist(
     profile = load_profile(customer_id, db)
     tool_schemas, tool_handlers = build_tool_registry(db)
     used_tools: list[str] = []
+    
+    root_cause = None
+    original_check = tool_handlers.get("check_payment_issue")
+    if original_check:
+        def wrapped_check(args):
+            nonlocal root_cause
+            res = original_check(args)
+            if res and isinstance(res, dict) and res.get("detected"):
+                if res.get("issue_type") == "duplicate_payment":
+                    root_cause = f"Duplicate payment detected for order {res.get('order_id')} against original order {res.get('related_order_id')}."
+                elif res.get("issue_type") == "payment_fulfillment_mismatch":
+                    root_cause = f"Payment succeeded but fulfillment failed for order {res.get('order_id')}."
+            return res
+        tool_handlers["check_payment_issue"] = wrapped_check
 
     context_lines = [f"Customer ID: {customer_id}"]
     if profile.get("facts"):
@@ -82,7 +97,7 @@ def _run_specialist(
         max_tokens=max_tokens,
     )
 
-    return SpecialistResponse(reply=reply, used_tools=used_tools, confidence=_estimate_confidence(used_tools))
+    return SpecialistResponse(reply=reply, used_tools=used_tools, confidence=_estimate_confidence(used_tools), root_cause=root_cause)
 
 
 _BILLING_SYSTEM_PROMPT = """You are the Billing specialist agent in an \
@@ -97,12 +112,21 @@ Typical flow:
 1. Call get_customer_orders to find the specific order the customer is \
 referring to. If it is not obvious which order, ask a clarifying question \
 in your reply instead of guessing.
-2. Call search_kb (e.g. query "refund policy") to confirm a refund is \
-warranted before acting.
-3. Only if steps 1-2 support it, call issue_refund with the exact order \
+2. Call check_payment_issue to deterministically check for payment anomalies \
+(duplicate payments or payment/fulfillment mismatches) BEFORE deciding to refund.
+3. If check_payment_issue detects a duplicate_payment: \
+refund ONLY the duplicate order if policy allows. Do not refund the original order. \
+Never refund the duplicate more than once.
+4. If check_payment_issue detects a payment_fulfillment_mismatch: \
+recognize that the payment succeeded but fulfillment failed. DO NOT treat \
+this as an ordinary refund request. Follow an appropriate escalation or remedy path \
+instead of refunding it blindly as a duplicate.
+5. If no anomaly is detected (normal refund request), call search_kb to confirm \
+a refund is warranted before acting.
+6. Only if steps 1-5 support it, call issue_refund with the exact order \
 ID. Never call issue_refund speculatively, more than once for the same \
 order, or without first identifying the specific order.
-4. Reply in plain, friendly language stating what you found and what \
+7. Reply in plain, friendly language stating what you found and what \
 action you took (or could not take, and why) — cite the specific order \
 and policy, don't just say "I checked and it's fine."
 """

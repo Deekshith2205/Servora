@@ -18,20 +18,35 @@ def seed_if_empty() -> None:
         db.add_all([alice, bob])
         db.flush()
 
-        db.add_all(
-            [
-                Order(customer_id=alice.id, product="Wireless Headphones", amount=129.99, status="shipped"),
-                Order(customer_id=alice.id, product="Phone Case", amount=19.99, status="delivered"),
-                # Issue #22: backs demo scenario 2 (see docs/DEMO_SCRIPT.md) —
-                # a billing duplicate-charge complaint the Billing specialist
-                # can investigate and actually refund. Alice, not Bob, since
-                # the Customer Chat UI is hardcoded to DEMO_CUSTOMER_ID=1
-                # (CustomerChat.jsx/BookingChat.jsx) — every live-demo
-                # scenario has to be something *she* can trigger.
-                Order(customer_id=alice.id, product="Bluetooth Speaker", amount=79.99, status="processing"),
-                Order(customer_id=bob.id, product="Smart Watch", amount=249.00, status="processing"),
-            ]
+        o1 = Order(customer_id=alice.id, product="Wireless Headphones", amount=129.99, status="shipped", payment_status="paid")
+        o2 = Order(customer_id=alice.id, product="Phone Case", amount=19.99, status="delivered", payment_status="paid")
+        o3 = Order(customer_id=alice.id, product="Bluetooth Speaker", amount=79.99, status="processing", payment_status="paid")
+        o4 = Order(customer_id=bob.id, product="Smart Watch", amount=249.00, status="processing", payment_status="paid")
+        
+        db.add_all([o1, o2, o3, o4])
+        db.flush()
+
+        # Issue #59: Duplicate Payment
+        duplicate = Order(
+            customer_id=alice.id, 
+            product="Wireless Headphones", 
+            amount=129.99, 
+            status="processing", 
+            payment_status="paid", 
+            duplicate_of=o1.id
         )
+        
+        # Issue #59: Payment/Fulfillment Mismatch
+        mismatch = Order(
+            customer_id=alice.id, 
+            product="Gaming Mouse", 
+            amount=59.99, 
+            status="failed", 
+            payment_status="paid"
+        )
+        
+        db.add_all([duplicate, mismatch])
+        db.flush()
 
         db.add_all(
             [

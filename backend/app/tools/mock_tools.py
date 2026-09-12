@@ -31,14 +31,58 @@ def search_kb(db: Session, query: str) -> list[KBArticle]:
     return [a for a in db.query(KBArticle).all() if q in a.title.lower() or q in a.body.lower() or q in a.tags.lower()]
 
 
-def issue_refund(db: Session, order_id: int) -> Order | None:
+def check_payment_issue(db: Session, order_id: int) -> dict | None:
     order = db.get(Order, order_id)
     if order is None:
-        return None
+        return {"detected": False, "issue_type": None, "order_id": order_id, "error": "Order not found"}
+    
+    if order.payment_status == "refunded" or order.status == "refunded":
+        return {
+            "detected": False,
+            "issue_type": None,
+            "order_id": order_id,
+            "error": "Already refunded"
+        }
+
+    if order.duplicate_of is not None:
+        return {
+            "detected": True,
+            "issue_type": "duplicate_payment",
+            "order_id": order.id,
+            "related_order_id": order.duplicate_of,
+            "payment_status": order.payment_status,
+            "fulfillment_status": order.status
+        }
+        
+    if order.payment_status == "paid" and order.status == "failed":
+        return {
+            "detected": True,
+            "issue_type": "payment_fulfillment_mismatch",
+            "order_id": order.id,
+            "payment_status": order.payment_status,
+            "fulfillment_status": order.status
+        }
+        
+    return {
+        "detected": False,
+        "issue_type": None,
+        "order_id": order.id
+    }
+
+
+def issue_refund(db: Session, order_id: int) -> dict:
+    order = db.get(Order, order_id)
+    if order is None:
+        return {"success": False, "error": "Order not found"}
+        
+    if order.payment_status == "refunded" or order.status == "refunded":
+        return {"success": False, "error": "Order already refunded"}
+        
+    order.payment_status = "refunded"
     order.status = "refunded"
     db.commit()
     db.refresh(order)
-    return order
+    return {"success": True, "order_id": order.id, "payment_status": "refunded", "status": "refunded"}
 
 
 def check_room_availability(db: Session, room_type: str) -> Room | None:

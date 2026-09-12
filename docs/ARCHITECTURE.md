@@ -191,5 +191,18 @@ It aggregates data across a consistent **30-day window**. The following metrics 
 - **Churn Signals**: Identifies customers with multiple still-unresolved (open or escalated) tickets (Issue #16).
 - **Ticket Volume Trend**: A zero-padded array of daily ticket creation counts (Issue #16).
 - **Resolution & Escalation Rates**: Derived strictly from *processed* conversations within the 30-day window (`resolved` + `escalated`). Open tickets are excluded from the denominator to prevent distorting outcome rates, as they are not yet completed by the pipeline.
-- **Sentiment Trend**: Daily aggregated buckets mapping `Ticket.sentiment` counts (positive, neutral, negative) while safely ignoring missing or invalid sentiment strings.
 - **Classifier Confidence Distribution**: Groups classifier scores (`Ticket.confidence`) into high (>= 0.80), moderate (0.60-0.79), and low (< 0.60). Legacy or seed records with `NULL` confidence are correctly excluded from the denominator.
+
+### Billing Agent & Payment Anomalies (Issue #59)
+
+The Billing Agent operates on an `Order` model that distinctly separates payment state from fulfillment state to accurately reason about payment issues:
+- `payment_status` (`paid`, `failed`, `refunded`) vs `status` (`processing`, `shipped`, `delivered`, `failed`, `refunded`)
+- `duplicate_of`: Nullable self-referencing foreign key explicitly linking a duplicate charge to its original order.
+
+The agent uses the `check_payment_issue` deterministic tool before taking action to catch:
+- **Duplicate payment**: Detected via the `duplicate_of` relationship. The agent will refund only the duplicate and leave the original intact.
+- **Payment/Fulfillment mismatch**: Detected when `payment_status="paid"` and `status="failed"`. The agent will avoid issuing an automated refund and follow escalation/remedy procedures instead.
+
+Refund Idempotency is strictly enforced at the data layer—an already refunded order cannot be refunded again, protecting against double refunds even if the LLM attempts it.
+
+Structured Root Causes (e.g. "Duplicate payment detected...") are generated deterministically from the tool result wrapper in `specialists.py` and threaded cleanly through the `TraceStep` to be visualized in the frontend InvestigationTimeline without resorting to LLM XML generation.
