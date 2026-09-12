@@ -27,7 +27,9 @@ from dataclasses import dataclass
 from app.agents.specialists import SpecialistResponse
 
 # Below this, a reply isn't grounded enough to show the customer unchecked.
-_CONFIDENCE_THRESHOLD = 0.5
+# Public (not _CONFIDENCE_THRESHOLD) since issue #12's Escalation Agent cites
+# this same number rather than duplicating it.
+CONFIDENCE_THRESHOLD = 0.5
 
 # Phrases that assert an action was *completed*, mapped to the tool that
 # must appear in used_tools to back up that claim. Extend this map if a
@@ -51,11 +53,11 @@ class VerificationResult:
 
 
 def verify(response: SpecialistResponse) -> VerificationResult:
-    if response.confidence < _CONFIDENCE_THRESHOLD:
+    if response.confidence < CONFIDENCE_THRESHOLD:
         return VerificationResult(
             approved=False,
             reasoning=(
-                f"Confidence {response.confidence:.1f} is below the {_CONFIDENCE_THRESHOLD} "
+                f"Confidence {response.confidence:.1f} is below the {CONFIDENCE_THRESHOLD} "
                 f"threshold (used_tools={response.used_tools or 'none'}) — not grounded enough "
                 "to show the customer without a human check."
             ),
@@ -76,7 +78,7 @@ def verify(response: SpecialistResponse) -> VerificationResult:
     return VerificationResult(
         approved=True,
         reasoning=(
-            f"Confidence {response.confidence:.1f} meets the {_CONFIDENCE_THRESHOLD} threshold "
+            f"Confidence {response.confidence:.1f} meets the {CONFIDENCE_THRESHOLD} threshold "
             f"and no unsupported completed-action claims were detected (used_tools={response.used_tools})."
         ),
     )
