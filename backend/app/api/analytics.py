@@ -79,7 +79,7 @@ def compute_trend(db: Session, now: datetime, cutoff: datetime, days: int) -> li
         counts[day] = counts.get(day, 0) + 1
 
     trend = []
-    for i in range(days, -1, -1):
+    for i in range(days - 1, -1, -1):
         day = (now - timedelta(days=i)).date().isoformat()
         trend.append({"date": day, "count": counts.get(day, 0)})
     return trend
@@ -112,7 +112,7 @@ def compute_sentiment_trend(db: Session, now: datetime, cutoff: datetime, days: 
     
     # Pre-initialize buckets for the last `days` days
     buckets = {}
-    for i in range(days, -1, -1):
+    for i in range(days - 1, -1, -1):
         day = (now - timedelta(days=i)).date().isoformat()
         buckets[day] = {"date": day, "positive": 0, "neutral": 0, "negative": 0}
         
@@ -157,7 +157,10 @@ def compute_confidence_distribution(db: Session, cutoff: datetime) -> dict:
 @router.get("/analytics/summary")
 def analytics_summary(db: Session = Depends(get_db)) -> dict:
     now = datetime.utcnow()
-    cutoff = now - timedelta(days=30)
+    # 30 calendar days including today (today + 29 previous days)
+    # Start from midnight of the 29th day ago.
+    cutoff_date = (now - timedelta(days=29)).date()
+    cutoff = datetime(cutoff_date.year, cutoff_date.month, cutoff_date.day)
 
     open_tickets = db.query(Ticket).filter(
         Ticket.status == "open",

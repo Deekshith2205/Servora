@@ -233,7 +233,7 @@ def test_trend_is_zero_padded_across_the_window():
         data = client.get("/api/analytics/summary").json()
 
     trend = data["trend"]
-    assert len(trend) == 31  # today plus the last 30 days
+    assert len(trend) == 30  # exactly 30 calendar days
     assert sum(day["count"] for day in trend) == 1  # exactly the one ticket just created
     assert trend[-1]["count"] == 1  # most recent day (today) has it
     # dates are in ascending order
@@ -340,7 +340,7 @@ def test_sentiment_trend():
         data = client.get("/api/analytics/summary").json()
 
     sentiment_trend = data["sentiment_trend"]
-    assert len(sentiment_trend) == 31
+    assert len(sentiment_trend) == 30
     today_bucket = sentiment_trend[-1]
     
     assert today_bucket["positive"] == 1
@@ -375,3 +375,49 @@ def test_confidence_distribution_ignores_nulls():
     assert dist["moderate"] == 1
     assert dist["high"] == 2
     assert dist["total"] == 4
+
+
+def test_confidence_distribution_boundaries():
+    db = SessionLocal()
+    db.query(Ticket).delete()
+    db.commit()
+
+    db.add_all([
+        Ticket(customer_id=1, category="order", subject="low", message="a", confidence=0.59),
+        Ticket(customer_id=1, category="order", subject="mod1", message="a", confidence=0.60),
+        Ticket(customer_id=1, category="order", subject="mod2", message="a", confidence=0.79),
+        Ticket(customer_id=1, category="order", subject="high", message="a", confidence=0.80),
+    ])
+    db.commit()
+
+    with TestClient(app) as client:
+        data = client.get("/api/analytics/summary").json()
+
+    dist = data["confidence_distribution"]
+    assert dist["low"] == 1
+    assert dist["moderate"] == 2
+    assert dist["high"] == 1
+    assert dist["total"] == 4
+
+
+def test_analytics_30_day_cutoff_boundaries():
+    db = SessionLocal()
+    db.query(Ticket).delete()
+    db.commit()
+
+    now = datetime.utcnow()
+    # 30 calendar days including today = today + 29 previous days.
+    # Cutoff is midnight of (now - 29 days).
+    t_exactly_30_days_ago = Ticket(customer_id=1, category="order", subject="30d ago", message="a", status="resolved", created_at=now - timedelta(days=30))
+    t_start_of_29d_ago = Ticket(customer_id=1, category="order", subject="29d ago midnight", message="a", status="resolved", created_at=datetime(now.year, now.month, now.day) - timedelta(days=29))
+    t_today = Ticket(customer_id=1, category="order", subject="today", message="a", status="resolved", created_at=now)
+    
+    db.add_all([t_exactly_30_days_ago, t_start_of_29d_ago, t_today])
+    db.commit()
+
+    with TestClient(app) as client:
+        data = client.get("/api/analytics/summary").json()
+
+    # t_exactly_30_days_ago is excluded, others included
+    res_rate = data["resolution_rate"]
+    assert res_rate["total"] == 2

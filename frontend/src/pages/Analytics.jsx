@@ -288,6 +288,7 @@ export default function Analytics() {
                 </div>
               )}
             </div>
+          </div>
 
           {/* Issue #16: churn risk — customers with multiple still-unresolved tickets */}
           <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>

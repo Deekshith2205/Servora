@@ -30,16 +30,22 @@ export default function BookingsPanel() {
   // otherwise an invisible side effect of "Save changes".
   const [lastNotification, setLastNotification] = useState(null);
 
-  const load = () => {
-    setLoading(true);
-    setError(null);
+  const fetchBookingsData = () => {
     fetchBookings()
       .then(setBookings)
       .catch((err) => setError(err.message || "Failed to load bookings"))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    fetchBookingsData();
+  }, []);
+
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchBookingsData();
+  };
 
   const openBooking = (booking) => {
     setSelected(booking);
@@ -118,7 +124,7 @@ export default function BookingsPanel() {
           <span>Unable to load bookings: {error}</span>
         </div>
         <button
-          onClick={load}
+          onClick={handleRetry}
           style={{ background: "var(--app-surface)", color: "var(--app-danger-text)", border: "1px solid currentColor", padding: "0.4rem 1rem", borderRadius: "4px", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem" }}
         >
           Retry
