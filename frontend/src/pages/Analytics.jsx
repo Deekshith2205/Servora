@@ -21,7 +21,6 @@ export default function Analytics() {
 
   const isNotImplemented = summary && summary.status === "not_implemented";
   const hasRecurringIssues = summary && summary.recurring_issues && summary.recurring_issues.length > 0;
-  const hasChurnSignals = summary && summary.churn_signals && summary.churn_signals.length > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', flex: 1 }}>
@@ -112,36 +111,54 @@ export default function Analytics() {
         </div>
       ) : summary ? (
         <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
-          {/* Active Data Implementation */}
-          <div className="app-panel">
-             <h3 style={{marginTop: 0}}>Recurring Issues</h3>
-             {hasRecurringIssues ? (
-               <ul>
-                 {summary.recurring_issues.map((issue, idx) => (
-                   <li key={idx}>{issue}</li>
-                 ))}
-               </ul>
-             ) : (
-               <div className="app-empty-state" style={{padding: '2rem'}}>
-                 <p>No recurring issues detected yet.</p>
-               </div>
-             )}
+          <div className="escalations-header">
+            <div>
+              <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Recurring Issues</h3>
+              <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Automated root-cause clustering of recent open tickets.</p>
+            </div>
+            {hasRecurringIssues && <div className="escalations-count">{summary.recurring_issues.length} {summary.recurring_issues.length === 1 ? 'cluster' : 'clusters'}</div>}
           </div>
-
-          <div className="app-panel">
-             <h3 style={{marginTop: 0}}>Customer Signals</h3>
-             {hasChurnSignals ? (
-               <ul>
-                 {summary.churn_signals.map((signal, idx) => (
-                   <li key={idx}>{signal}</li>
-                 ))}
-               </ul>
-             ) : (
-               <div className="app-empty-state" style={{padding: '2rem'}}>
-                 <p>No customer signals detected yet.</p>
-               </div>
-             )}
-          </div>
+          
+          {hasRecurringIssues ? (
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1rem'}}>
+              {summary.recurring_issues.map((issue, idx) => (
+                <div key={issue.cluster_id || idx} className="app-panel" style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <span className="app-badge badge-warning" style={{display: 'inline-flex', alignItems: 'center', gap: '0.4rem'}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                      {issue.ticket_count} tickets affected
+                    </span>
+                    <span style={{fontSize: '0.75rem', color: 'var(--app-text-muted)'}}>
+                      IDs: {issue.ticket_ids?.join(', ')}
+                    </span>
+                  </div>
+                  
+                  <div>
+                    <span style={{fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--app-text-secondary)', letterSpacing: '0.05em'}}>Theme Pattern</span>
+                    <div style={{fontSize: '0.9rem', color: 'var(--app-text-primary)', marginTop: '0.2rem'}}>{issue.pattern}</div>
+                  </div>
+                  
+                  <div className="handoff-card" style={{marginTop: '0.5rem', marginBottom: 0}}>
+                    <p className="handoff-card-title">Automated Hypothesis</p>
+                    <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-primary)', lineHeight: 1.5}}>
+                      {issue.root_cause_hypothesis}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="app-panel-fit" style={{justifyContent: 'center', minHeight: '300px', border: '1px solid var(--app-border)'}}>
+              <div className="app-empty-state" style={{padding: '2rem'}}>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <h3 style={{color: 'var(--app-text-primary)', margin: '0 0 0.5rem 0'}}>All clear.</h3>
+                <p style={{margin: 0}}>No recurring issue clusters detected in the selected period.</p>
+              </div>
+            </div>
+          )}
         </div>
       ) : null}
       
