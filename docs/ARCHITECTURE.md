@@ -70,8 +70,8 @@ price). See the `Booking` model in `backend/app/db/models.py`.
 
 ## Current state of this repo
 
-Classifier, Planner, and the Billing specialist are implemented (issues
-#3, #4, #6). Technical, Order, and Account specialists, Verification,
+Classifier, Planner, and all four specialists (Billing, Technical, Order,
+Account) are implemented (issues #3, #4, #6-#9). Only Verification,
 Escalation, and Memory in `backend/app/agents/*.py` are still **stubs** —
 the pipeline runs end-to-end today regardless (see
 `backend/tests/test_health.py`), each remaining stub returns a
@@ -79,9 +79,11 @@ placeholder with a `# TODO(issue: ...)` pointing at the GitHub issue that
 replaces it. Do not change a function's signature / return shape without
 updating `orchestrator.py` and the frontend trace rendering — several
 issues depend on the current contracts (the Planner's already changed
-once, adding `customer_id`/`db` params — see PR #34 for why). Billing's
-`resolve_billing(db, customer_id, message) -> SpecialistResponse` shape
-was kept as originally stubbed.
+once, adding `customer_id`/`db` params — see PR #34 for why). All four
+specialists kept their `resolve_x(db, customer_id, message) ->
+SpecialistResponse` shape as originally stubbed, and share a private
+`_run_specialist()` helper in `specialists.py` — only the system prompt
+differs per specialist.
 
 ### LLM tool-calling (Issue #5 — implemented)
 
