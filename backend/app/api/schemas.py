@@ -100,3 +100,37 @@ class KBArticleOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BookingMessage(BaseModel):
+    """One turn of the booking conversation. Issue #18: the caller (the
+    frontend) accumulates and resends the FULL transcript each turn — see
+    app/agents/booking.py's module docstring for why this agent is
+    stateless server-side."""
+
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class BookingChatRequest(BaseModel):
+    customer_id: int
+    messages: list[BookingMessage]
+
+
+class BookingOut(BaseModel):
+    id: int
+    customer_id: int
+    room_type: str
+    check_in: str
+    check_out: str
+    guests: int
+    total_price: float
+    status: str
+
+    class Config:
+        from_attributes = True
+
+
+class BookingChatResponse(BaseModel):
+    reply: str
+    booking: BookingOut | None = None
