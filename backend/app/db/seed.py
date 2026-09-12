@@ -45,7 +45,26 @@ def seed_if_empty() -> None:
             payment_status="paid"
         )
         
-        db.add_all([duplicate, mismatch])
+        # Issue #60: Cancelled Order
+        cancelled_order = Order(
+            customer_id=alice.id,
+            product="Tablet",
+            amount=399.00,
+            status="cancelled",
+            payment_status="refunded"
+        )
+
+        # Issue #60: Inventory Shortfall
+        inventory_shortfall = Order(
+            customer_id=alice.id,
+            product="Mechanical Keyboard",
+            amount=149.99,
+            status="failed",
+            payment_status="paid",
+            failure_reason="inventory_shortfall"
+        )
+        
+        db.add_all([duplicate, mismatch, cancelled_order, inventory_shortfall])
         db.flush()
 
         db.add_all(

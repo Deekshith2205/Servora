@@ -136,7 +136,20 @@ export default function InvestigationTimeline({ trace }) {
                         {step.root_cause}
                       </div>
                     )}
-                    {step.output}
+                    {step.resolution && (
+                      <div style={{
+                        marginBottom: '0.75rem', 
+                        padding: '0.5rem 0.75rem', 
+                        background: 'var(--app-surface)', 
+                        borderRadius: '4px', 
+                        borderLeft: '3px solid var(--app-success)',
+                        fontSize: '0.85rem'
+                      }}>
+                        <strong style={{color: 'var(--app-success-text)'}}>Resolution: </strong> 
+                        {step.resolution}
+                      </div>
+                    )}
+                    {step.reply || step.output}
                   </div>
                 )}
               </div>

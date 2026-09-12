@@ -206,3 +206,12 @@ The agent uses the `check_payment_issue` deterministic tool before taking action
 Refund Idempotency is strictly enforced at the data layer—an already refunded order cannot be refunded again, protecting against double refunds even if the LLM attempts it.
 
 Structured Root Causes (e.g. "Duplicate payment detected...") are generated deterministically from the tool result wrapper in `specialists.py` and threaded cleanly through the `TraceStep` to be visualized in the frontend InvestigationTimeline without resorting to LLM XML generation.
+
+### Order Agent & Inventory Anomalies (Issue #60)
+
+The Order Agent tracks order anomalies, specifically distinguishing between standard processing delays and true failures:
+- **Order Cancellation**: Detected when `status="cancelled"`. The order is halted; it is not simply delayed.
+- **Inventory Shortfall**: Detected when `status="failed"` and `failure_reason="inventory_shortfall"`. The order cannot be fulfilled due to lack of stock.
+
+The agent uses the `check_order_issue` deterministic tool *before* assessing any tracking delays. This prevents the agent from hallucinating "delayed in transit" states for cancelled or failed orders.
+Like the Billing Agent, structured Root Causes and Resolutions are generated deterministically from the tool result wrapper and threaded through the `TraceStep` for the frontend InvestigationTimeline.

@@ -70,6 +70,35 @@ def check_payment_issue(db: Session, order_id: int) -> dict | None:
     }
 
 
+def check_order_issue(db: Session, order_id: int) -> dict:
+    order = db.get(Order, order_id)
+    if order is None:
+        return {"detected": False, "issue_type": None, "order_id": order_id, "error": "Order not found"}
+        
+    if order.status == "cancelled":
+        return {
+            "detected": True,
+            "issue_type": "cancelled_order",
+            "order_id": order.id,
+            "status": "cancelled"
+        }
+        
+    if order.status == "failed" and order.failure_reason == "inventory_shortfall":
+        return {
+            "detected": True,
+            "issue_type": "inventory_shortfall",
+            "order_id": order.id,
+            "status": "failed",
+            "failure_reason": "inventory_shortfall"
+        }
+        
+    return {
+        "detected": False,
+        "issue_type": None,
+        "order_id": order.id
+    }
+
+
 def issue_refund(db: Session, order_id: int) -> dict:
     order = db.get(Order, order_id)
     if order is None:

@@ -46,8 +46,10 @@ _SUBJECT_MAX_LEN = 80
 @dataclass
 class TraceStep:
     agent: str
-    output: str
+    reply: str
+    confidence: float | None = None
     root_cause: str | None = None
+    resolution: str | None = None
 
 
 @dataclass
@@ -71,7 +73,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
     if decision.action == "escalate":
         packet = build_handoff_packet(
             message=message,
-            attempted_fixes=[step.output for step in trace],
+            attempted_fixes=[step.reply for step in trace],
             urgency=classification.urgency,
         )
         trace.append(TraceStep("escalation", f"Routed straight to a human agent — {packet.root_cause_hypothesis}"))
@@ -89,7 +91,8 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
     
     # Extract root_cause safely if it was populated by the specialist
     root_cause = getattr(response, "root_cause", None)
-    trace.append(TraceStep(f"{decision.target_agent}_specialist", response.reply, root_cause=root_cause))
+    resolution = getattr(response, "resolution", None)
+    trace.append(TraceStep(f"{decision.target_agent}_specialist", response.reply, root_cause=root_cause, resolution=resolution))
 
     verification = verify(response)
     trace.append(TraceStep("verification", verification.reasoning))
@@ -97,7 +100,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
     if not verification.approved:
         packet = build_handoff_packet(
             message=message,
-            attempted_fixes=[step.output for step in trace],
+            attempted_fixes=[step.reply for step in trace],
             urgency=classification.urgency,
             confidence=response.confidence,
         )
