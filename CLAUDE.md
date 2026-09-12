@@ -52,6 +52,9 @@ without stepping on each other's files. See `backend/` and `frontend/`.
   labels because the repo's write access was blocked at issue-creation
   time — **worth revisiting**: now that push/triage access works, someone
   could add real priority labels and retitle, low priority chore.
+  **`[P6]`** was added once the original P0-P5 backlog (#2-#22) was fully
+  done — hardening/enhancement issues on top of a complete system, not
+  new foundational scope. See the 2026-09-13 P6 progress-log entry.
 - **Hotel voice-booking feature (P4, stretch):** browser-mic demo (no
   telephony/Twilio) chosen over a real phone line — avoids live-call risk
   during judging. Booking state machine: `AI_DRAFTED → STAFF_REVIEWED →
@@ -457,20 +460,63 @@ issue are implemented and PR'd, each following the same branch → implement
   hardcode `DEMO_CUSTOMER_ID = 1`, so every scenario reachable through
   the actual UI has to be something she can trigger — Bob's existing
   duplicate-charge ticket isn't demoable live as the UI stands today.
-  PR: https://github.com/Deekshith2205/Servora/pull/55 — open.
+  PR: https://github.com/Deekshith2205/Servora/pull/55 — **merged**.
 
-  **P5 is now fully implemented too** — every issue from the original
-  22-issue backlog (#2-#22) has been picked up by some session. What's
-  left is exactly the "Next up" list below: merging the remaining open
-  PRs, the real-API-key verification gap, and a couple of small
-  well-scoped fixes.
+  **P4 and P5 are now both fully merged** — every issue from the
+  original 22-issue backlog (#2-#22) is done. PR #53 needed a small
+  merge-conflict resolution against `main` first (both #52 and #53 had
+  independently added new functions to `frontend/src/api/client.js`
+  right after the same shared fix — purely additive, no real conflict,
+  just kept both sides' new exports).
+
+### 2026-09-13 (continued) — a new [P6] tier opened: 7 issues, rescoped from 10 pasted descriptions that predated most of this backlog
+
+A teammate pasted 10 fresh-looking issue descriptions ("Implement Intent
+Classification", "planner.py is a stub", "Implement memory.py", ...) that
+turned out to describe work already merged across P0-P3 — the wording
+reads like it was written before any of that landed. Rather than post
+them verbatim (which would have looked like asking the team to rebuild
+already-shipped agents), each was checked against the actual current
+code first, and only genuine gaps became new issues — 7 of the original
+10 had a real, specific gap; the other 3 (planner reasoning/trace,
+customer memory, confidence-based escalation) are already substantially
+done and got no new issue:
+
+- **#57** — Classifier has no `confidence` field anywhere, and no
+  fallback if the LLM call fails (`classify()` just propagates
+  `LLMError`, unlike `_update_memory()`'s already-established
+  best-effort pattern).
+- **#58** — `orchestrator.py` only ever persists a `Ticket` row on
+  escalation (`_create_escalation_ticket()`); a *resolved* conversation's
+  trace is returned once in the API response and then gone. Blocks real
+  resolution-rate/escalation-rate analytics (#62) from having a
+  meaningful denominator.
+- **#59** — Billing agent has no data model for "duplicate charge" or
+  "paid but never fulfilled" — it just trusts the customer's claim today.
+- **#60** — Order agent has no data model for cancellation or inventory
+  shortfall — `Order.status` only covers
+  `processing|shipped|delivered|refunded`.
+- **#61** — The "investigation timeline" is a single expand/collapse
+  toggle over a flat list (`InvestigationPanel` in `CustomerChat.jsx`,
+  the drawer's own trace rendering in `StaffDashboard.jsx`), not a real
+  per-step vertical timeline.
+- **#62** — Analytics has clustering/churn/trend (#15/#16) but not
+  resolution rate, escalation rate, sentiment trend, or confidence
+  distribution — the last one depends on #57, the first two on #58.
+- **#63** — The escalation drawer shows only a bare `customer_id`, no
+  profile or ticket history; only "Resolve" exists, no reassign/close.
+  Reassign is scoped down to a free-text `assigned_to` field rather than
+  real staff accounts, since there's no auth system in this codebase at
+  all yet — flagged rather than quietly assumed away.
+
+Labeled **[P6]** (not real GitHub labels, matching the existing `[P0]`-
+`[P5]` title-prefix convention — see Key decisions above for why) since
+they're hardening/enhancement work on top of an already-complete
+original backlog, not new foundational scope.
 
 ## Next up (in priority order)
 
-1. Merge the remaining open PRs: #52 (#19), #53 (#20), #54 (#21), #55
-   (#22) — #18/#51 is already merged, so #52/#53 (both depend on #18)
-   should now diff cleanly against `main`.
-2. **Still the single highest-priority loose thread, now spanning the
+1. **Still the single highest-priority loose thread, now spanning the
    ENTIRE backlog.** Nobody has confirmed `call_llm()` against a real
    Anthropic API key. Real bugs have repeatedly been found without one —
    missing customer ID (#11), a TestClient lifespan gap (#14), the
@@ -478,6 +524,10 @@ issue are implemented and PR'd, each following the same branch → implement
    find something categorically different (actual model behavior,
    which nothing here can substitute for). Also the only way to actually
    run `docs/DEMO_SCRIPT.md`'s 3 scenarios for real.
+2. New [P6] backlog (#57-#63) — #57 (classifier confidence) and #58
+   (persist resolved-ticket trace) are worth doing first since #62
+   (analytics) and part of #59/#60's detection work depend on data those
+   two issues add.
 3. Two small, well-scoped fixes identified previously, still not done:
    (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite
@@ -489,10 +539,6 @@ issue are implemented and PR'd, each following the same branch → implement
 4. Optional, not blocking a demo: wire up a real Gmail/SMS provider
    behind `app/services/notifications.py` (see #21's entry above for
    why it's mocked today) — self-contained, doesn't change any caller.
-5. With the whole original backlog done, the next real planning step is
-   deciding what's worth adding *beyond* issue #22 before the actual
-   judging — polish, a second stretch feature, or just hardening what
-   exists. Worth a fresh conversation rather than assuming.
 
 ## Open questions / blockers
 
@@ -500,7 +546,7 @@ issue are implemented and PR'd, each following the same branch → implement
   key, by any session, across the entire backlog.** This has already
   caused several real, independently-discovered bugs (missing customer
   ID in #11; the TestClient lifespan gap in #14; the bare-`TypeError`
-  gap in #17). Top priority — see Next up #2.
+  gap in #17). Top priority — see Next up #1.
 - **CI is not a required check yet.** Someone with admin access on
   github.com/Deekshith2205/Servora needs to go to Settings → Branches →
   add a branch protection rule on `main` → require the CI status checks
@@ -510,3 +556,7 @@ issue are implemented and PR'd, each following the same branch → implement
   specific `TypeError` case was fixed in #17) — see Next up #3(b).
 - **`servora.db` schema drift after `create_all()` still requires a
   manual delete** — see Next up #3(a).
+- **No staff-identity/auth system exists at all** — flagged concretely
+  while scoping #63 (reassign needs *someone* to reassign to). Worth a
+  real decision (even a fake/demo login) before #63 is picked up, rather
+  than each future issue re-discovering the same gap.
