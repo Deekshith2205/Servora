@@ -121,28 +121,43 @@ docs/ARCHITECTURE.md   the agent graph + design rationale, in full
   no fabricated stats/testimonials/awards, since this is a hackathon
   project with no real customers. **No dependency on any backend issue —
   can run fully in parallel.**
+- The team merged **issue #5** ("Real tool-calling") and **issue #23**
+  ("Deployment readiness") independently in parallel — `call_llm()` now
+  supports a full Anthropic tool-calling loop (`app/tools/tool_registry.py`
+  builds the schemas/handlers), and `CONTRIBUTING.md`/`README.md` got a
+  proper prerequisites/setup rewrite (Python 3.12, Node 22 pinned — matches
+  CI). Specialist agents (`app/agents/specialists.py`) are **not yet**
+  wired to use tool-calling — that's still each specialist's own issue
+  (#6-#9).
+- **Issue #4** ("[P0] Implement Planner/Orchestrator routing") implemented:
+  `plan()` now calls the real LLM, weighing ticket history + urgency +
+  fixability (not sentiment alone) to decide resolve/clarify/escalate.
+  **Contract change**: `plan()` now takes `(classification, customer_id,
+  db)` instead of just `(classification)` — `orchestrator.py` updated.
+  PR: https://github.com/Deekshith2205/Servora/pull/34 — open, not yet
+  merged. Added `scripts/check_planner.py`.
 
 ## Next up (in priority order)
 
-1. **Still outstanding**: verify `call_llm()` against a real API key
-   (`scripts/check_llm.py` and `scripts/check_classifier.py`) — merged
-   twice now without that confirmation ever happening.
-2. Issue #4 — Planner/Orchestrator routing (depends on #3, merged).
-3. Issue #5 — real tool-calling for specialists (depends on #2, merged;
-   can run in parallel with #4).
-4. Then the P1 specialist agents (#6–#9) can be split across teammates in
-   parallel — each only touches its own function in
-   `app/agents/specialists.py`.
-5. Issue #30 (landing page design) — separate track, in parallel with all
+1. **Still outstanding, now three issues deep (#2, #3, #4)**: nobody has
+   confirmed `call_llm()` against a real Anthropic API key. Run
+   `scripts/check_llm.py`, `check_classifier.py`, and `check_planner.py`
+   with a real key — this is the single highest-priority loose thread.
+2. Merge PR #34 (issue #4).
+3. The P1 specialist agents (#6-#9) can now be split across teammates in
+   parallel — each touches only its own function in
+   `app/agents/specialists.py`, and can now use real tool-calling via
+   `app.tools.tool_registry.build_tool_registry(db)` (issue #5, merged).
+4. Issue #30 (landing page design) — separate track, in parallel with all
    of the above, whenever the teammate doing frontend visual design picks
    it up.
 
 ## Open questions / blockers
 
 - **`call_llm()` has never been confirmed against a real Anthropic API
-  key**, by any session, across both #2 and #3. Everything is verified
-  by mocked/offline tests only so far. High priority to close before more
-  agents are built on top of it — see Next up #1.
+  key**, by any session, across #2, #3, and now #4. Everything is
+  verified by mocked/offline tests only so far. This is the top priority
+  to close before more agents are built on top of it — see Next up #1.
 - **CI is not a required check yet.** Someone with admin access on
   github.com/Deekshith2205/Servora needs to go to Settings → Branches →
   add a branch protection rule on `main` → require the CI status checks
