@@ -1,6 +1,6 @@
 """Session-wide test setup.
 
-Two real bugs found by writing tests carefully, both fixed here:
+Three real bugs found by writing tests carefully, all fixed here:
 
 1. (Issue #14) A bare `TestClient(app)` (used at module level in several
    test files) does NOT reliably trigger FastAPI's ASGI lifespan (the
@@ -23,6 +23,22 @@ Two real bugs found by writing tests carefully, both fixed here:
    engine) is ever imported — this MUST happen at the top of this file,
    before the imports below, since Settings() and the engine are both
    read/created once at first import.
+
+3. (Found adding the Gemini provider) The exact same class of bug as #2,
+   for a different setting: `LLM_PROVIDER` was a config field for a long
+   time before it was ever actually branched on, so its value in a
+   developer's local .env never mattered to test behavior. The moment
+   `call_llm()` started dispatching on it for real, every existing test
+   that mocks the Anthropic client (and never touches
+   `settings.llm_provider` itself) started silently exercising whichever
+   provider the machine's own `backend/.env` happened to have configured
+   — passing or failing depending on a file that isn't even part of the
+   repo. Fixed the same way as #2: force it to "anthropic" before
+   app.config is ever imported, so the whole suite's default is
+   deterministic regardless of local `.env` content. The Gemini-specific
+   tests (test_llm_gemini.py) still work fine — they explicitly
+   `@patch("app.config.settings.llm_provider", "gemini")` per test, which
+   overrides this default for the duration of that test only.
 """
 import os
 import tempfile
@@ -31,8 +47,9 @@ _TEST_DB_PATH = os.path.join(tempfile.gettempdir(), "servora_test.db")
 if os.path.exists(_TEST_DB_PATH):
     os.remove(_TEST_DB_PATH)  # fresh schema/seed every pytest invocation
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
+os.environ["LLM_PROVIDER"] = "anthropic"
 
-from app.db.database import Base, engine  # noqa: E402 (must come after the DATABASE_URL override above)
+from app.db.database import Base, engine  # noqa: E402 (must come after the overrides above)
 from app.db.seed import seed_if_empty  # noqa: E402
 
 

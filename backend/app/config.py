@@ -9,8 +9,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    llm_provider: str = "anthropic"
+    llm_provider: str = "anthropic"  # "anthropic" | "gemini"
     anthropic_api_key: str = ""
+    google_api_key: str = ""
     llm_model: str = "claude-opus-5"
 
     database_url: str = "sqlite:///./servora.db"
