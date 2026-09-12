@@ -2,7 +2,10 @@
 
 This already runs end-to-end today (against the stubs), so the frontend has
 something real to hit from day one. As each agent issue lands, this file
-should need NO structural changes — only the stub bodies get replaced.
+should need minimal changes — mostly the stub bodies get replaced.
+
+Issue #4 changed plan()'s signature (now takes customer_id and db, so it
+can weigh ticket history) — updated the one call site below accordingly.
 """
 from dataclasses import dataclass, field
 
@@ -33,7 +36,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
     classification = classify(message)
     trace.append(TraceStep("classifier", classification.reasoning))
 
-    decision = plan(classification)
+    decision = plan(classification, customer_id, db)
     trace.append(TraceStep("planner", decision.reasoning))
 
     if decision.action == "escalate":

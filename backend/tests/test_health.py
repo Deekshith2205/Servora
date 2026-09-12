@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.agents.classifier import ClassificationResult
+from app.agents.planner import PlanDecision
 from app.main import app
 
 client = TestClient(app)
@@ -13,14 +14,21 @@ def test_health():
 
 
 def test_chat_endpoint_runs_end_to_end(monkeypatch):
-    # classifier.classify() now calls the real LLM (issue #3) — mock it so
-    # this test stays network-free and runs in CI without an API key.
-    # Downstream agents (planner, specialists, verification) are still
-    # stubs, so no other mocking is needed yet.
+    # classifier.classify() (issue #3) and planner.plan() (issue #4) both
+    # call the real LLM now — mock both so this test stays network-free and
+    # runs in CI without an API key. Specialists/verification are still
+    # stubs, so no other mocking is needed yet. Any future agent that
+    # starts calling the real LLM needs the same treatment here.
     monkeypatch.setattr(
         "app.orchestrator.classify",
         lambda message: ClassificationResult(
             category="order", sentiment="neutral", urgency=3, reasoning="mocked for test"
+        ),
+    )
+    monkeypatch.setattr(
+        "app.orchestrator.plan",
+        lambda classification, customer_id, db: PlanDecision(
+            action="resolve", target_agent="order", reasoning="mocked for test"
         ),
     )
 
