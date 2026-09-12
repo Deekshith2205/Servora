@@ -85,6 +85,75 @@ def compute_trend(db: Session, now: datetime, cutoff: datetime, days: int) -> li
     return trend
 
 
+def compute_resolution_and_escalation_rates(db: Session, cutoff: datetime) -> dict:
+    processed_tickets = db.query(Ticket).filter(
+        Ticket.status.in_(["resolved", "escalated"]),
+        Ticket.created_at >= cutoff
+    ).all()
+    
+    total = len(processed_tickets)
+    resolved = sum(1 for t in processed_tickets if t.status == "resolved")
+    escalated = sum(1 for t in processed_tickets if t.status == "escalated")
+    
+    if total == 0:
+        return {
+            "resolution_rate": {"resolved": 0, "total": 0, "rate": 0.0},
+            "escalation_rate": {"escalated": 0, "total": 0, "rate": 0.0}
+        }
+        
+    return {
+        "resolution_rate": {"resolved": resolved, "total": total, "rate": resolved / total},
+        "escalation_rate": {"escalated": escalated, "total": total, "rate": escalated / total}
+    }
+
+
+def compute_sentiment_trend(db: Session, now: datetime, cutoff: datetime, days: int) -> list[dict]:
+    tickets_in_period = db.query(Ticket).filter(Ticket.created_at >= cutoff).all()
+    
+    # Pre-initialize buckets for the last `days` days
+    buckets = {}
+    for i in range(days, -1, -1):
+        day = (now - timedelta(days=i)).date().isoformat()
+        buckets[day] = {"date": day, "positive": 0, "neutral": 0, "negative": 0}
+        
+    for t in tickets_in_period:
+        if not t.sentiment:
+            continue
+            
+        day = t.created_at.date().isoformat()
+        if day in buckets and t.sentiment in ["positive", "neutral", "negative"]:
+            buckets[day][t.sentiment] += 1
+            
+    return list(buckets.values())
+
+
+def compute_confidence_distribution(db: Session, cutoff: datetime) -> dict:
+    tickets = db.query(Ticket).filter(
+        Ticket.created_at >= cutoff,
+        Ticket.confidence.isnot(None)
+    ).all()
+    
+    low = 0
+    moderate = 0
+    high = 0
+    
+    for t in tickets:
+        c = t.confidence
+        if c < 0.60:
+            low += 1
+        elif c < 0.80:
+            moderate += 1
+        else:
+            high += 1
+            
+    return {
+        "low": low,
+        "moderate": moderate,
+        "high": high,
+        "total": len(tickets)
+    }
+
+
 @router.get("/analytics/summary")
 def analytics_summary(db: Session = Depends(get_db)) -> dict:
     now = datetime.utcnow()
@@ -199,6 +268,9 @@ def analytics_summary(db: Session = Depends(get_db)) -> dict:
 
     churn_signals = compute_churn_signals(db, cutoff)
     trend = compute_trend(db, now, cutoff, days=30)
+    rates = compute_resolution_and_escalation_rates(db, cutoff)
+    sentiment_trend = compute_sentiment_trend(db, now, cutoff, days=30)
+    confidence_distribution = compute_confidence_distribution(db, cutoff)
 
     return {
         "status": "ok",
@@ -206,4 +278,8 @@ def analytics_summary(db: Session = Depends(get_db)) -> dict:
         "recurring_issues": recurring_issues,
         "churn_signals": churn_signals,
         "trend": trend,
+        "resolution_rate": rates["resolution_rate"],
+        "escalation_rate": rates["escalation_rate"],
+        "sentiment_trend": sentiment_trend,
+        "confidence_distribution": confidence_distribution,
     }
