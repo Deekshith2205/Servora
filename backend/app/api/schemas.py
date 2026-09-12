@@ -161,3 +161,25 @@ class UpdateBookingRequest(BaseModel):
     check_out: str | None = None
     guests: int | None = None
     total_price: float | None = None
+
+
+class NotificationOut(BaseModel):
+    """Issue #21 — see app/services/notifications.py for why this is a
+    recorded row rather than a real email/SMS send."""
+
+    id: int
+    customer_id: int
+    subject: str
+    body: str
+
+    class Config:
+        from_attributes = True
+
+
+class UpdateBookingResponse(BaseModel):
+    """Mirrors issue #17's ResolveTicketResponse (ticket + kb_suggestion)
+    pattern: the booking, plus the notification this edit produced (None
+    when the PATCH changed nothing, so nothing was sent)."""
+
+    booking: BookingDetailOut
+    notification: NotificationOut | None = None

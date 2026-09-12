@@ -1,9 +1,13 @@
 """Staff booking review/edit endpoints. Implements issue #20 "[P4] Staff
 booking review/edit UI (STAFF_REVIEWED -> CONFIRMED)" — see docs/
 ARCHITECTURE.md's state machine and app/db/models.py::Booking.edit_log_json.
+Also implements issue #21 "[P4] Customer notification on booking edit" —
+see app/services/notifications.py for why it's a recorded Notification
+row rather than a real email send.
 
 State transitions this module owns:
-  - Any edit to a still-mutable booking logs the change and, the first
+  - Any edit to a still-mutable booking logs the change, notifies the
+    customer with a diff of exactly what changed (#21), and, the first
     time, bumps AI_DRAFTED -> STAFF_REVIEWED (a booking a staff member
     has touched, whether or not they changed anything the second time).
   - `POST /{id}/confirm` moves it the rest of the way to CONFIRMED.
@@ -16,9 +20,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.schemas import BookingDetailOut, UpdateBookingRequest
+from app.api.schemas import BookingDetailOut, UpdateBookingRequest, UpdateBookingResponse
 from app.db.database import get_db
 from app.db.models import Booking
+from app.services.notifications import notify_customer_of_booking_edit
 
 router = APIRouter(prefix="/api", tags=["bookings"])
 
@@ -41,10 +46,10 @@ def get_booking(booking_id: int, db: Session = Depends(get_db)) -> Booking:
     return booking
 
 
-@router.patch("/bookings/{booking_id}", response_model=BookingDetailOut)
+@router.patch("/bookings/{booking_id}", response_model=UpdateBookingResponse)
 def update_booking(
     booking_id: int, payload: UpdateBookingRequest, db: Session = Depends(get_db)
-) -> Booking:
+) -> UpdateBookingResponse:
     booking = db.get(Booking, booking_id)
     if booking is None:
         raise HTTPException(status_code=404, detail=f"Booking {booking_id} not found")
@@ -58,7 +63,7 @@ def update_booking(
     # fields the staff member never touched).
     updates = payload.model_dump(exclude_unset=True)
     log = json.loads(booking.edit_log_json)
-    changed = False
+    new_entries: list[dict] = []  # just this call's changes — issue #21's diff message
     now = datetime.now(timezone.utc).isoformat()
 
     for field, new_value in updates.items():
@@ -67,20 +72,21 @@ def update_booking(
         old_value = getattr(booking, field)
         if old_value == new_value:
             continue
-        log.append(
-            {"field": field, "old_value": str(old_value), "new_value": str(new_value), "at": now}
-        )
+        entry = {"field": field, "old_value": str(old_value), "new_value": str(new_value), "at": now}
+        log.append(entry)
+        new_entries.append(entry)
         setattr(booking, field, new_value)
-        changed = True
 
-    if changed:
+    notification = None
+    if new_entries:
         booking.edit_log_json = json.dumps(log)
         if booking.status == "AI_DRAFTED":
             booking.status = "STAFF_REVIEWED"
         db.commit()
         db.refresh(booking)
+        notification = notify_customer_of_booking_edit(db, booking.customer_id, booking, new_entries)
 
-    return booking
+    return UpdateBookingResponse(booking=booking, notification=notification)
 
 
 @router.post("/bookings/{booking_id}/confirm", response_model=BookingDetailOut)

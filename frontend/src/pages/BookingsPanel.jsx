@@ -25,6 +25,10 @@ export default function BookingsPanel() {
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [actionError, setActionError] = useState(null);
+  // Issue #21: the notification (if any) the most recent save produced —
+  // shown so staff can see exactly what the customer was told, since it's
+  // otherwise an invisible side effect of "Save changes".
+  const [lastNotification, setLastNotification] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -47,12 +51,14 @@ export default function BookingsPanel() {
       total_price: booking.total_price,
     });
     setActionError(null);
+    setLastNotification(null);
   };
 
   const closeDrawer = () => {
     setSelected(null);
     setForm(null);
     setActionError(null);
+    setLastNotification(null);
   };
 
   const applyUpdate = (updated) => {
@@ -64,6 +70,7 @@ export default function BookingsPanel() {
     if (!selected || !form) return;
     setSaving(true);
     setActionError(null);
+    setLastNotification(null);
     updateBooking(selected.id, {
       room_type: form.room_type,
       check_in: form.check_in,
@@ -71,7 +78,10 @@ export default function BookingsPanel() {
       guests: Number(form.guests),
       total_price: Number(form.total_price),
     })
-      .then(applyUpdate)
+      .then((result) => {
+        applyUpdate(result.booking);
+        setLastNotification(result.notification);
+      })
       .catch((err) => setActionError(err.message || "Failed to save changes"))
       .finally(() => setSaving(false));
   };
@@ -269,6 +279,17 @@ export default function BookingsPanel() {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {/* Issue #21: surface the notification the last save produced
+                  — otherwise it's an invisible side effect of "Save changes". */}
+              {lastNotification && (
+                <div className="drawer-section">
+                  <div className="drawer-section-title">Customer notified</div>
+                  <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--app-text-primary)" }}>
+                    {lastNotification.body}
+                  </p>
                 </div>
               )}
 
