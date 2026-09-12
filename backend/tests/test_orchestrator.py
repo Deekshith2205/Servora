@@ -82,7 +82,7 @@ def test_planner_direct_escalate_produces_a_populated_handoff_packet(monkeypatch
     assert captured["confidence"] is None  # no specialist ever ran
     assert captured["urgency"] == 8
     assert len(captured["attempted_fixes"]) == 2  # classifier + planner reasoning only
-    assert "test root cause" in result.trace[-1].reply  # escalation trace step cites the packet
+    assert "test root cause" in result.trace[-1].output  # escalation trace step cites the packet
 
 
 def test_verification_failure_escalate_produces_a_populated_handoff_packet_with_confidence(monkeypatch):

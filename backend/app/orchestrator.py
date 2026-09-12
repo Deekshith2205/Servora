@@ -46,7 +46,7 @@ _SUBJECT_MAX_LEN = 80
 @dataclass
 class TraceStep:
     agent: str
-    reply: str
+    output: str
     confidence: float | None = None
     root_cause: str | None = None
     resolution: str | None = None
@@ -73,7 +73,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
     if decision.action == "escalate":
         packet = build_handoff_packet(
             message=message,
-            attempted_fixes=[step.reply for step in trace],
+            attempted_fixes=[step.output for step in trace],
             urgency=classification.urgency,
         )
         trace.append(TraceStep("escalation", f"Routed straight to a human agent — {packet.root_cause_hypothesis}"))
@@ -100,7 +100,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
     if not verification.approved:
         packet = build_handoff_packet(
             message=message,
-            attempted_fixes=[step.reply for step in trace],
+            attempted_fixes=[step.output for step in trace],
             urgency=classification.urgency,
             confidence=response.confidence,
         )

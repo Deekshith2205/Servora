@@ -8,7 +8,7 @@ class ChatRequest(BaseModel):
 
 class TraceStepOut(BaseModel):
     agent: str
-    reply: str
+    output: str
     confidence: float | None = None
     root_cause: str | None = None
     resolution: str | None = None

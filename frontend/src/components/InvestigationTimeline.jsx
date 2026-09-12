@@ -149,7 +149,7 @@ export default function InvestigationTimeline({ trace }) {
                         {step.resolution}
                       </div>
                     )}
-                    {step.reply || step.output}
+                    {step.output || step.reply}
                   </div>
                 )}
               </div>
