@@ -169,8 +169,10 @@ call per verification.
 `backend/app/llm.py::call_llm()` now supports an optional `tools` argument
 that drives a full Anthropic tool-calling loop. Specialist agents pass
 `(tool_schemas, tool_handlers)` — obtained from
-`app.tools.tool_registry.build_tool_registry(db)` — so they can ground
-every factual claim through a real database query instead of answering from
+`app.tools.tool_registry.build_filtered_tool_registry(db, specialist)` (see
+"Specialist tool permissions" below for why it's the *filtered* factory,
+not the generic `build_tool_registry(db)`) — so they can ground every
+factual claim through a real database query instead of answering from
 model memory.
 
 Rules:
@@ -182,6 +184,86 @@ Rules:
 - The manual real-API smoke test lives in
   `backend/scripts/check_tool_calling.py`. Run it with a real key before
   opening a PR that changes the tool-calling infrastructure.
+
+### Specialist tool permissions (Issue [P6] — implemented)
+
+**Problem this closes:** every specialist previously called the generic
+`build_tool_registry(db)` and received the FULL set of tools — including
+`issue_refund` — with only each specialist's system prompt (in
+`specialists.py`) instructing it which tools it should actually use. A
+system prompt is not an authorization boundary. An LLM can misread its
+own instructions, a future prompt edit can quietly loosen what it
+"should" do, or a genuinely adversarial input can attempt to get a model
+to act outside its intended role — none of that should be able to turn
+into the read-only Account specialist actually issuing a refund. The
+fix has to live in application code that runs regardless of model
+behavior, not in wording the model is merely asked to obey:
+
+> Bad: "Account agents should never call issue_refund" (a sentence in a
+> prompt). Good: the Account agent's tool registry literally does not
+> contain `issue_refund`, and the execution layer rejects it even if an
+> invalid tool name somehow reaches the executor.
+
+**The mapping.** `app.tools.tool_registry.SPECIALIST_TOOL_PERMISSIONS` is
+the single authoritative specialist → allowed-tool-names mapping:
+
+| Specialist | Allowed tools |
+|---|---|
+| `billing` | `get_customer`, `get_customer_orders`, `check_payment_issue`, `search_kb`, `issue_refund` |
+| `technical` | `get_customer`, `get_customer_tickets`, `search_kb` |
+| `order` | `get_customer`, `get_customer_orders`, `check_order_issue`, `search_kb` |
+| `account` | `get_customer` (read-only — its entire allowlist) |
+
+`check_room_availability` is in nobody's allowlist here — it belongs to
+the separate hotel-booking stretch feature (`app/agents/booking.py`),
+which has its own dedicated registry (`app/tools/booking_tools.py`) and
+never touches this one; none of the four support specialists should
+reach it either way.
+
+**Enforcement — two levels, both in code:**
+
+1. **Tool exposure.** `build_filtered_tool_registry(db, specialist)`
+   filters the generic registry's schemas down to just that specialist's
+   allowed tools *before* `call_llm()` ever runs. The LLM is never shown
+   a schema for a tool outside its allowlist — it cannot request
+   something it was never told exists.
+2. **Tool execution.** The same filtering also applies to the handler
+   dict passed into the tool-calling loop. If a tool_use block somehow
+   names an unauthorized tool anyway (a hallucinated name, one copied
+   from an earlier turn, or a deliberately adversarial prompt), it is
+   simply not a key in that specialist's `tool_handlers` — `call_llm()`'s
+   existing "unknown tool" handling (already there for issue #5, already
+   tested) rejects it with a deterministic `tool_result` error and never
+   invokes the underlying handler. That existing mechanism is reused
+   rather than duplicated: a filtered handler dict makes "unauthorized"
+   and "doesn't exist" indistinguishable to the model, which is the more
+   secure posture — it never even learns that a restricted tool exists.
+
+The generic, unfiltered `build_tool_registry(db)` is kept exactly as it
+was — `backend/scripts/check_tool_calling.py` and `tests/test_tools.py`
+both still use it directly and still pass unmodified, since it's a
+legitimately useful building block (the filtered factory is built on
+top of it) for anything that genuinely needs the full tool set (a
+one-off script, a future admin-only agent, etc.), not something this
+change removes.
+
+`_run_specialist()` (`specialists.py`) gained one new keyword-only
+parameter, `specialist: str`, so it knows which allowlist to apply — the
+only contract change this issue needed. Each of the four public
+`resolve_billing/technical/order/account()` functions kept their exact
+existing signature; they just now pass their own name through. A
+rejected tool attempt still appears in `used_tools`/the reasoning trace
+(the attempt log in `call_llm()` records what was *attempted*, not only
+what succeeded) — so an unauthorized attempt is auditable even though it
+never executed.
+
+See `backend/tests/test_tool_permissions.py` for the full proof: each
+specialist's exact allowed set (schemas AND handlers), the actual
+Anthropic call kwargs a mocked client receives per specialist (proving
+the LLM itself never sees an unauthorized schema, not just that the
+mapping says so), and an end-to-end defensive-execution test that
+scripts a fake model attempting `issue_refund` as the Account
+specialist and confirms the order in the database is untouched.
 
 ### Support Intelligence Analytics (Issues #15 and #62)
 

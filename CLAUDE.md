@@ -514,6 +514,62 @@ Labeled **[P6]** (not real GitHub labels, matching the existing `[P0]`-
 they're hardening/enhancement work on top of an already-complete
 original backlog, not new foundational scope.
 
+**Update: #57-#63 are now all implemented and merged** (moved fast —
+see `docs/ARCHITECTURE.md`'s per-issue sections for #58/#59/#60/#62/#63;
+the entries above describing them as newly-opened are left as-is since
+they're an accurate record of that moment, not stale in a way worth
+rewriting).
+
+### 2026-09-13 (continued) — [P6] Enforce specialist-specific tool permissions
+
+Closed a real security gap: every specialist (`resolve_billing/technical/
+order/account`) called the generic `build_tool_registry(db)` and
+received the FULL 8-tool set — including `issue_refund` — with only each
+specialist's system prompt instructing it which tools it should use. A
+prompt is not an authorization boundary.
+
+- `app/tools/tool_registry.py`: added
+  `SPECIALIST_TOOL_PERMISSIONS` (the one authoritative specialist →
+  allowed-tools mapping — adjusted from a first-draft version to match
+  what each specialist's *current* prompt actually calls and what tools
+  actually exist today, not copied blindly) and
+  `build_filtered_tool_registry(db, specialist)`, which filters the
+  generic registry's schemas AND handlers down to just that specialist's
+  allowlist. The generic `build_tool_registry(db)` is unchanged —
+  `scripts/check_tool_calling.py` and `tests/test_tools.py` still use it
+  directly.
+- `app/agents/specialists.py`: `_run_specialist()` gained one new
+  keyword-only param, `specialist: str`, to select the allowlist — the
+  only contract change needed. All four public `resolve_x()` signatures
+  are untouched.
+- Enforcement is real at both levels: the LLM never sees a schema for a
+  tool outside its allowlist (tool exposure), and even if a tool_use
+  block names an unauthorized tool anyway, it isn't a key in that
+  specialist's filtered handler dict — `call_llm()`'s existing "unknown
+  tool" rejection (from issue #5, already tested) handles it, reused
+  rather than duplicated.
+- `tests/test_tool_permissions.py` (new, 11 tests): each specialist's
+  exact allowed set; the actual kwargs a mocked Anthropic client
+  receives per specialist (proving the LLM itself never sees an
+  unauthorized schema); an end-to-end defensive-execution test scripting
+  a fake model attempting `issue_refund` as the Account specialist and
+  confirming the seeded order's DB row is untouched; a control-case test
+  proving the identical tool_use block DOES execute when sent through
+  the (authorized) Billing registry, to rule out "the handler was just
+  broken" as an alternative explanation.
+- `tests/test_order_issues.py` needed two one-line updates (its two
+  direct `_run_specialist(...)` calls now pass `specialist="order"`) —
+  the only pre-existing test file touched.
+
+Full suite: **196 passed** (185 pre-existing + 11 new), including the
+issue's specifically-named regression targets
+(`test_specialists.py`/`test_billing.py`/`test_order_issues.py`/
+`test_tools.py`, 63 tests, run in isolation as well as part of the full
+suite). Frontend lint/build: clean (no API/contract surface changed by
+this issue at all — purely an internal backend security boundary, so no
+live browser verification was needed here the way a new endpoint or UI
+change would call for).
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the

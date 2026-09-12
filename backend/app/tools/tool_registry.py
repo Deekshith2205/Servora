@@ -1,7 +1,8 @@
 """Tool registry for LLM tool-calling. Implements issue #5
-"[P0] Real tool-calling: give specialist agents actual LLM tool-call access".
+"[P0] Real tool-calling: give specialist agents actual LLM tool-call access",
+and issue [P6] "Enforce specialist-specific tool permissions".
 
-This module owns three concerns:
+This module owns four concerns:
 
 1. Anthropic-compatible tool schemas (ToolParam dicts) for every function in
    app/tools/mock_tools.py.
@@ -13,7 +14,13 @@ This module owns three concerns:
    each handler so specialist agents never have to import the SDK or the DB
    directly. Everything database-related stays here.
 
-Usage by a specialist:
+4. An authoritative specialist -> allowed-tool-names mapping
+   (SPECIALIST_TOOL_PERMISSIONS) and a factory
+   (build_filtered_tool_registry) that filters (3) down to only what one
+   specialist is allowed to see and call. See that function's docstring
+   for why this is a real security boundary and not just a convenience.
+
+Usage by a specialist (generic, unfiltered — e.g. a one-off script):
 
     from app.tools.tool_registry import build_tool_registry
     from app.llm import call_llm
@@ -24,6 +31,15 @@ Usage by a specialist:
         messages=[{"role": "user", "content": message}],
         tools=(tool_schemas, tool_handlers),
     )
+
+Usage by a specialist agent (permission-filtered — what
+app/agents/specialists.py actually does):
+
+    from app.tools.tool_registry import build_filtered_tool_registry
+
+    tool_schemas, tool_handlers = build_filtered_tool_registry(db, "account")
+    # tool_schemas/tool_handlers now contain ONLY the tools "account" is
+    # allowed — see SPECIALIST_TOOL_PERMISSIONS below.
 """
 from __future__ import annotations
 
@@ -318,4 +334,116 @@ def build_tool_registry(
 
     schemas = [b.schema for b in bound]
     handlers = {b.schema["name"]: b.handler for b in bound}
+    return schemas, handlers
+
+
+# ---------------------------------------------------------------------------
+# Specialist tool permissions — issue [P6] "Enforce specialist-specific
+# tool permissions"
+# ---------------------------------------------------------------------------
+#
+# Why this exists: before this, every specialist called build_tool_registry()
+# directly and got the FULL registry — all 8 tools, including issue_refund —
+# with each specialist's system prompt in specialists.py simply instructing
+# it which tools it should use. A system prompt is not an authorization
+# boundary: an LLM can be jailbroken, can misread its own instructions, or a
+# future prompt edit can quietly loosen what it "should" do — none of that
+# should be able to turn into the Account specialist actually being able to
+# issue a refund. The fix has to live in application code that runs whether
+# or not the model behaves, not in wording the model is merely asked to obey.
+#
+# This mapping is the single authoritative source of truth for "which
+# specialist may call which tool." Adjusted from a first-draft version of
+# this permission list to match what each specialist's *current* system
+# prompt (specialists.py) actually calls, and the tools that actually exist
+# in TOOL_SCHEMAS today — not copied from an earlier draft of this feature:
+#
+#   - billing:   the only specialist that may ever call issue_refund, and
+#                the only one that needs check_payment_issue (duplicate-
+#                charge / payment-fulfillment-mismatch detection — #59).
+#   - technical: read-only; grounds answers in the KB and this customer's
+#                ticket history, never touches an order.
+#   - order:     investigates and explains order status (including
+#                check_order_issue's cancellation/inventory-shortfall
+#                detection — #60) but must NEVER refund — its own system
+#                prompt already says so ("Do NOT blindly issue a refund
+#                here"); this mapping is what makes that a fact about the
+#                system, not just an instruction the model could ignore.
+#   - account:   read-only profile lookup ONLY. Its system prompt never
+#                calls anything but get_customer, so that's its entire
+#                allowlist — the smallest of the four, matching "Account
+#                is read-only" being the whole point of that specialist.
+#
+# check_room_availability is deliberately in NOBODY's allowlist here: it
+# belongs to the separate hotel-booking stretch feature (app/agents/
+# booking.py), which uses its own dedicated registry
+# (app/tools/booking_tools.py) and never touches this one at all — none of
+# the four support specialists should be able to reach it either way.
+SPECIALIST_TOOL_PERMISSIONS: dict[str, frozenset[str]] = {
+    "billing": frozenset({
+        "get_customer",
+        "get_customer_orders",
+        "check_payment_issue",
+        "search_kb",
+        "issue_refund",
+    }),
+    "technical": frozenset({
+        "get_customer",
+        "get_customer_tickets",
+        "search_kb",
+    }),
+    "order": frozenset({
+        "get_customer",
+        "get_customer_orders",
+        "check_order_issue",
+        "search_kb",
+    }),
+    "account": frozenset({
+        "get_customer",
+    }),
+}
+
+
+def build_filtered_tool_registry(
+    db: Session,
+    specialist: str,
+) -> tuple[list[dict], dict[str, Callable[..., Any]]]:
+    """Return ``(tool_schemas, tool_handlers)`` containing ONLY the tools
+    ``specialist`` is authorized for, per ``SPECIALIST_TOOL_PERMISSIONS``.
+
+    This is the actual enforcement point, at two levels:
+
+    1. Tool exposure — ``tool_schemas`` only contains schemas for allowed
+       tools, so the LLM is never even shown that an unauthorized tool
+       exists (it can't ask for something it was never told about).
+    2. Tool execution — ``tool_handlers`` only contains callables for
+       allowed tools. Even if a tool_use block somehow names an
+       unauthorized tool anyway (a hallucinated name, or a name copied
+       from an earlier turn/another specialist), ``call_llm``'s existing
+       tool-calling loop already rejects any name not present in
+       ``tool_handlers`` — see its "Unknown tool" handling in
+       ``app/llm.py`` — returning a graceful, deterministic tool_result
+       error instead of executing anything. That existing mechanism is
+       reused deliberately rather than duplicated: a filtered handler
+       dict makes "unauthorized" and "doesn't exist" indistinguishable to
+       the model, which is the more secure posture (it never learns that
+       a restricted tool exists at all).
+
+    Raises ``ValueError`` for an unrecognized ``specialist`` — a
+    programming-error guard (a typo'd specialist key), not a security
+    check against the LLM.
+    """
+    if specialist not in SPECIALIST_TOOL_PERMISSIONS:
+        raise ValueError(
+            f"Unknown specialist {specialist!r} — must be one of "
+            f"{sorted(SPECIALIST_TOOL_PERMISSIONS)}. This is a programming "
+            "error (a typo'd specialist key), not something an LLM can "
+            "trigger."
+        )
+
+    allowed = SPECIALIST_TOOL_PERMISSIONS[specialist]
+    all_schemas, all_handlers = build_tool_registry(db)
+
+    schemas = [s for s in all_schemas if s["name"] in allowed]
+    handlers = {name: fn for name, fn in all_handlers.items() if name in allowed}
     return schemas, handlers
