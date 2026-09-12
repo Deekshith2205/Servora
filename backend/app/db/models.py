@@ -52,6 +52,7 @@ class Ticket(Base):
     sentiment: Mapped[str] = mapped_column(String, default="")  # positive|neutral|negative
     urgency: Mapped[int] = mapped_column(Integer, default=0)  # 1-10
     status: Mapped[str] = mapped_column(String, default="open")  # open|resolved|escalated
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Issue #14: JSON-encoded snapshots of the reasoning trace and handoff

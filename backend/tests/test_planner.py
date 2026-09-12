@@ -12,7 +12,7 @@ from app.db.models import Ticket
 
 
 def _classification(**overrides):
-    defaults = dict(category="order", sentiment="neutral", urgency=3, reasoning="test")
+    defaults = dict(category="order", sentiment="neutral", urgency=3, reasoning="test", confidence=1.0)
     defaults.update(overrides)
     return ClassificationResult(**defaults)
 

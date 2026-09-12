@@ -45,7 +45,7 @@ def test_escalation_detail_for_a_real_escalation_has_trace_and_packet(monkeypatc
     monkeypatch.setattr(
         "app.orchestrator.classify",
         lambda message: ClassificationResult(
-            category="account", sentiment="neutral", urgency=8, reasoning="mocked for test"
+            category="account", sentiment="neutral", urgency=8, reasoning="mocked for test", confidence=0.9
         ),
     )
     monkeypatch.setattr(

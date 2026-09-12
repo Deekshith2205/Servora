@@ -24,7 +24,7 @@ def test_chat_endpoint_runs_end_to_end(monkeypatch):
     monkeypatch.setattr(
         "app.orchestrator.classify",
         lambda message: ClassificationResult(
-            category="order", sentiment="neutral", urgency=3, reasoning="mocked for test"
+            category="order", sentiment="neutral", urgency=3, reasoning="mocked for test", confidence=0.9
         ),
     )
     monkeypatch.setattr(
@@ -57,7 +57,7 @@ def test_chat_endpoint_exposes_handoff_packet_on_escalation(monkeypatch):
     monkeypatch.setattr(
         "app.orchestrator.classify",
         lambda message: ClassificationResult(
-            category="account", sentiment="neutral", urgency=8, reasoning="mocked for test"
+            category="account", sentiment="neutral", urgency=8, reasoning="mocked for test", confidence=0.9
         ),
     )
     monkeypatch.setattr(

@@ -397,6 +397,21 @@ export default function StaffDashboard() {
                       </span>
                     </span>
                   </div>
+                  <div className="drawer-field">
+                    <span className="drawer-field-label">Classifier Confidence</span>
+                    <span className="drawer-field-value">
+                      {selectedEscalation.confidence === null || selectedEscalation.confidence === undefined ? (
+                        <span style={{color: 'var(--app-text-muted)', fontSize: '0.85rem'}}>Confidence unavailable</span>
+                      ) : (
+                        <span>
+                          {Math.round(selectedEscalation.confidence * 100)}% &middot; {
+                            selectedEscalation.confidence >= 0.80 ? 'High' : 
+                            selectedEscalation.confidence >= 0.60 ? 'Moderate' : 'Low'
+                          }
+                        </span>
+                      )}
+                    </span>
+                  </div>
                   {selectedEscalation.customer_id && (
                     <div className="drawer-field">
                       <span className="drawer-field-label">Customer ID</span>
