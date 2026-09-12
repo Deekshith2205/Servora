@@ -13,8 +13,15 @@ the full agent graph and design rationale.
 
 - **Backend**: FastAPI + SQLAlchemy (SQLite for the demo) + an LLM
   (Anthropic by default, swappable) — `backend/`
-- **Frontend**: React + Vite — `frontend/`, three views: Customer Chat,
-  Staff Dashboard, Analytics
+- **Frontend**: React + Vite — `frontend/`. Views: Customer Chat, Staff
+  Dashboard, Book a Room (voice/text hotel-booking stretch feature),
+  Analytics, and the **Investigation Board** — a dedicated page showing
+  the full autonomous reasoning chain (agent activity feed, timeline,
+  evidence, root cause, resolution, and cross-conversation agent
+  performance metrics) behind every conversation, backed by
+  `Investigation`/`InvestigationStep` records persisted alongside every
+  `/api/chat` call. See `docs/ARCHITECTURE.md`'s "Investigation Board"
+  section.
 
 ## Status
 

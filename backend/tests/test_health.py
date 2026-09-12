@@ -50,6 +50,10 @@ def test_chat_endpoint_runs_end_to_end(monkeypatch):
     assert body["status"] in ("resolved", "escalated")
     assert len(body["trace"]) > 0
     assert body["handoff_packet"] is None  # resolved path carries no packet
+    # Found while wiring up the Investigation Board: ticket_id was computed
+    # by the orchestrator (issue #14) but never actually returned by this
+    # endpoint — the frontend had no way to link a reply to its ticket.
+    assert body["ticket_id"] is not None
 
 
 def test_chat_endpoint_exposes_handoff_packet_on_escalation(monkeypatch):

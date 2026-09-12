@@ -31,6 +31,13 @@ class ChatResponse(BaseModel):
     status: str
     trace: list[TraceStepOut]
     handoff_packet: HandoffPacketOut | None = None
+    # Found while wiring up [FEATURE] Investigation Board: orchestrator.py's
+    # ChatResult has carried a real ticket_id since issue #14, but it was
+    # never actually included in this response — the frontend had no way
+    # to link a just-completed conversation to its ticket (or now, its
+    # Investigation) without a separate, fragile lookup. Additive/optional
+    # so no existing caller of /api/chat breaks.
+    ticket_id: int | None = None
 
 
 class TicketOut(BaseModel):
@@ -217,3 +224,73 @@ class UpdateBookingResponse(BaseModel):
 
     booking: BookingDetailOut
     notification: NotificationOut | None = None
+
+
+class InvestigationStepOut(BaseModel):
+    """One row from app.db.models.InvestigationStep — [FEATURE]
+    Investigation Board."""
+
+    step_number: int
+    timestamp: str
+    agent_name: str
+    action: str
+    status: str
+    evidence: list[str]
+    duration_ms: int
+    confidence: float | None = None
+
+
+class InvestigationAgentSummaryOut(BaseModel):
+    """Per-agent rollup WITHIN one investigation (how many of its steps
+    that agent ran, total/avg time) — the per-investigation "agents"
+    array the issue's example JSON asks for. See
+    GET /api/investigations/metrics/agents for the cross-investigation
+    version that actually makes "Agent Performance Metrics" meaningful."""
+
+    agent_name: str
+    steps: int
+    total_duration_ms: int
+
+
+class InvestigationOut(BaseModel):
+    id: int
+    ticket_id: int
+    customer_id: int
+    started_at: str
+    completed_at: str | None = None
+    confidence: float | None = None
+    root_cause: str | None = None
+    resolution: str | None = None
+    status: str
+    timeline: list[InvestigationStepOut]
+    agents: list[InvestigationAgentSummaryOut]
+    evidence: list[str]
+
+
+class InvestigationListItemOut(BaseModel):
+    """Summary row for the Investigation Board's browse list — enough to
+    render a card without fetching every full investigation."""
+
+    id: int
+    ticket_id: int
+    customer_id: int
+    status: str
+    root_cause: str | None = None
+    confidence: float | None = None
+    started_at: str
+
+
+class AgentPerformanceOut(BaseModel):
+    """One agent's aggregate stats ACROSS every investigation — a real
+    SQL GROUP BY over InvestigationStep, not a per-investigation view.
+    This is what makes "Agent Performance Metrics" a meaningful section
+    rather than one data point per agent."""
+
+    agent_name: str
+    total_steps: int
+    avg_duration_ms: float
+    avg_confidence: float | None = None
+
+
+class InvestigationMetricsOut(BaseModel):
+    agents: list[AgentPerformanceOut]

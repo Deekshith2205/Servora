@@ -93,3 +93,19 @@ export function updateBooking(bookingId, changes) {
 export function confirmBooking(bookingId) {
   return request(`/api/bookings/${bookingId}/confirm`, { method: "POST" });
 }
+
+export function fetchInvestigations(limit = 50) {
+  return request(`/api/investigations?limit=${limit}`);
+}
+
+export function fetchInvestigation(investigationId) {
+  return request(`/api/investigations/${investigationId}`);
+}
+
+export function fetchInvestigationByTicket(ticketId) {
+  return request(`/api/investigations/by-ticket/${ticketId}`);
+}
+
+export function fetchAgentPerformanceMetrics() {
+  return request("/api/investigations/metrics/agents");
+}

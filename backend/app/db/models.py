@@ -145,6 +145,77 @@ class CustomerMemory(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Investigation(Base):
+    """Backs the [FEATURE] "AI Investigation Board & Autonomous Reasoning
+    Timeline" — a normalized, queryable record of one /api/chat pipeline
+    run, alongside (not replacing) `Ticket.trace_json` — see
+    `orchestrator.py::_persist_investigation()`.
+
+    Why a separate table instead of just parsing `Ticket.trace_json`
+    harder: the Investigation Board's "Agent Performance Metrics" section
+    needs real cross-investigation aggregation (avg duration per agent,
+    etc.) — a JSON blob per ticket can't be GROUP BY'd in SQL without
+    deserializing every row first. `InvestigationStep` below is the
+    normalized per-step data that makes that a real query instead of an
+    in-Python scan of every ticket's trace_json.
+
+    One row per ticket — `ticket_id` is unique. `status` mirrors the
+    shape a genuinely async/streaming pipeline would have
+    ("investigating" -> "root_cause_found" -> "resolved"/"escalated"),
+    for API completeness and future use, but see the orchestrator's own
+    note: today's /api/chat is fully synchronous, so a row is only ever
+    written once already complete — "investigating" and
+    "root_cause_found" are valid values this column supports, not states
+    any current caller will actually observe mid-flight.
+    """
+
+    __tablename__ = "investigations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), unique=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    root_cause: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    resolution: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    # investigating | root_cause_found | escalated | resolved
+    status: Mapped[str] = mapped_column(String, default="investigating")
+
+    steps: Mapped[list["InvestigationStep"]] = relationship(
+        back_populates="investigation", order_by="InvestigationStep.step_number"
+    )
+
+
+class InvestigationStep(Base):
+    """One agent's turn within an `Investigation` — see that model's
+    docstring. `evidence_json` is a JSON-encoded list of short,
+    human-readable strings derived from REAL tool call results (see
+    `specialists.py`'s evidence-capturing wrapper) — never placeholder
+    text, even when a step made no tool calls (its evidence list is then
+    just empty, not faked).
+    """
+
+    __tablename__ = "investigation_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("investigations.id"))
+    step_number: Mapped[int] = mapped_column(Integer)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    agent_name: Mapped[str] = mapped_column(String)
+    action: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="completed")  # completed | failed
+    evidence_json: Mapped[str] = mapped_column(String, default="[]")
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+
+    investigation: Mapped["Investigation"] = relationship(back_populates="steps")
+
+    @property
+    def evidence(self) -> list[str]:
+        return json.loads(self.evidence_json) if self.evidence_json else []
+
+
 class Notification(Base):
     """Backs issue #21 (customer notification on booking edit).
 
