@@ -27,16 +27,22 @@ through P4 (stretch features). Pick one up; see
 
 ## Quick start
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for full setup. Short version:
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for full prerequisites and setup details.
 
 ```bash
-# backend
-cd backend && python -m venv .venv && ./.venv/Scripts/activate
-pip install -r requirements.txt && cp .env.example .env
+# Terminal 1 — backend (Python 3.12)
+cd backend
+python -m venv .venv
+# Windows: .venv\Scripts\Activate.ps1   macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env          # set ANTHROPIC_API_KEY for live AI chat
 uvicorn app.main:app --reload
 
-# frontend (separate terminal)
-cd frontend && npm install && cp .env.example .env && npm run dev
+# Terminal 2 — frontend (Node 22)
+cd frontend
+cp .env.example .env
+npm ci
+npm run dev
 ```
 
-Open `http://localhost:5173`.
+Frontend: **http://localhost:5173** · Backend: **http://localhost:8000**
