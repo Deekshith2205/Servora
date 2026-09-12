@@ -40,6 +40,11 @@ class SpecialistResponse:
     confidence: float = 0.0  # 0-1, consumed by the Verification/Escalation agents
     root_cause: str | None = None
     resolution: str | None = None
+    # [FEATURE] Investigation Board: short, human-readable strings derived
+    # from each tool call's REAL result (see _describe_evidence below) —
+    # never placeholder text. Empty when no tools were called. Threaded
+    # through to Investigation/InvestigationStep by orchestrator.py.
+    evidence: list[str] = field(default_factory=list)
 
 
 def _estimate_confidence(used_tools: list[str]) -> float:
@@ -59,6 +64,57 @@ def _estimate_confidence(used_tools: list[str]) -> float:
     if any(t in _GROUNDING_TOOLS for t in used_tools):
         return 0.6
     return 0.2
+
+
+def _describe_evidence(tool_name: str, args: dict, result) -> str:
+    """Turn one real tool call's (args, result) into a short, human-
+    readable evidence string for the Investigation Board's Evidence
+    Panel — [FEATURE] "AI Investigation Board". Deliberately derived
+    from the ACTUAL SQLAlchemy objects / dicts mock_tools.py returns
+    (never placeholder text): a customer's real name/tier, a real order
+    ID, a real KB article title, the real detected issue_type. Falls
+    back to a generic-but-still-real description for any future tool
+    this isn't updated for, rather than raising.
+    """
+    if tool_name == "get_customer":
+        if result is None:
+            return f"Looked up customer #{args.get('customer_id')} — not found."
+        return f"Retrieved customer profile: {result.name} ({result.tier} tier)."
+
+    if tool_name == "get_customer_orders":
+        if not result:
+            return f"Queried orders for customer #{args.get('customer_id')} — none found."
+        ids = ", ".join(f"#{o.id}" for o in result)
+        return f"Retrieved {len(result)} order(s) for customer #{args.get('customer_id')}: {ids}."
+
+    if tool_name == "get_customer_tickets":
+        if not result:
+            return f"Queried ticket history for customer #{args.get('customer_id')} — none found."
+        return f"Retrieved {len(result)} prior ticket(s) for customer #{args.get('customer_id')}."
+
+    if tool_name == "search_kb":
+        if not result:
+            return f"Searched knowledge base for {args.get('query')!r} — no matching articles."
+        titles = "; ".join(a.title for a in result)
+        return f"Searched knowledge base for {args.get('query')!r} — found: {titles}."
+
+    if tool_name == "check_payment_issue":
+        if isinstance(result, dict) and result.get("detected"):
+            return f"Payment anomaly detected on order #{result.get('order_id')}: {result.get('issue_type')}."
+        return f"Checked order #{args.get('order_id')} for payment anomalies — none detected."
+
+    if tool_name == "check_order_issue":
+        if isinstance(result, dict) and result.get("detected"):
+            return f"Fulfillment anomaly detected on order #{result.get('order_id')}: {result.get('issue_type')}."
+        return f"Checked order #{args.get('order_id')} for fulfillment anomalies — none detected."
+
+    if tool_name == "issue_refund":
+        if isinstance(result, dict) and result.get("success"):
+            return f"Issued refund for order #{result.get('order_id')}."
+        error = result.get("error") if isinstance(result, dict) else "unknown error"
+        return f"Refund attempt for order #{args.get('order_id')} failed: {error}."
+
+    return f"Called {tool_name} with {args}."
 
 
 def _run_specialist(
@@ -97,10 +153,27 @@ def _run_specialist(
     profile = load_profile(customer_id, db)
     tool_schemas, tool_handlers = build_filtered_tool_registry(db, specialist)
     used_tools: list[str] = []
-    
+
+    # [FEATURE] Investigation Board: capture one evidence string per real
+    # tool call, on EVERY allowed tool (not just the two below that also
+    # derive a root_cause) — applied first, innermost, so the
+    # check_payment_issue/check_order_issue wraps below still see the
+    # true tool result to reason about, while evidence is recorded
+    # regardless of which specialist/tool ran.
+    evidence: list[str] = []
+
+    def _make_evidence_wrapper(name, fn):
+        def wrapped(args):
+            result = fn(args)
+            evidence.append(_describe_evidence(name, args, result))
+            return result
+        return wrapped
+
+    tool_handlers = {name: _make_evidence_wrapper(name, fn) for name, fn in tool_handlers.items()}
+
     root_cause = None
     resolution = None
-    
+
     original_check_payment = tool_handlers.get("check_payment_issue")
     if original_check_payment:
         def wrapped_check_payment(args):
@@ -142,7 +215,14 @@ def _run_specialist(
         max_tokens=max_tokens,
     )
 
-    return SpecialistResponse(reply=reply, used_tools=used_tools, confidence=_estimate_confidence(used_tools), root_cause=root_cause, resolution=resolution)
+    return SpecialistResponse(
+        reply=reply,
+        used_tools=used_tools,
+        confidence=_estimate_confidence(used_tools),
+        root_cause=root_cause,
+        resolution=resolution,
+        evidence=evidence,
+    )
 
 
 _BILLING_SYSTEM_PROMPT = """You are the Billing specialist agent in an \

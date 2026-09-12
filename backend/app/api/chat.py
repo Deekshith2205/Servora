@@ -35,4 +35,5 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
         # on the escalated path) instead of leaving the frontend with
         # nothing but the generic reply text.
         handoff_packet=asdict(result.handoff_packet) if result.handoff_packet else None,
+        ticket_id=result.ticket_id,
     )

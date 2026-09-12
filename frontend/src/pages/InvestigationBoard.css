@@ -1,0 +1,534 @@
+/* [FEATURE] AI Investigation Board — enterprise trace-viewer styling
+   (Datadog/Splunk/OpenAI-agent-trace inspired), scoped under .servora-app
+   so it shares that theme's CSS variables (see App.css). */
+
+.ib-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ib-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .ib-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- List panel ---- */
+
+.ib-list-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-soft);
+  max-height: 78vh;
+  overflow-y: auto;
+}
+
+.ib-list-header {
+  padding: 14px 16px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--app-text-primary);
+  border-bottom: 1px solid var(--app-border);
+  position: sticky;
+  top: 0;
+  background: var(--app-surface);
+  z-index: 1;
+}
+
+.ib-list-loading {
+  padding: 1.5rem;
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+}
+
+.ib-list-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.ib-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--app-border);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+
+.ib-list-item:hover {
+  background: var(--app-surface-hover);
+}
+
+.ib-list-item.active {
+  background: var(--app-primary-soft);
+  border-left: 3px solid var(--app-primary);
+}
+
+.ib-list-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ib-list-item-cause {
+  font-size: 0.82rem;
+  color: var(--app-text-primary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ib-list-item-meta {
+  font-size: 0.72rem;
+  color: var(--app-text-muted);
+}
+
+/* ---- Detail panel ---- */
+
+.ib-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ib-section {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-soft);
+  padding: 16px;
+}
+
+.ib-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-text-secondary);
+  margin-bottom: 12px;
+}
+
+.ib-empty-note {
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+}
+
+/* ---- A. Status banner ---- */
+
+.ib-status-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  width: fit-content;
+}
+
+.ib-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-investigating {
+  background: var(--app-info-bg);
+  color: var(--app-info-text);
+}
+.status-investigating .ib-status-dot {
+  animation: ib-pulse 1.1s ease-in-out infinite;
+}
+
+.status-root-cause {
+  background: var(--app-warning-bg);
+  color: var(--app-warning-text);
+}
+
+.status-escalated {
+  background: var(--app-warning-bg);
+  color: var(--app-warning-text);
+}
+
+.status-resolved {
+  background: var(--app-success-bg);
+  color: var(--app-success-text);
+}
+
+@keyframes ib-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.5); }
+}
+
+/* ---- B. Agent activity feed ---- */
+
+.ib-feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ib-feed-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--app-radius-md);
+  background: var(--app-surface-blue);
+  animation: ib-fade-in-up 0.35s ease both;
+}
+
+.ib-feed-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--app-primary-soft);
+  color: var(--app-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ib-feed-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ib-feed-agent {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--app-text-primary);
+}
+
+.ib-feed-action {
+  font-size: 0.8rem;
+  color: var(--app-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ib-feed-dots {
+  display: inline-block;
+  margin-left: 4px;
+  animation: ib-blink 1s steps(1) infinite;
+}
+
+@keyframes ib-blink {
+  50% { opacity: 0.2; }
+}
+
+.ib-feed-duration {
+  font-size: 0.72rem;
+  color: var(--app-text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+@keyframes ib-fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- C. Checklist timeline ---- */
+
+.ib-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ib-checklist-item {
+  display: flex;
+  gap: 12px;
+  animation: ib-fade-in-up 0.35s ease both;
+}
+
+.ib-checklist-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.mark-done {
+  background: var(--app-success-bg);
+  color: var(--app-success-text);
+}
+
+.mark-failed {
+  background: var(--app-danger-bg);
+  color: var(--app-danger-text);
+}
+
+.ib-checklist-content {
+  flex: 1;
+  border-bottom: 1px solid var(--app-border);
+  padding-bottom: 8px;
+}
+
+.ib-checklist-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 6px 0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.ib-checklist-action {
+  font-size: 0.85rem;
+  color: var(--app-text-primary);
+  font-weight: 600;
+}
+
+.ib-checklist-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ib-checklist-agent {
+  font-size: 0.72rem;
+  color: var(--app-text-muted);
+}
+
+.ib-chevron {
+  transition: transform 0.15s ease;
+  color: var(--app-text-muted);
+}
+.ib-chevron.open {
+  transform: rotate(180deg);
+}
+
+.ib-checklist-detail {
+  padding: 6px 0 4px;
+  font-size: 0.8rem;
+  color: var(--app-text-secondary);
+}
+
+.ib-checklist-timing {
+  font-size: 0.72rem;
+  color: var(--app-text-muted);
+  margin-bottom: 6px;
+}
+
+.ib-checklist-evidence {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.ib-checklist-evidence li {
+  margin-bottom: 4px;
+}
+
+.ib-checklist-no-evidence {
+  color: var(--app-text-muted);
+  font-style: italic;
+}
+
+/* ---- Confidence badge ---- */
+
+.confidence-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.confidence-high {
+  background: var(--app-success-bg);
+  color: var(--app-success-text);
+}
+.confidence-medium {
+  background: var(--app-warning-bg);
+  color: var(--app-warning-text);
+}
+.confidence-low {
+  background: var(--app-danger-bg);
+  color: var(--app-danger-text);
+}
+
+/* ---- D. Evidence panel ---- */
+
+.ib-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.ib-evidence-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--app-surface-blue);
+  border-radius: var(--app-radius-md);
+  padding: 10px;
+  font-size: 0.78rem;
+  color: var(--app-text-primary);
+  line-height: 1.4;
+}
+.ib-evidence-card svg {
+  color: var(--app-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ---- E. Root cause card ---- */
+
+.ib-root-cause-card {
+  border-left: 4px solid var(--app-danger-text);
+  background: var(--app-danger-bg);
+  border-radius: var(--app-radius-md);
+  padding: 16px;
+}
+
+.ib-root-cause-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--app-danger-text);
+  margin-bottom: 6px;
+}
+
+.ib-root-cause-text {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--app-text-primary);
+  line-height: 1.5;
+}
+
+.ib-root-cause-confidence {
+  font-size: 0.8rem;
+  color: var(--app-danger-text);
+}
+
+/* ---- F. Resolution card ---- */
+
+.ib-resolution-card {
+  border-left: 4px solid var(--app-success-text);
+  background: var(--app-success-bg);
+  border-radius: var(--app-radius-md);
+  padding: 16px;
+}
+
+.ib-resolution-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--app-success-text);
+  margin-bottom: 6px;
+}
+
+.ib-resolution-text {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  color: var(--app-text-primary);
+  line-height: 1.5;
+}
+
+.ib-resolution-probability {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--app-success-text);
+}
+
+.ib-probability-bar-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(4, 120, 87, 0.15);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ib-probability-bar-fill {
+  height: 100%;
+  background: var(--app-success-text);
+  border-radius: 999px;
+  transition: width 0.5s ease;
+}
+
+/* ---- G. Escalation summary ---- */
+
+.ib-escalation-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--app-text-secondary);
+}
+.ib-escalation-list li {
+  margin-bottom: 6px;
+}
+
+/* ---- Agent performance metrics ---- */
+
+.ib-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.ib-metric-card {
+  background: var(--app-surface-blue);
+  border-radius: var(--app-radius-md);
+  padding: 12px;
+  text-align: center;
+}
+
+.ib-metric-agent {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--app-text-secondary);
+  margin-bottom: 4px;
+}
+
+.ib-metric-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--app-primary);
+}
+
+.ib-metric-caption {
+  font-size: 0.7rem;
+  color: var(--app-text-muted);
+}
+
+.ib-metric-confidence {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--app-success-text);
+}

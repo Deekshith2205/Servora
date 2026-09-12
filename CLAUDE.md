@@ -570,6 +570,56 @@ this issue at all — purely an internal backend security boundary, so no
 live browser verification was needed here the way a new endpoint or UI
 change would call for).
 
+### 2026-09-13 (continued) — [FEATURE] AI Investigation Board & Autonomous Reasoning Timeline
+
+New dedicated frontend page (`InvestigationBoard.jsx`, its own nav tab)
+showing the full autonomous reasoning chain behind every conversation —
+was previously only a collapsible panel next to a chat bubble or inside
+the Staff Dashboard drawer.
+
+- `app/db/models.py`: new `Investigation` + `InvestigationStep` tables —
+  ADDITIVE alongside `Ticket.trace_json` (issue #14), not a replacement;
+  see the ARCHITECTURE.md section for why a normalized table (real
+  `GROUP BY agent_name` for "Agent Performance Metrics") rather than
+  parsing JSON blobs harder.
+- `app/agents/specialists.py`: every tool call now captures a real,
+  human-readable evidence string (`_describe_evidence()`, derived from
+  the actual `Order`/`Customer`/`KBArticle` objects mock_tools.py
+  returns — never placeholder text). `SpecialistResponse` gained one
+  additive `evidence: list[str]` field.
+- `app/orchestrator.py`: `handle_message()` times each stage and records
+  a parallel `step_records` list; `_persist_investigation()` writes it
+  at every point the function already returns (both escalation paths,
+  the resolved path) — mirrors `_create_ticket()`'s call sites exactly.
+- `app/api/investigations.py` (new): `GET /api/investigations` (list),
+  `GET /api/investigations/{id}` / `.../by-ticket/{ticket_id}` (full
+  detail), `GET /api/investigations/metrics/agents` (cross-investigation
+  aggregate).
+
+**Real bug found wiring this up**: `ChatResult.ticket_id` has existed
+since issue #14, but `POST /api/chat`'s response schema never actually
+included it — the frontend had no way to link a finished conversation to
+its ticket (or now, Investigation) without a fragile separate lookup.
+Fixed by adding `ticket_id` to `ChatResponse` (additive/optional).
+
+**Honest architectural call, documented rather than glossed over**:
+`/api/chat` is fully synchronous — there's no genuine in-progress
+streaming state to subscribe to. The Board fetches an already-complete
+investigation and replays its real steps with a staggered reveal
+animation instead of pretending to be truly live via SSE/WebSocket
+(a legitimate, larger follow-up if genuinely real-time updates are
+wanted). The four "bonus, if feasible" items from the original request
+(agent swarm visualization, a dependency graph, a distinct replay mode)
+were intentionally not built — out of scope for the core deliverable.
+
+Verified live with a real Gemini call end-to-end, using the issue's own
+example message ("Payment deducted but order not created"): a real
+Investigation was persisted with genuine per-step durations (1945ms/
+1108ms/1273ms), real evidence, a real root cause and resolution, and the
+Board rendered every section (A-G plus Agent Performance Metrics)
+correctly against that live data — not a mock. Full backend suite: **204
+passed** (196 pre-existing + 8 new). Frontend lint/build: clean.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the

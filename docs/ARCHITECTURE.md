@@ -297,3 +297,75 @@ The Order Agent tracks order anomalies, specifically distinguishing between stan
 
 The agent uses the `check_order_issue` deterministic tool *before* assessing any tracking delays. This prevents the agent from hallucinating "delayed in transit" states for cancelled or failed orders.
 Like the Billing Agent, structured Root Causes and Resolutions are generated deterministically from the tool result wrapper and threaded through the `TraceStep` for the frontend InvestigationTimeline.
+
+### Investigation Board (Issue [FEATURE] "AI Investigation Board & Autonomous Reasoning Timeline")
+
+**Goal:** make the multi-agent reasoning that already happens on every
+conversation visible on its own dedicated page, not just as a collapsible
+panel next to a chat bubble — a normalized, queryable record of what
+Servora investigated, what evidence it found, and why it decided what it
+decided.
+
+**Data model — additive, not a replacement.** `Ticket.trace_json` (issue
+#14) still exists and is written exactly as before. Alongside it,
+`orchestrator.py::_persist_investigation()` writes one `Investigation`
+row (1:1 with the `Ticket` — `started_at`/`completed_at`, `status`,
+`confidence_score`, `root_cause`, `resolution`) and a normalized
+`InvestigationStep` row per pipeline stage (`step_number`, `agent_name`,
+`action`, `status`, `evidence_json`, `duration_ms`, `confidence`). Why a
+second table rather than parsing `trace_json` harder: the Board's "Agent
+Performance Metrics" section needs a real cross-investigation
+`GROUP BY agent_name` (avg duration, avg confidence, total runs) —
+that's a SQL query over `InvestigationStep`, not an in-Python scan of
+every ticket's JSON blob.
+
+**Evidence — derived from real tool results, never placeholder text.**
+`specialists.py::_run_specialist()` wraps every tool handler in the
+specialist's (permission-filtered — see the section above) registry to
+capture a short, human-readable string per real tool call —
+`_describe_evidence()` reads the actual `Order`/`Customer`/`KBArticle`
+objects or dicts `mock_tools.py` returns (e.g. "Retrieved 2 order(s) for
+customer #1: #4, #5.", "Payment anomaly detected on order #5:
+duplicate_payment."). `SpecialistResponse` gained one additive
+`evidence: list[str]` field carrying these; `orchestrator.py` attaches
+them to that step's `InvestigationStep.evidence_json`.
+
+**API** (`app/api/investigations.py`, read-only):
+- `GET /api/investigations` — recent investigations, newest first (the
+  Board's browse list).
+- `GET /api/investigations/{id}` / `GET /api/investigations/by-ticket/{ticket_id}`
+  — full detail: `root_cause`, `confidence`, `status`, `timeline`
+  (ordered `InvestigationStep`s), a per-investigation `agents` rollup,
+  and a flattened `evidence` list.
+- `GET /api/investigations/metrics/agents` — the cross-investigation
+  aggregate described above.
+
+**A real bug found wiring this up**: `orchestrator.py`'s `ChatResult` has
+carried a real `ticket_id` since issue #14, but `app/api/chat.py`'s
+`ChatResponse` never actually included it — the frontend had no way to
+link a just-completed conversation to its ticket (or now, its
+Investigation) without a separate, fragile lookup. Fixed by adding
+`ticket_id` to `ChatResponse` (additive, optional — no existing caller
+breaks).
+
+**Honest limitation, not silently glossed over: `/api/chat` is fully
+synchronous.** The whole classify → plan → specialist → verify →
+(escalate|resolve) pipeline runs to completion inside one request before
+anything is returned — there is no genuine in-progress, streaming state
+to subscribe to today. The frontend's Investigation Board (`frontend/
+src/pages/InvestigationBoard.jsx`) is upfront about this in its own
+module docstring: it fetches an already-complete investigation and
+replays its real steps with a staggered reveal animation (an "Agent
+Activity Feed" and a checklist-style timeline both animate in over
+~450ms per step) so watching it still *feels* like observing the agents
+work — using entirely real, already-persisted data, never mock content.
+Genuinely live, server-pushed progress (SSE/WebSocket streaming from
+inside `handle_message()`) would be a legitimate, larger follow-up if
+truly real-time updates are wanted later.
+
+**Scope note**: the four "bonus, if feasible" items from the original
+feature request (agent swarm visualization, an investigation dependency
+graph, and a replay *mode* distinct from the reveal animation above)
+were not built — the seven required Board sections (Status, Agent
+Activity Feed, Timeline, Evidence, Root Cause, Resolution, Escalation
+Summary) plus Agent Performance Metrics were the scoped deliverable.
