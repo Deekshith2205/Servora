@@ -111,18 +111,22 @@ already-made decision into something a human can act on. Issue #13
 exposed the packet via the API and the customer chat bubble; issue #14
 (below) persists it against a real Ticket for the Staff Dashboard.
 
-### Staff Dashboard escalation detail (Issue #14 — implemented)
+### Staff Dashboard ticket history (Issue #14 and #58)
 
-Before this, `/api/chat` never created or touched a `Ticket` row at all —
+Before these changes, `/api/chat` never created or touched a `Ticket` row at all —
 the Staff Dashboard's queue only ever showed the seeded demo tickets from
-`db/seed.py`. Now, `orchestrator.py::_create_escalation_ticket()` persists
-a real `Ticket` at both escalation points, with the reasoning trace and
-handoff packet JSON-encoded onto two new nullable columns
-(`Ticket.trace_json`, `Ticket.handoff_packet_json` — nullable so the
-seeded tickets, which never went through the pipeline, are unaffected).
-`GET /api/escalations/{id}` (new) returns the parsed trace + packet;
-`StaffDashboard.jsx` lets a staff member click a row to see them instead
-of just the summary fields.
+`db/seed.py`. Now, `orchestrator.py::_create_ticket()` persists
+a real `Ticket` at both escalation points and at the successful resolution point.
+Escalated conversations are saved with `status="escalated"` and contain both 
+the reasoning trace and handoff packet JSON-encoded onto two nullable columns
+(`Ticket.trace_json`, `Ticket.handoff_packet_json`). Resolved conversations 
+are saved with `status="resolved"` and contain the trace JSON.
+
+`GET /api/escalations` filters out resolved tickets to maintain the escalation queue.
+`GET /api/tickets/resolved` (new) returns the resolved history.
+`GET /api/escalations/{id}` returns the parsed trace + packet for any ticket;
+`StaffDashboard.jsx` lets a staff member click a row in either the Escalations 
+or Resolved History tables to see the trace instead of just the summary fields.
 
 **Real bug found while writing this issue's tests, fixed in the same
 PR**: `test_health.py`/`test_tickets_api.py` both instantiate a bare

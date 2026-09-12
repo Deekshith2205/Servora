@@ -27,6 +27,11 @@ def list_escalations(db: Session = Depends(get_db)) -> list[Ticket]:
     return db.query(Ticket).filter(Ticket.status.in_(["open", "escalated"])).all()
 
 
+@router.get("/tickets/resolved", response_model=list[TicketOut])
+def list_resolved(db: Session = Depends(get_db)) -> list[Ticket]:
+    return db.query(Ticket).filter(Ticket.status == "resolved").all()
+
+
 @router.get("/escalations/{ticket_id}", response_model=EscalationDetailOut)
 def get_escalation_detail(ticket_id: int, db: Session = Depends(get_db)) -> EscalationDetailOut:
     ticket = db.get(Ticket, ticket_id)

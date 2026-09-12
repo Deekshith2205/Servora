@@ -74,7 +74,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
             urgency=classification.urgency,
         )
         trace.append(TraceStep("escalation", f"Routed straight to a human agent — {packet.root_cause_hypothesis}"))
-        ticket_id = _create_escalation_ticket(db, customer_id, message, classification, trace, packet)
+        ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
         return ChatResult(
             reply="A human agent will follow up shortly.",
             status="escalated",
@@ -100,7 +100,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
         trace.append(
             TraceStep("escalation", f"Verification failed — escalating to a human agent — {packet.root_cause_hypothesis}")
         )
-        ticket_id = _create_escalation_ticket(db, customer_id, message, classification, trace, packet)
+        ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
         return ChatResult(
             reply="A human agent will follow up shortly.",
             status="escalated",
@@ -111,16 +111,18 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
 
     _update_memory(customer_id, message, response.reply, db, trace)
 
-    return ChatResult(reply=response.reply, status="resolved", trace=trace)
+    ticket_id = _create_ticket(db, customer_id, message, classification, trace, "resolved")
+    return ChatResult(reply=response.reply, status="resolved", trace=trace, ticket_id=ticket_id)
 
 
-def _create_escalation_ticket(
+def _create_ticket(
     db: Session,
     customer_id: int,
     message: str,
     classification: ClassificationResult,
     trace: list[TraceStep],
-    packet: HandoffPacket,
+    status: str,
+    packet: HandoffPacket | None = None,
 ) -> int:
     """Persists a Ticket row so this escalation shows up in the Staff
     Dashboard's queue (GET /api/escalations) with its full trace and
@@ -134,10 +136,10 @@ def _create_escalation_ticket(
         message=message,
         sentiment=classification.sentiment,
         urgency=classification.urgency,
-        status="escalated",
+        status=status,
         confidence=classification.confidence,
         trace_json=json.dumps([asdict(step) for step in trace]),
-        handoff_packet_json=json.dumps(asdict(packet)),
+        handoff_packet_json=json.dumps(asdict(packet)) if packet else None,
     )
     db.add(ticket)
     db.commit()

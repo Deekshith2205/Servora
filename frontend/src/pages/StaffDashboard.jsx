@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { approveKBArticle, fetchEscalationDetail, fetchEscalations, resolveEscalation } from "../api/client";
+import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolvedHistory, resolveEscalation } from "../api/client";
 import BookingsPanel from "./BookingsPanel";
 
 // Helper to determine badge class
@@ -40,6 +40,10 @@ export default function StaffDashboard() {
   const [tickets, setTickets] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const [resolvedTickets, setResolvedTickets] = useState([]);
+  const [resolvedError, setResolvedError] = useState(null);
+  const [resolvedLoading, setResolvedLoading] = useState(true);
   
   const [selectedEscalation, setSelectedEscalation] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -67,13 +71,22 @@ export default function StaffDashboard() {
   const loadData = () => {
     setLoading(true);
     setError(null);
-    fetchEscalations()
-      .then((data) => {
+    setResolvedLoading(true);
+    setResolvedError(null);
+    
+    Promise.all([
+      fetchEscalations().then((data) => {
         const records = Array.isArray(data) ? data : data.value || [];
         setTickets(records);
-      })
-      .catch((err) => setError(err.message || "Failed to load escalations"))
-      .finally(() => setLoading(false));
+      }).catch((err) => setError(err.message || "Failed to load escalations")),
+      fetchResolvedHistory().then((data) => {
+        const records = Array.isArray(data) ? data : data.value || [];
+        setResolvedTickets(records);
+      }).catch((err) => setResolvedError(err.message || "Failed to load resolved history"))
+    ]).finally(() => {
+      setLoading(false);
+      setResolvedLoading(false);
+    });
   };
 
   useEffect(() => {
@@ -144,6 +157,7 @@ export default function StaffDashboard() {
         // the next full reload. Filter it out here instead, to match what
         // a refetch would actually return.
         setTickets((prev) => prev.filter((t) => t.id !== res.ticket.id));
+        setResolvedTickets((prev) => [res.ticket, ...prev]);
       })
       .catch((err) => setResolveError(err.message || "Failed to resolve this escalation"))
       .finally(() => setResolving(false));
@@ -339,6 +353,103 @@ export default function StaffDashboard() {
               </svg>
               <h3 style={{color: 'var(--app-text-primary)', margin: '0 0 0.5rem 0'}}>You're all caught up.</h3>
               <p style={{margin: 0}}>No escalations currently require human attention.</p>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* Resolved History Panel */}
+      <div style={{marginTop: '4px'}}>
+        {resolvedError && (
+          <div className="app-error-banner">
+            <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>Unable to load resolved history: {resolvedError}</span>
+            </div>
+            <button 
+              onClick={loadData}
+              style={{background: 'var(--app-surface)', color: 'var(--app-danger-text)', border: '1px solid currentColor', padding: '0.4rem 1rem', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem'}}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        
+        {resolvedLoading ? (
+          <div className="app-panel-fit">
+            <div className="app-table-container">
+              {[1, 2].map(i => <div key={i} className="skeleton-row"></div>)}
+            </div>
+          </div>
+        ) : resolvedTickets.length > 0 ? (
+          <div className="app-panel-fit">
+            <div className="escalations-header">
+              <div>
+                <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Resolved History</h3>
+                <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Past conversations successfully resolved.</p>
+              </div>
+              <div className="escalations-count">{resolvedTickets.length}</div>
+            </div>
+            
+            <div className="app-table-container">
+              <table className="app-table">
+                <thead>
+                  <tr>
+                    <th style={{width: '80px'}}>ID</th>
+                    <th style={{width: '120px'}}>Category</th>
+                    <th>Subject</th>
+                    <th style={{width: '120px'}}>Sentiment</th>
+                    <th style={{width: '120px'}}>Urgency</th>
+                    <th style={{width: '120px'}}>Status</th>
+                    <th style={{width: '40px'}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resolvedTickets.map((t) => {
+                    return (
+                      <tr 
+                        key={t.id} 
+                        onClick={() => handleSelectEscalation(t)}
+                        className={`escalation-row ${selectedEscalation?.id === t.id ? 'active' : ''}`}
+                      >
+                        <td className="col-id">#{t.id}</td>
+                        <td className="col-category">{t.category}</td>
+                        <td className="col-subject">{t.subject}</td>
+                        <td>
+                          <span className={`app-badge ${getBadgeClass('sentiment', t.sentiment)}`}>
+                            {t.sentiment}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`app-badge ${getBadgeClass('urgency', t.urgency)}`}>
+                            {t.urgency}/10
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`app-badge ${getBadgeClass('status', t.status)}`}>
+                            {t.status}
+                          </span>
+                        </td>
+                        <td className="col-action">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                          </svg>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="escalations-footer">
+              Showing {resolvedTickets.length} {resolvedTickets.length === 1 ? 'record' : 'records'}
+            </div>
+          </div>
+        ) : !resolvedError ? (
+          <div className="app-panel-fit" style={{justifyContent: 'center', minHeight: '150px'}}>
+            <div className="app-empty-state" style={{padding: '2rem'}}>
+              <h3 style={{color: 'var(--app-text-primary)', margin: '0 0 0.5rem 0'}}>No history</h3>
+              <p style={{margin: 0}}>No resolved conversations yet.</p>
             </div>
           </div>
         ) : null}
