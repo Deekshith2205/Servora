@@ -65,7 +65,7 @@ def test_list_bookings_includes_seeded_booking():
     assert booking.id in ids
 
 
-def test_patch_booking_changes_field_logs_it_and_bumps_status():
+def test_patch_booking_changes_field_logs_it_bumps_status_and_notifies():
     db = SessionLocal()
     booking = _seed_booking(db)
 
@@ -74,21 +74,29 @@ def test_patch_booking_changes_field_logs_it_and_bumps_status():
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["room_type"] == "standard"
-    assert body["status"] == "STAFF_REVIEWED"  # bumped from AI_DRAFTED
-    assert len(body["edit_log"]) == 1
-    entry = body["edit_log"][0]
+    updated = body["booking"]
+    assert updated["room_type"] == "standard"
+    assert updated["status"] == "STAFF_REVIEWED"  # bumped from AI_DRAFTED
+    assert len(updated["edit_log"]) == 1
+    entry = updated["edit_log"][0]
     assert entry["field"] == "room_type"
     assert entry["old_value"] == "deluxe"
     assert entry["new_value"] == "standard"
 
+    # Issue #21: this edit must have produced a notification with a diff.
+    assert body["notification"] is not None
+    assert body["notification"]["customer_id"] == booking.customer_id
+    assert "room type" in body["notification"]["body"]
+    assert "deluxe" in body["notification"]["body"]
+    assert "standard" in body["notification"]["body"]
+
     # Actually persisted.
     db.refresh(booking)
     assert booking.room_type == "standard"
-    assert json.loads(booking.edit_log_json) == body["edit_log"]
+    assert json.loads(booking.edit_log_json) == updated["edit_log"]
 
 
-def test_patch_booking_with_no_actual_change_does_not_log_or_bump_status():
+def test_patch_booking_with_no_actual_change_does_not_log_bump_status_or_notify():
     db = SessionLocal()
     booking = _seed_booking(db)
 
@@ -97,11 +105,12 @@ def test_patch_booking_with_no_actual_change_does_not_log_or_bump_status():
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["status"] == "AI_DRAFTED"  # unchanged — nothing was actually edited
-    assert body["edit_log"] == []
+    assert body["booking"]["status"] == "AI_DRAFTED"  # unchanged — nothing was actually edited
+    assert body["booking"]["edit_log"] == []
+    assert body["notification"] is None  # nothing changed — nothing to notify about
 
 
-def test_patch_booking_logs_multiple_changed_fields_in_one_call():
+def test_patch_booking_logs_multiple_changed_fields_and_notifies_both():
     db = SessionLocal()
     booking = _seed_booking(db)
 
@@ -112,8 +121,12 @@ def test_patch_booking_logs_multiple_changed_fields_in_one_call():
         )
 
     body = resp.json()
-    changed_fields = {e["field"] for e in body["edit_log"]}
+    changed_fields = {e["field"] for e in body["booking"]["edit_log"]}
     assert changed_fields == {"room_type", "guests"}  # check_in excluded — same value
+
+    # One notification covering both real changes, not two separate ones.
+    assert "room type" in body["notification"]["body"]
+    assert "number of guests" in body["notification"]["body"]
 
 
 def test_patch_booking_rejected_once_confirmed():

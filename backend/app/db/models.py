@@ -132,3 +132,23 @@ class CustomerMemory(Base):
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), primary_key=True)
     facts_json: Mapped[str] = mapped_column(String, default="[]")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Notification(Base):
+    """Backs issue #21 (customer notification on booking edit).
+
+    Deliberately NOT a real email/SMS send — see
+    app/services/notifications.py's module docstring for why. This table
+    is the durable, queryable record of "a notification was sent" (visible
+    in the Staff Dashboard's booking drawer, and easy to assert against in
+    tests) that a real provider integration would sit behind later without
+    changing anything that calls `notify_customer_of_booking_edit`.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
+    subject: Mapped[str] = mapped_column(String)
+    body: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
