@@ -70,9 +70,10 @@ price). See the `Booking` model in `backend/app/db/models.py`.
 
 ## Current state of this repo
 
-Classifier, Planner, and the Billing specialist are implemented (issues
-#3, #4, #6). Technical, Order, and Account specialists, Verification,
-Escalation, and Memory in `backend/app/agents/*.py` are still **stubs** —
+Classifier, Planner, the Billing specialist, and Verification are
+implemented (issues #3, #4, #6, #10 — #7/#8/#9, the remaining
+specialists, are implemented pending merge as of this writing). Escalation
+and Memory in `backend/app/agents/*.py` are still **stubs** —
 the pipeline runs end-to-end today regardless (see
 `backend/tests/test_health.py`), each remaining stub returns a
 placeholder with a `# TODO(issue: ...)` pointing at the GitHub issue that
