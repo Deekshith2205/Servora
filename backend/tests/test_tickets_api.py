@@ -95,8 +95,107 @@ def test_list_resolved_tickets_excludes_open_and_escalated():
     assert any(t["subject"] == "resolved ticket" for t in body)
     assert all(t["status"] == "resolved" for t in body)
 
-def test_list_escalations_excludes_resolved():
+def test_list_escalations_excludes_resolved_and_closed():
+    db = SessionLocal()
+    ticket_resolved = Ticket(customer_id=1, category="order", subject="res", message="m", status="resolved")
+    ticket_closed = Ticket(customer_id=1, category="order", subject="cls", message="m", status="closed")
+    db.add_all([ticket_resolved, ticket_closed])
+    db.commit()
+
     resp = client.get("/api/escalations")
     assert resp.status_code == 200
     body = resp.json()
-    assert not any(t["status"] == "resolved" for t in body)
+    assert not any(t["status"] in ["resolved", "closed"] for t in body)
+
+
+def test_escalation_detail_includes_customer_and_history():
+    db = SessionLocal()
+    from app.db.models import Customer
+    customer = Customer(name="Test Customer", email="test@example.com", phone="123", tier="vip")
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+
+    ticket1 = Ticket(customer_id=customer.id, category="order", subject="Past 1", message="m", status="resolved")
+    ticket2 = Ticket(customer_id=customer.id, category="order", subject="Past 2", message="m", status="closed")
+    ticket_main = Ticket(customer_id=customer.id, category="account", subject="Current", message="m", status="open")
+    
+    db.add_all([ticket1, ticket2, ticket_main])
+    db.commit()
+    db.refresh(ticket_main)
+
+    resp = client.get(f"/api/escalations/{ticket_main.id}")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["customer"] is not None
+    assert body["customer"]["name"] == "Test Customer"
+    assert body["customer"]["tier"] == "vip"
+
+    history = body["customer_history"]
+    assert history is not None
+    assert len(history) == 2
+    # Ensure current ticket is not in history
+    assert not any(h["id"] == ticket_main.id for h in history)
+
+
+def test_assign_escalation():
+    db = SessionLocal()
+    ticket = Ticket(customer_id=1, category="order", subject="Assign test", message="m", status="open")
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+
+    # Assign
+    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": "Asha"})
+    assert resp.status_code == 200
+    assert resp.json()["assigned_to"] == "Asha"
+
+    # Unassign
+    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": None})
+    assert resp.status_code == 200
+    assert resp.json()["assigned_to"] is None
+
+
+def test_assign_escalation_validation():
+    db = SessionLocal()
+    ticket_resolved = Ticket(customer_id=1, category="order", subject="Assign valid", message="m", status="resolved")
+    db.add(ticket_resolved)
+    db.commit()
+    db.refresh(ticket_resolved)
+
+    # Cannot assign resolved
+    resp = client.post(f"/api/escalations/{ticket_resolved.id}/assign", json={"assigned_to": "Asha"})
+    assert resp.status_code == 400
+
+    ticket_open = Ticket(customer_id=1, category="order", subject="Assign valid", message="m", status="open")
+    db.add(ticket_open)
+    db.commit()
+    db.refresh(ticket_open)
+
+    # Empty string
+    resp = client.post(f"/api/escalations/{ticket_open.id}/assign", json={"assigned_to": "   "})
+    assert resp.status_code == 400
+
+
+def test_close_escalation():
+    db = SessionLocal()
+    ticket = Ticket(customer_id=1, category="order", subject="Close test", message="m", status="open")
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+
+    resp = client.post(f"/api/escalations/{ticket.id}/close")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "closed"
+
+
+def test_close_escalation_validation():
+    db = SessionLocal()
+    ticket = Ticket(customer_id=1, category="order", subject="Close test 2", message="m", status="resolved")
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+
+    resp = client.post(f"/api/escalations/{ticket.id}/close")
+    assert resp.status_code == 400

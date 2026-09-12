@@ -122,11 +122,20 @@ the reasoning trace and handoff packet JSON-encoded onto two nullable columns
 (`Ticket.trace_json`, `Ticket.handoff_packet_json`). Resolved conversations 
 are saved with `status="resolved"` and contain the trace JSON.
 
-`GET /api/escalations` filters out resolved tickets to maintain the escalation queue.
-`GET /api/tickets/resolved` (new) returns the resolved history.
-`GET /api/escalations/{id}` returns the parsed trace + packet for any ticket;
-`StaffDashboard.jsx` lets a staff member click a row in either the Escalations 
-or Resolved History tables to see the trace instead of just the summary fields.
+### Escalation Workspace (Issue #63)
+
+The Staff Dashboard escalation drawer has been expanded into a complete support workspace:
+- **Customer context:** Displays the customer's actual profile (Name, Email, Phone, Tier) and recent ticket history (excluding the currently active ticket).
+- **Assignment:** Supports a lightweight `assigned_to` demo free-text field without an authenticated identity model.
+- **Administrative Close:** Support staff can close a ticket out of the active queue without invoking the AI/KB resolution workflow.
+- **Status semantics:**
+  - `open` / `escalated` = active support queue.
+  - `resolved` = completed resolution workflow (AI-assisted or human).
+  - `closed` = administrative closure, excluded from the escalation queue and analytics (only resolved + escalated are counted).
+
+`GET /api/escalations` only returns open/escalated tickets.
+`GET /api/tickets/resolved` remains explicitly for resolved history.
+`GET /api/escalations/{id}` returns the enriched detail (trace, packet, customer, history, assignment).
 
 **Real bug found while writing this issue's tests, fixed in the same
 PR**: `test_health.py`/`test_tickets_api.py` both instantiate a bare

@@ -62,6 +62,8 @@ class Ticket(Base):
     trace_json: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     handoff_packet_json: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
 
+    assigned_to: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+
     customer: Mapped["Customer"] = relationship(back_populates="tickets")
 
 

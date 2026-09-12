@@ -14,9 +14,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.agents.learning import draft_kb_article
-from app.api.schemas import EscalationDetailOut, ResolveTicketRequest, ResolveTicketResponse, TicketOut
+from app.api.schemas import (
+    EscalationDetailOut,
+    ResolveTicketRequest,
+    ResolveTicketResponse,
+    TicketOut,
+    CustomerProfileOut,
+    CustomerHistoryTicketOut,
+    AssignTicketRequest,
+)
 from app.db.database import get_db
-from app.db.models import Ticket
+from app.db.models import Ticket, Customer
 from app.llm import LLMError
 
 router = APIRouter(prefix="/api", tags=["tickets"])
@@ -38,6 +46,39 @@ def get_escalation_detail(ticket_id: int, db: Session = Depends(get_db)) -> Esca
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
 
+    customer = db.get(Customer, ticket.customer_id)
+    customer_profile = None
+    if customer:
+        customer_profile = CustomerProfileOut(
+            id=customer.id,
+            name=customer.name,
+            email=customer.email,
+            phone=customer.phone,
+            tier=customer.tier,
+        )
+
+    previous_tickets = (
+        db.query(Ticket)
+        .filter(Ticket.customer_id == ticket.customer_id, Ticket.id != ticket.id)
+        .order_by(Ticket.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    customer_history = []
+    for pt in previous_tickets:
+        customer_history.append(
+            CustomerHistoryTicketOut(
+                id=pt.id,
+                subject=pt.subject,
+                category=pt.category,
+                status=pt.status,
+                sentiment=pt.sentiment,
+                urgency=pt.urgency,
+                created_at=pt.created_at.isoformat(),
+            )
+        )
+
     return EscalationDetailOut(
         id=ticket.id,
         customer_id=ticket.customer_id,
@@ -48,8 +89,11 @@ def get_escalation_detail(ticket_id: int, db: Session = Depends(get_db)) -> Esca
         urgency=ticket.urgency,
         status=ticket.status,
         confidence=ticket.confidence,
+        assigned_to=ticket.assigned_to,
         trace=json.loads(ticket.trace_json) if ticket.trace_json else None,
         handoff_packet=json.loads(ticket.handoff_packet_json) if ticket.handoff_packet_json else None,
+        customer=customer_profile,
+        customer_history=customer_history,
     )
 
 
@@ -88,3 +132,44 @@ def resolve_escalation(
         pass  # ticket is still resolved; just no KB suggestion this time
 
     return ResolveTicketResponse(ticket=ticket, kb_suggestion=kb_suggestion)
+
+
+@router.post("/escalations/{ticket_id}/assign", response_model=TicketOut)
+def assign_escalation(
+    ticket_id: int, payload: AssignTicketRequest, db: Session = Depends(get_db)
+) -> TicketOut:
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
+
+    if ticket.status not in ["open", "escalated"]:
+        raise HTTPException(status_code=400, detail="Cannot assign a closed or resolved ticket")
+
+    if payload.assigned_to is not None:
+        assigned = payload.assigned_to.strip()
+        if not assigned:
+            raise HTTPException(status_code=400, detail="assigned_to cannot be empty")
+        if len(assigned) > 100:
+            raise HTTPException(status_code=400, detail="assigned_to is too long")
+        ticket.assigned_to = assigned
+    else:
+        ticket.assigned_to = None
+
+    db.commit()
+    db.refresh(ticket)
+    return ticket
+
+
+@router.post("/escalations/{ticket_id}/close", response_model=TicketOut)
+def close_escalation(ticket_id: int, db: Session = Depends(get_db)) -> TicketOut:
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
+
+    if ticket.status not in ["open", "escalated"]:
+        raise HTTPException(status_code=400, detail="Cannot close a ticket that is already closed or resolved")
+
+    ticket.status = "closed"
+    db.commit()
+    db.refresh(ticket)
+    return ticket

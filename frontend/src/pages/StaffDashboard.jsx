@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolvedHistory, resolveEscalation } from "../api/client";
+import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolvedHistory, resolveEscalation, assignEscalation, closeEscalation } from "../api/client";
 import BookingsPanel from "./BookingsPanel";
 import InvestigationTimeline from "../components/InvestigationTimeline";
 
@@ -69,6 +69,14 @@ export default function StaffDashboard() {
   const [kbApproved, setKbApproved] = useState(false);
   const [kbApproveError, setKbApproveError] = useState(null);
 
+  const [assigning, setAssigning] = useState(false);
+  const [assignError, setAssignError] = useState(null);
+  const [assignmentInput, setAssignmentInput] = useState("");
+
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState(null);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+
   const doFetch = () => {
     Promise.all([
       fetchEscalations().then((data) => {
@@ -121,11 +129,20 @@ export default function StaffDashboard() {
     setKbApproved(false);
     setKbApproveError(null);
 
+    // Reset assign/close state
+    setAssigning(false);
+    setAssignError(null);
+    setAssignmentInput(ticket.assigned_to || "");
+    setClosing(false);
+    setCloseError(null);
+    setShowCloseConfirm(false);
+
     fetchEscalationDetail(ticket.id)
       .then((res) => {
         setSelectedEscalation((curr) => {
           if (curr && curr.id === ticket.id) {
             setDetail(res);
+            setAssignmentInput(res.assigned_to || "");
             setDetailLoading(false);
           }
           return curr;
@@ -140,6 +157,50 @@ export default function StaffDashboard() {
           return curr;
         });
       });
+  };
+
+  const handleAssign = () => {
+    if (!selectedEscalation) return;
+    setAssigning(true);
+    setAssignError(null);
+    const valToAssign = assignmentInput.trim() === "" ? null : assignmentInput.trim();
+
+    assignEscalation(selectedEscalation.id, valToAssign)
+      .then((res) => {
+        setSelectedEscalation((curr) => 
+          curr && curr.id === selectedEscalation.id ? { ...curr, assigned_to: res.assigned_to } : curr
+        );
+        setDetail((curr) => 
+          curr ? { ...curr, assigned_to: res.assigned_to } : curr
+        );
+        setAssignmentInput(res.assigned_to || "");
+        
+        // Update it in the tickets list so it reflects in the table row
+        setTickets((prev) => prev.map((t) => t.id === res.id ? { ...t, assigned_to: res.assigned_to } : t));
+      })
+      .catch((err) => setAssignError(err.message || "Failed to assign escalation"))
+      .finally(() => setAssigning(false));
+  };
+
+  const handleClose = () => {
+    if (!selectedEscalation) return;
+    setClosing(true);
+    setCloseError(null);
+
+    closeEscalation(selectedEscalation.id)
+      .then((res) => {
+        setSelectedEscalation((curr) =>
+          curr && curr.id === selectedEscalation.id ? { ...curr, status: "closed" } : curr
+        );
+        setDetail((curr) => 
+          curr ? { ...curr, status: "closed" } : curr
+        );
+        // Remove from active queue
+        setTickets((prev) => prev.filter((t) => t.id !== res.id));
+        setShowCloseConfirm(false);
+      })
+      .catch((err) => setCloseError(err.message || "Failed to close escalation"))
+      .finally(() => setClosing(false));
   };
 
   const handleResolve = () => {
@@ -533,6 +594,12 @@ export default function StaffDashboard() {
                       <span className="drawer-field-value">#{selectedEscalation.customer_id}</span>
                     </div>
                   )}
+                  <div className="drawer-field">
+                    <span className="drawer-field-label">Assigned to</span>
+                    <span className="drawer-field-value">
+                      {selectedEscalation.assigned_to ? selectedEscalation.assigned_to : <span style={{color: 'var(--app-text-muted)', fontStyle: 'italic'}}>Unassigned</span>}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -557,6 +624,63 @@ export default function StaffDashboard() {
                 </div>
               ) : detail ? (
                 <>
+                  {detail.customer && (
+                    <div className="drawer-section">
+                      <div className="drawer-section-title">Customer Profile</div>
+                      <div className="drawer-field-grid">
+                        <div className="drawer-field">
+                          <span className="drawer-field-label">Name</span>
+                          <span className="drawer-field-value">{detail.customer.name}</span>
+                        </div>
+                        <div className="drawer-field">
+                          <span className="drawer-field-label">Tier</span>
+                          <span className="drawer-field-value">
+                            <span className={`app-badge ${detail.customer.tier.toLowerCase() === 'vip' ? 'badge-warning' : 'badge-neutral'}`}>
+                              {detail.customer.tier.toUpperCase()}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="drawer-field">
+                          <span className="drawer-field-label">Email</span>
+                          <span className="drawer-field-value">{detail.customer.email}</span>
+                        </div>
+                        <div className="drawer-field">
+                          <span className="drawer-field-label">Phone</span>
+                          <span className="drawer-field-value">{detail.customer.phone || 'N/A'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="drawer-section">
+                    <div className="drawer-section-title">Customer History</div>
+                    {detail.customer_history && detail.customer_history.length > 0 ? (
+                      <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                        {detail.customer_history.map(pt => (
+                          <div key={pt.id} style={{
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center', 
+                            padding: '0.5rem 0.75rem', 
+                            background: 'var(--app-surface)', 
+                            border: '1px solid var(--app-border)', 
+                            borderRadius: '4px',
+                            fontSize: '0.85rem'
+                          }}>
+                            <div style={{display: 'flex', gap: '1rem', alignItems: 'center'}}>
+                              <span style={{color: 'var(--app-text-muted)'}}>#{pt.id}</span>
+                              <span style={{fontWeight: 500, color: 'var(--app-text-primary)'}}>{pt.subject}</span>
+                            </div>
+                            <span className={`app-badge ${getBadgeClass('status', pt.status)}`}>{pt.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{background: 'transparent', border: '1px dashed var(--app-border)', textAlign: 'center', padding: '1rem', borderRadius: '8px'}}>
+                        <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-muted)'}}>No previous conversations.</p>
+                      </div>
+                    )}
+                  </div>
                   {detail.trace && detail.trace.length > 0 ? (
                     <div className="drawer-section">
                       <InvestigationTimeline trace={detail.trace} />
@@ -587,6 +711,59 @@ export default function StaffDashboard() {
                   )}
                 </>
               ) : null}
+
+              <div className="drawer-section">
+                <div className="drawer-section-title">Staff Actions</div>
+                <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+                  
+                  <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                    <label style={{fontSize: '0.85rem', fontWeight: 600, color: 'var(--app-text-secondary)'}}>Assigned to</label>
+                    <div style={{display: 'flex', gap: '0.5rem'}}>
+                      <input 
+                        type="text" 
+                        value={assignmentInput} 
+                        onChange={(e) => setAssignmentInput(e.target.value)} 
+                        placeholder="Unassigned"
+                        disabled={assigning}
+                        className="app-input"
+                        style={{flex: 1}}
+                      />
+                      <button 
+                        className="app-btn-secondary" 
+                        onClick={handleAssign} 
+                        disabled={assigning || (assignmentInput.trim() === (selectedEscalation.assigned_to || ""))}
+                      >
+                        {assigning ? 'Assigning...' : 'Assign'}
+                      </button>
+                    </div>
+                    {assignError && <div style={{color: 'var(--app-danger-text)', fontSize: '0.8rem'}}>{assignError}</div>}
+                  </div>
+
+                  <div style={{display: 'flex', gap: '0.75rem'}}>
+                    <button 
+                      className="app-btn-danger" 
+                      onClick={() => setShowCloseConfirm(true)}
+                      disabled={closing || selectedEscalation.status === 'closed' || selectedEscalation.status === 'resolved'}
+                      style={{flex: 1}}
+                    >
+                      Close case
+                    </button>
+                  </div>
+                  
+                  {showCloseConfirm && (
+                    <div style={{background: '#fee2e2', border: '1px solid #fca5a5', padding: '1rem', borderRadius: '8px', fontSize: '0.85rem'}}>
+                      <p style={{margin: '0 0 0.75rem', color: '#991b1b', fontWeight: 500}}>Close this escalation? It will leave the active support queue without running the resolution workflow.</p>
+                      <div style={{display: 'flex', gap: '0.5rem'}}>
+                        <button className="app-btn-secondary" onClick={() => setShowCloseConfirm(false)} disabled={closing}>Cancel</button>
+                        <button className="app-btn-danger" onClick={handleClose} disabled={closing}>
+                          {closing ? 'Closing...' : 'Close case'}
+                        </button>
+                      </div>
+                      {closeError && <div style={{color: '#991b1b', fontSize: '0.8rem', marginTop: '0.5rem'}}>{closeError}</div>}
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Issue #17: resolve this escalation, then let the Learning
                   Agent suggest a KB article for a human to approve. */}
