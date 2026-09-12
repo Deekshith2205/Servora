@@ -100,6 +100,7 @@ EXPECTED_TOOL_NAMES = {
     "get_customer_orders",
     "get_customer_tickets",
     "search_kb",
+    "check_order_issue",
     "check_payment_issue",
     "issue_refund",
     "check_room_availability",

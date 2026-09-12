@@ -20,7 +20,7 @@ from app.tools.tool_registry import build_tool_registry
 # Tools that only *ground an answer* (look something up) rather than take an
 # irreversible action. Used by _estimate_confidence — see its docstring.
 _ACTION_TOOLS = {"issue_refund"}
-_GROUNDING_TOOLS = {"get_customer", "get_customer_orders", "get_customer_tickets", "search_kb", "check_payment_issue"}
+_GROUNDING_TOOLS = {"get_customer", "get_customer_orders", "get_customer_tickets", "search_kb", "check_payment_issue", "check_order_issue"}
 
 
 @dataclass
@@ -29,6 +29,7 @@ class SpecialistResponse:
     used_tools: list[str] = field(default_factory=list)
     confidence: float = 0.0  # 0-1, consumed by the Verification/Escalation agents
     root_cause: str | None = None
+    resolution: str | None = None
 
 
 def _estimate_confidence(used_tools: list[str]) -> float:
@@ -71,18 +72,35 @@ def _run_specialist(
     used_tools: list[str] = []
     
     root_cause = None
-    original_check = tool_handlers.get("check_payment_issue")
-    if original_check:
-        def wrapped_check(args):
+    resolution = None
+    
+    original_check_payment = tool_handlers.get("check_payment_issue")
+    if original_check_payment:
+        def wrapped_check_payment(args):
             nonlocal root_cause
-            res = original_check(args)
+            res = original_check_payment(args)
             if res and isinstance(res, dict) and res.get("detected"):
                 if res.get("issue_type") == "duplicate_payment":
                     root_cause = f"Duplicate payment detected for order {res.get('order_id')} against original order {res.get('related_order_id')}."
                 elif res.get("issue_type") == "payment_fulfillment_mismatch":
                     root_cause = f"Payment succeeded but fulfillment failed for order {res.get('order_id')}."
             return res
-        tool_handlers["check_payment_issue"] = wrapped_check
+        tool_handlers["check_payment_issue"] = wrapped_check_payment
+
+    original_check_order = tool_handlers.get("check_order_issue")
+    if original_check_order:
+        def wrapped_check_order(args):
+            nonlocal root_cause, resolution
+            res = original_check_order(args)
+            if res and isinstance(res, dict) and res.get("detected"):
+                if res.get("issue_type") == "cancelled_order":
+                    root_cause = "Order was cancelled."
+                    resolution = "The order is cancelled and requires no further fulfillment processing."
+                elif res.get("issue_type") == "inventory_shortfall":
+                    root_cause = "Order fulfillment failed because inventory was unavailable."
+                    resolution = "The order requires a fulfillment remedy or human review."
+            return res
+        tool_handlers["check_order_issue"] = wrapped_check_order
 
     context_lines = [f"Customer ID: {customer_id}"]
     if profile.get("facts"):
@@ -97,7 +115,7 @@ def _run_specialist(
         max_tokens=max_tokens,
     )
 
-    return SpecialistResponse(reply=reply, used_tools=used_tools, confidence=_estimate_confidence(used_tools), root_cause=root_cause)
+    return SpecialistResponse(reply=reply, used_tools=used_tools, confidence=_estimate_confidence(used_tools), root_cause=root_cause, resolution=resolution)
 
 
 _BILLING_SYSTEM_PROMPT = """You are the Billing specialist agent in an \
@@ -164,27 +182,30 @@ def resolve_technical(db: Session, customer_id: int, message: str) -> Specialist
     return _run_specialist(db, _TECHNICAL_SYSTEM_PROMPT, customer_id, message)
 
 
-_ORDER_SYSTEM_PROMPT = """You are the Order specialist agent in an \
-autonomous customer support pipeline. You handle order status, delivery, \
-and shipping-delay questions.
+_ORDER_SYSTEM_PROMPT = """You are the Order specialist agent in an autonomous \
+customer support pipeline. You handle questions about where an order is, \
+shipping delays, cancellations, and lost packages.
 
-You must ground every claim about an order's status or timing in a tool \
-call — never state one from memory alone.
+You must ground every factual claim (an order's status, tracking info, or \
+store policies) in a tool call — never state one from memory alone.
 
 Typical flow:
-1. Call get_customer_orders to find the order(s) the customer means.
-2. If an order looks delayed (still "processing" well past when it should \
-have shipped, or the customer describes an unusually long wait), call \
-search_kb (e.g. query "order delays") to check the delay policy. If the \
-order qualifies, PROACTIVELY mention the courtesy discount in your reply \
-— do not wait for the customer to ask for it.
-3. Reply citing the specific order's status and, when applicable, the \
-delay policy.
-
-Important limitation: you do NOT have a tool that actually issues a \
-discount code. When a discount applies, tell the customer they are \
-eligible and that it will be applied/sent to them — never claim you have \
-already applied a discount, since that would not be true.
+1. Call get_customer_orders to find the specific order. Ask clarifying \
+questions if the user's message is ambiguous.
+2. Call check_order_issue BEFORE describing the order as merely delayed or \
+processing. This will check for cancellations or inventory shortfalls.
+3. If check_order_issue detects a cancelled order: explicitly explain the cancellation. \
+Do NOT describe it as delayed or still processing. Do NOT attempt a refund here.
+4. If check_order_issue detects an inventory shortfall: explicitly explain that fulfillment \
+failed because the item was unavailable. Do NOT describe it as a normal shipping delay. \
+Do NOT blindly issue a refund here.
+5. If no anomaly is detected: use the order's status to answer the customer.
+6. If an order is delayed (in "processing" or "shipped" for an unusually \
+long time), call search_kb (e.g. query "shipping delay" or "discount") \
+to find the exact policy for delayed orders, and if eligible, you may offer \
+a courtesy discount (but do not issue a refund).
+7. Reply in plain, friendly language explaining the exact status and \
+what policy applies. Do not reveal hidden tool data.
 """
 
 

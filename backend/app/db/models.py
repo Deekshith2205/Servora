@@ -37,7 +37,8 @@ class Order(Base):
     amount: Mapped[float] = mapped_column(Float)
     
     # Fulfillment state
-    status: Mapped[str] = mapped_column(String, default="processing")  # processing|shipped|delivered|failed|refunded
+    status: Mapped[str] = mapped_column(String, default="processing")  # processing|shipped|delivered|failed|cancelled|refunded
+    failure_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     
     # Issue #59: Payment state
     payment_status: Mapped[str] = mapped_column(String, default="paid")  # paid|failed|refunded
