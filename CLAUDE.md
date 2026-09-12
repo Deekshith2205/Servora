@@ -88,24 +88,53 @@ docs/ARCHITECTURE.md   the agent graph + design rationale, in full
   all have push/triage rights.
 - **Issue #2** ("[P0] Wire a real LLM provider into the agent stubs")
   implemented: `app/llm.py::call_llm()`, text + structured-output modes,
-  bumped `anthropic` 0.34.2 → 1.5.0. PR open:
-  https://github.com/Deekshith2205/Servora/pull/24 — **not yet merged**,
-  and **not yet verified against a real Anthropic API key** (none
-  available in the session that built it). Whoever merges should run
-  `backend/scripts/check_llm.py` with their own key first.
+  bumped `anthropic` 0.34.2 → 1.5.0. PR:
+  https://github.com/Deekshith2205/Servora/pull/24 — **merged**. Still
+  **not verified against a real Anthropic API key by any session** (none
+  available in the environments that built #2 or #3) — see Open
+  questions.
+- `CLAUDE.md` itself added — PR #25, merged.
+- **CI added** on `main` via PR #27 (a teammate's own workflow — a
+  near-duplicate I opened as PR #26 was closed in favor of theirs, no
+  conflict): `.github/workflows/ci.yml` runs backend `pytest`, frontend
+  `npm run lint` + `npm run build`, on every PR/push to `main`. Not yet a
+  *required* check — see Open questions.
+
+### 2026-09-12
+- **Issue #3** ("[P0] Implement Classifier Agent") implemented:
+  `classify()` now calls the real LLM via `call_llm()` with a
+  structured-output schema (category/sentiment/urgency/reasoning).
+  Contract unchanged, so `orchestrator.py` needed no changes. PR:
+  https://github.com/Deekshith2205/Servora/pull/28 — open, not yet
+  merged. Added `scripts/check_classifier.py` for manual real-key
+  verification (same pattern as `scripts/check_llm.py`). The existing
+  end-to-end chat test now mocks `classify()` so CI stays network-free —
+  worth remembering for issue #5 (tool-calling) and the P1 specialist
+  agents: each one that starts calling the real LLM will need the same
+  treatment (mock it in `test_health.py`'s end-to-end test, add its own
+  unit tests with a mocked `call_llm`).
 
 ## Next up (in priority order)
 
-1. Merge PR #24 (after real-key verification via `scripts/check_llm.py`).
-2. Issue #3 — Classifier Agent (depends on #2).
-3. Issue #5 — real tool-calling for specialists (depends on #2; can run
-   in parallel with #3).
-4. Issue #4 — Planner/Orchestrator routing (depends on #3).
-5. Then the P1 specialist agents (#6–#9) can be split across teammates in
+1. Merge PR #28 (after real-key verification via `scripts/check_classifier.py`)
+   — and, while someone has a key handy, verify PR #24's `call_llm()` too
+   via `scripts/check_llm.py`, since that's *still* never been confirmed
+   against the real API by any session.
+2. Issue #4 — Planner/Orchestrator routing (depends on #3).
+3. Issue #5 — real tool-calling for specialists (depends on #2, merged;
+   can run in parallel with #4).
+4. Then the P1 specialist agents (#6–#9) can be split across teammates in
    parallel — each only touches its own function in
    `app/agents/specialists.py`.
 
 ## Open questions / blockers
 
-- None currently. If something blocks a session, add it here with enough
-  context that a different session (or teammate) can pick it up cold.
+- **`call_llm()` has never been confirmed against a real Anthropic API
+  key**, by any session, across both #2 and #3. Everything is verified
+  by mocked/offline tests only so far. High priority to close before more
+  agents are built on top of it — see Next up #1.
+- **CI is not a required check yet.** Someone with admin access on
+  github.com/Deekshith2205/Servora needs to go to Settings → Branches →
+  add a branch protection rule on `main` → require the CI status checks
+  before merging. Nobody in any session so far has had admin rights to
+  do it directly.
