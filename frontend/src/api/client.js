@@ -52,6 +52,19 @@ export function resolveEscalation(ticketId, resolutionNotes) {
   });
 }
 
+export function assignEscalation(ticketId, assignedTo) {
+  return request(`/api/escalations/${ticketId}/assign`, {
+    method: "POST",
+    body: JSON.stringify({ assigned_to: assignedTo }),
+  });
+}
+
+export function closeEscalation(ticketId) {
+  return request(`/api/escalations/${ticketId}/close`, {
+    method: "POST",
+  });
+}
+
 export function approveKBArticle(draft) {
   return request("/api/kb-articles", {
     method: "POST",

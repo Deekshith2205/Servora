@@ -40,6 +40,28 @@ class TicketOut(BaseModel):
     urgency: int
     status: str
     confidence: float | None = None
+    assigned_to: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class CustomerProfileOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: str
+    tier: str
+
+
+class CustomerHistoryTicketOut(BaseModel):
+    id: int
+    subject: str
+    category: str
+    status: str
+    sentiment: str
+    urgency: int
+    created_at: str
 
     class Config:
         from_attributes = True
@@ -62,8 +84,15 @@ class EscalationDetailOut(BaseModel):
     urgency: int
     status: str
     confidence: float | None = None
+    assigned_to: str | None = None
     trace: list[TraceStepOut] | None = None
     handoff_packet: HandoffPacketOut | None = None
+    customer: CustomerProfileOut | None = None
+    customer_history: list[CustomerHistoryTicketOut] | None = None
+
+
+class AssignTicketRequest(BaseModel):
+    assigned_to: str | None
 
 
 class ResolveTicketRequest(BaseModel):
