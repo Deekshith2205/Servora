@@ -20,6 +20,7 @@ from sqlalchemy.orm import sessionmaker
 
 import app.orchestrator as orchestrator_module
 from app.agents.classifier import ClassificationResult
+from app.agents.critic import CriticReview
 from app.agents.escalation import HandoffPacket
 from app.agents.planner import Alternative, PlanDecision
 from app.agents.specialists import SpecialistResponse
@@ -28,6 +29,9 @@ from app.db.database import Base, SessionLocal
 from app.db.models import Customer, Investigation, InvestigationStep
 from app.main import app
 from app.orchestrator import handle_message
+
+# [CRITIC] issue #110: mocked so resolve-path tests here stay network-free.
+_MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 
 # --------------------------------------------------------------------- #
 # Orchestrator-level: real per-step timing/reasoning/tools/refs/alternatives
@@ -83,6 +87,7 @@ def test_resolved_step_carries_real_timing_reasoning_tools_and_refs(monkeypatch,
         ],
     )
     monkeypatch.setattr(orchestrator_module, "SPECIALISTS", {"billing": billing_specialist, "technical": billing_specialist})
+    monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="grounded and acted"))
     monkeypatch.setattr(orchestrator_module, "extract_facts", lambda message, reply: [])
 
@@ -127,10 +132,19 @@ def test_resolved_step_carries_real_timing_reasoning_tools_and_refs(monkeypatch,
     assert by_agent["classifier"].alternatives_considered == []
     assert by_agent["billing_specialist"].alternatives_considered == []
 
-    # [SWARM] #78: explicit dependency graph — a plain chain for a
-    # resolved run (classifier -> planner -> specialist -> verification
-    # -> memory), first step has no dependency.
-    assert [s.depends_on for s in steps] == [[], [1], [2], [3], [4]]
+    # [SWARM] #78 / [CRITIC] #110: classifier -> planner -> specialist ->
+    # critic -> verification -> memory. Critic AND verification both
+    # depend on the specialist step (3) directly — not on each other —
+    # since verify() only ever reviews the specialist's response, never
+    # the critic's opinion (see orchestrator.py's explicit override).
+    assert [s.depends_on for s in steps] == [[], [1], [2], [3], [3], [5]]
+
+    # [CRITIC] #108/#110: the critic's structured review round-trips
+    # through InvestigationStep — only on the critic's own step.
+    assert by_agent["critic"].critic_review is not None
+    assert set(by_agent["critic"].critic_review) == {"agrees", "confidence", "alternative_hypothesis", "reasoning"}
+    assert by_agent["billing_specialist"].critic_review is None
+    assert by_agent["verification"].critic_review is None
 
 
 def test_direct_escalation_step_has_timing_but_no_fabricated_tools_or_alternatives(monkeypatch, db_session):
@@ -228,8 +242,9 @@ def _resolve_via_chat(client, customer_id):
                 "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a"),
             }):
                 with patch("app.orchestrator.verify", return_value=VerificationResult(approved=True, reasoning="grounded")):
-                    with patch("app.orchestrator.extract_facts", return_value=[]):
-                        return client.post("/api/chat", json={"customer_id": customer_id, "message": "I was charged twice"})
+                    with patch("app.orchestrator.critique", return_value=_MOCK_CRITIC_REVIEW):
+                        with patch("app.orchestrator.extract_facts", return_value=[]):
+                            return client.post("/api/chat", json={"customer_id": customer_id, "message": "I was charged twice"})
 
 
 def _escalate_via_chat(client, customer_id):
@@ -264,12 +279,37 @@ def test_investigation_detail_includes_a_correct_execution_graph():
 
     body = resp.json()
     graph = body["graph"]
-    # classifier, planner, billing_specialist, verification, memory
-    assert len(graph["nodes"]) == 5
-    assert len(graph["edges"]) == 4
-    step_numbers = [n["step_number"] for n in graph["nodes"]]
-    assert [e["from_step"] for e in graph["edges"]] == step_numbers[:-1]
-    assert [e["to_step"] for e in graph["edges"]] == step_numbers[1:]
+    # classifier(1) -> planner(2) -> billing_specialist(3) -> {critic(4),
+    # verification(5)} -> memory(6, depends on verification only). Critic
+    # and verification both branch directly off the specialist (#110) —
+    # this is no longer a flat chain, so edges are checked as a set of
+    # (from, to) pairs rather than assuming index-to-index.
+    assert len(graph["nodes"]) == 6
+    edge_pairs = {(e["from_step"], e["to_step"]) for e in graph["edges"]}
+    assert edge_pairs == {(1, 2), (2, 3), (3, 4), (3, 5), (5, 6)}
+
+
+def test_critic_review_round_trips_through_the_investigation_api():
+    """[CRITIC] issue #111/#113: critic_review is populated ONLY on the
+    critic's own step, null everywhere else."""
+    db = SessionLocal()
+    customer = _seed_api_customer(db)
+    with TestClient(app) as client:
+        chat_resp = _resolve_via_chat(client, customer.id)
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
+        resp = client.get(f"/api/investigations/{investigation_id}")
+
+    body = resp.json()
+    by_agent = {s["agent_name"]: s for s in body["timeline"]}
+
+    critic_review = by_agent["critic"]["critic_review"]
+    assert critic_review is not None
+    assert critic_review["agrees"] == _MOCK_CRITIC_REVIEW.agrees
+    assert critic_review["confidence"] == _MOCK_CRITIC_REVIEW.confidence
+    assert critic_review["reasoning"] == _MOCK_CRITIC_REVIEW.reasoning
+
+    assert by_agent["billing_specialist"]["critic_review"] is None
+    assert by_agent["verification"]["critic_review"] is None
 
 
 def test_explanation_endpoint_for_a_resolved_investigation():

@@ -207,6 +207,41 @@ function ResolutionCard({ resolution, confidence, status }) {
 }
 
 // -------------------------------------------------------------------------
+// [CRITIC] issue #112: Critic Review — an independent second opinion on
+// the root cause/evidence/resolution above, found by locating the
+// timeline step with agent_name === "critic" (there is at most one per
+// investigation). Deliberately its own section, not folded into the
+// checklist: this is specifically ABOUT the specialist's finding, not
+// just another step in the sequence.
+// -------------------------------------------------------------------------
+function CriticReviewCard({ steps }) {
+  const criticStep = steps.find((s) => s.agent_name === "critic");
+  if (!criticStep || !criticStep.critic_review) return null;
+  const { agrees, confidence, alternative_hypothesis, reasoning } = criticStep.critic_review;
+
+  return (
+    <div className="ib-section">
+      <div className="ib-section-title">Critic Review — Independent Second Opinion</div>
+      <div className={`ib-critic-card ${agrees ? "ib-critic-agrees" : "ib-critic-disagrees"}`}>
+        <div className="ib-critic-header">
+          <span className={`app-badge ${agrees ? "badge-success" : "badge-danger"}`}>
+            {agrees ? "Agrees" : "Disagrees"}
+          </span>
+          <ConfidenceBadge value={confidence} />
+        </div>
+        <p className="ib-critic-reasoning">{reasoning}</p>
+        {!agrees && alternative_hypothesis && (
+          <div className="ib-critic-alternative">
+            <div className="ib-critic-alternative-label">Alternative Hypothesis</div>
+            <p>{alternative_hypothesis}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
 // G. Escalation Summary
 // -------------------------------------------------------------------------
 function EscalationSummary({ status, steps }) {
@@ -413,6 +448,7 @@ export default function InvestigationBoard() {
                   <EvidencePanel evidence={detail.evidence} />
                   <RootCauseCard rootCause={detail.root_cause} confidence={detail.confidence} />
                   <ResolutionCard resolution={detail.resolution} confidence={detail.confidence} status={detail.status} />
+                  <CriticReviewCard steps={detail.timeline} />
                   <EscalationSummary status={detail.status} steps={detail.timeline} />
                 </>
               )}
