@@ -788,12 +788,49 @@ gap is still open; a nested-schema call like `alternatives_considered`
 hasn't been confirmed against Anthropic's `messages.parse` yet, only
 Gemini's `response_schema`.
 
+### 2026-09-13 (continued) — #96 and #99 solved; a real PR-sequencing gap found and fixed
+
+- **#96** (Alternative Actions Considered — chosen action visually
+  distinct) — `ExplanationOut` gained `chosen_action`
+  (`app/api/explanations.py::_chosen_action()`), parsed deterministically
+  from the planner step's own code-controlled action-label text (never
+  raw LLM prose) rather than adding a redundant column. Frontend: a
+  "Chosen" badge above the rejected alternatives, which now render struck
+  through.
+- **#99** (wire the panel + demo script) — the panel was already wired
+  into both Customer Chat and the Staff Dashboard drawer as of #101;
+  this added the missing `docs/DEMO_SCRIPT.md` walkthrough.
+
+**A real gap found while pushing this work, not a code bug but a process
+one**: PR #100 (base `main`) had already been merged, but PR #101 (base
+`p0-swarm-explain-backend`, i.e. stacked on #100 rather than on `main`)
+had been merged into *that branch*, not into `main` — so all of #101's
+frontend work (the Agent Swarm view, the Explainable AI Panel, the
+`InvestigationTimeline.jsx` bug fix) was sitting on a branch, invisible
+from `main`, discovered only by diffing `origin/main..p0-swarm-explain-
+backend` before pushing #96/#99's commits. Fixed by opening **PR #102**
+(`p0-swarm-explain-backend` → `main`) carrying the missing frontend work
+plus #96/#99. **Until #102 is merged, `main` does NOT have the Agent
+Swarm tab, the Explainable AI Panel, or the ExplainableAIPanel/
+AgentSwarmView components at all** — worth remembering if a fresh clone
+of `main` looks like it's missing the whole batch.
+
+Re-verified LIVE against a real Gemini call (see full details in PR
+#102's description) on BOTH branches this time — a resolved case (showed
+"CHOSEN: resolve") and, on a second run with richer seeded ticket
+history, a direct-Planner escalation (showed "CHOSEN: escalate" with
+real rejection reasons for the other two actions) — confirming the
+chosen/alternatives split degrades correctly on the branch that skips the
+specialist entirely, not just the happy path. `pytest`: 212 passed.
+`npm run lint`/`build`: clean.
+
 ## Next up (in priority order)
 
-0. **Review and merge PR #100 then PR #101** (the [SWARM]/[EXPLAIN] P0
-   batch — see the 2026-09-13 entry above). #101 is based on #100's
-   branch, not `main` — merge #100 first, or rebase #101 onto `main`
-   afterward.
+0. **Merge PR #102** (`p0-swarm-explain-backend` → `main`) — this is the
+   one that actually gets the [SWARM]/[EXPLAIN] frontend work (and #96/
+   #99) onto `main`; #100 alone (already merged) only has the backend
+   half. See the entry directly above for why #101 being merged didn't
+   already handle this.
 1. **Still the single highest-priority loose thread, now spanning the
    ENTIRE backlog.** Nobody has confirmed `call_llm()` against a real
    Anthropic API key. Real bugs have repeatedly been found without one —
