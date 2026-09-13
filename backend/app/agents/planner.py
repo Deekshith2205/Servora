@@ -19,7 +19,7 @@ and `db` in addition to `classification`, so it can look at ticket history
 and (once implemented) the customer memory profile. `orchestrator.py` was
 updated accordingly — see that file's one call site.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -62,7 +62,22 @@ legal disputes or requests outside company policy).
 
 target_agent must be exactly one of: billing, technical, order, account, none.
 reasoning must cite the specific signals that drove the decision (ticket \
-history, urgency, fixability) — not just restate the action."""
+history, urgency, fixability) — not just restate the action.
+
+alternatives_considered: list the OTHER 1-2 actions from resolve/clarify/ \
+escalate that you did NOT choose, each with a specific one-line reason you \
+rejected it (cite the same kind of signal as your reasoning — e.g. "escalate \
+— not needed, the specialist can resolve this with a standard refund" or \
+"clarify — the order was unambiguous, no need to ask"). Never list the \
+action you actually chose as one of its own alternatives, and never give a \
+generic reason like "didn't fit" — this is shown to a human reviewer as \
+evidence of what you actually weighed, not just what you concluded."""
+
+
+@dataclass
+class Alternative:
+    action: str  # resolve | clarify | escalate
+    rejected_because: str
 
 
 @dataclass
@@ -70,6 +85,15 @@ class PlanDecision:
     action: str  # resolve | clarify | escalate
     target_agent: str  # billing | technical | order | account | none
     reasoning: str
+    # [EXPLAIN] issue #89: the actions NOT chosen and why — see the system
+    # prompt above. Defaults to empty rather than fabricated content when
+    # the LLM path isn't taken (e.g. a future deterministic fallback).
+    alternatives_considered: list[Alternative] = field(default_factory=list)
+
+
+class _AlternativeSchema(BaseModel):
+    action: str = Field(description="One of: resolve, clarify, escalate — an action NOT chosen")
+    rejected_because: str = Field(description="Specific, one-line reason this action was rejected")
 
 
 class _PlanSchema(BaseModel):
@@ -79,6 +103,10 @@ class _PlanSchema(BaseModel):
         "'none' unless action is 'resolve'."
     )
     reasoning: str = Field(description="Why — cite the specific signals, not just the action")
+    alternatives_considered: list[_AlternativeSchema] = Field(
+        default_factory=list,
+        description="The 1-2 actions NOT chosen and a specific reason each was rejected.",
+    )
 
 
 def _summarize_recent_tickets(tickets: list) -> str:
@@ -122,4 +150,20 @@ def plan(classification: ClassificationResult, customer_id: int, db: Session) ->
     if action == "resolve" and target_agent == "none":
         action = "escalate"
 
-    return PlanDecision(action=action, target_agent=target_agent, reasoning=result.reasoning)
+    # [EXPLAIN] issue #89: keep only alternatives that are actually valid
+    # AND distinct from the chosen action — defensive against the LLM
+    # naming an invalid action or (contradictorily) listing its own choice
+    # as something it rejected, same fail-safe spirit as the action/target
+    # validation above.
+    alternatives = [
+        Alternative(action=a.action, rejected_because=a.rejected_because)
+        for a in getattr(result, "alternatives_considered", [])
+        if a.action in VALID_ACTIONS and a.action != action
+    ]
+
+    return PlanDecision(
+        action=action,
+        target_agent=target_agent,
+        reasoning=result.reasoning,
+        alternatives_considered=alternatives,
+    )

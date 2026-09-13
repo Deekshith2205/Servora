@@ -194,6 +194,26 @@ class InvestigationStep(Base):
     `specialists.py`'s evidence-capturing wrapper) — never placeholder
     text, even when a step made no tool calls (its evidence list is then
     just empty, not faked).
+
+    Issues [SWARM] #77 and [EXPLAIN] #89/#91 add the columns below —
+    all additive, all default to an empty/null "nothing recorded" value
+    so no existing row or caller breaks:
+      - `started_at`: real wall-clock start (added alongside the
+        pre-existing `timestamp`, which is written at COMPLETION —
+        `timestamp - started_at` should be ~= `duration_ms`).
+      - `reasoning_text`: the agent's fuller reasoning/output text (the
+        same value already carried by `TraceStep.output` in
+        `Ticket.trace_json`, but previously never copied into this
+        table — only the short `action` label was).
+      - `used_tools_json`: the raw tool names a specialist actually
+        called (mirrors `SpecialistResponse.used_tools`).
+      - `alternatives_json`: only populated for the planner's own step —
+        the actions NOT chosen and why, from `PlanDecision.alternatives_considered`.
+      - `evidence_refs_json`: structured, id-addressable evidence
+        (`{type, ref_id, label}`) alongside the existing prose
+        `evidence_json` — lets a frontend deep-link to the actual
+        order/customer/ticket/KB-article row instead of just displaying
+        a sentence.
     """
 
     __tablename__ = "investigation_steps"
@@ -202,10 +222,15 @@ class InvestigationStep(Base):
     investigation_id: Mapped[int] = mapped_column(ForeignKey("investigations.id"))
     step_number: Mapped[int] = mapped_column(Integer)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     agent_name: Mapped[str] = mapped_column(String)
     action: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, default="completed")  # completed | failed
+    reasoning_text: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     evidence_json: Mapped[str] = mapped_column(String, default="[]")
+    evidence_refs_json: Mapped[str] = mapped_column(String, default="[]")
+    used_tools_json: Mapped[str] = mapped_column(String, default="[]")
+    alternatives_json: Mapped[str] = mapped_column(String, default="[]")
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
 
@@ -214,6 +239,18 @@ class InvestigationStep(Base):
     @property
     def evidence(self) -> list[str]:
         return json.loads(self.evidence_json) if self.evidence_json else []
+
+    @property
+    def evidence_refs(self) -> list[dict]:
+        return json.loads(self.evidence_refs_json) if self.evidence_refs_json else []
+
+    @property
+    def used_tools(self) -> list[str]:
+        return json.loads(self.used_tools_json) if self.used_tools_json else []
+
+    @property
+    def alternatives_considered(self) -> list[dict]:
+        return json.loads(self.alternatives_json) if self.alternatives_json else []
 
 
 class Notification(Base):
