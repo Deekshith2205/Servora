@@ -52,6 +52,7 @@ from app.agents.specialists import SPECIALISTS
 from app.agents.verification import verify
 from app.db.models import Investigation, InvestigationStep, Ticket
 from app.llm import LLMError
+from app.services import stream_bus
 
 _SUBJECT_MAX_LEN = 80
 
@@ -74,7 +75,15 @@ class ChatResult:
     ticket_id: int | None = None
 
 
-def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
+def handle_message(db: Session, customer_id: int, message: str, stream_key: str | None = None) -> ChatResult:
+    """`stream_key` — [SWARM] issue #79, additive/optional: when the
+    caller (see app/api/chat.py) supplies one, every `_record()` call
+    below ALSO publishes a real-time event to `stream_bus`, keyed by that
+    string, as that stage actually completes — not a replay after the
+    fact. `None` (the default) reproduces the exact previous behavior for
+    every existing caller (tests included): nothing is published, nothing
+    changes.
+    """
     trace: list[TraceStep] = []
     # [FEATURE] Investigation Board: one dict per trace step, timed and
     # evidence-carrying — persisted as InvestigationStep rows at the end
@@ -112,138 +121,184 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
             "alternatives": [asdict(a) for a in (alternatives or [])],
             "evidence_refs": evidence_refs or [],
         })
+        # [SWARM] issue #79: real-time push, same shape a step_records
+        # entry has (minus the pieces only meaningful once persisted, like
+        # a DB-assigned step_number — the frontend uses list position for
+        # that, same as it already does for the replay-based Swarm view).
+        if stream_key:
+            stream_bus.publish(stream_key, {
+                "type": "step",
+                "step_number": len(step_records),
+                "agent_name": agent,
+                "action": action,
+                "status": status,
+                "confidence": confidence,
+                "duration_ms": duration_ms,
+            })
 
-    t0, t0_wall = time.perf_counter(), datetime.utcnow()
-    classification = classify(message)
-    _record(
-        "classifier", classification.reasoning,
-        action=f"Classified issue as {classification.category} (urgency {classification.urgency}/10)",
-        duration_ms=round((time.perf_counter() - t0) * 1000),
-        confidence=classification.confidence, started_at=t0_wall,
-    )
+    def _finish(ticket_id: int, investigation_id: int) -> None:
+        """[SWARM] issue #79: the stream's final event — carries the real,
+        now-persisted ticket_id/investigation_id so the frontend can hand
+        off from "live" to fetching the completed record normally (same
+        data GET /api/investigations/{id} would return)."""
+        if stream_key:
+            stream_bus.publish(stream_key, {"type": "done", "ticket_id": ticket_id, "investigation_id": investigation_id})
 
-    t0, t0_wall = time.perf_counter(), datetime.utcnow()
-    decision = plan(classification, customer_id, db)
-    plan_action = (
-        f"Decided to resolve via the {decision.target_agent} specialist"
-        if decision.action == "resolve"
-        else f"Decided to {decision.action}"
-    )
-    _record(
-        "planner", decision.reasoning, action=plan_action,
-        duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
-        # [EXPLAIN] issue #89: the actions NOT chosen, straight from the
-        # Planner's own structured output — see planner.py.
-        alternatives=decision.alternatives_considered,
-    )
-
-    if decision.action == "escalate":
+    try:
         t0, t0_wall = time.perf_counter(), datetime.utcnow()
-        packet = build_handoff_packet(
-            message=message,
-            attempted_fixes=[step.output for step in trace],
-            urgency=classification.urgency,
+        classification = classify(message)
+        _record(
+            "classifier", classification.reasoning,
+            action=f"Classified issue as {classification.category} (urgency {classification.urgency}/10)",
+            duration_ms=round((time.perf_counter() - t0) * 1000),
+            confidence=classification.confidence, started_at=t0_wall,
+        )
+
+        t0, t0_wall = time.perf_counter(), datetime.utcnow()
+        decision = plan(classification, customer_id, db)
+        plan_action = (
+            f"Decided to resolve via the {decision.target_agent} specialist"
+            if decision.action == "resolve"
+            else f"Decided to {decision.action}"
         )
         _record(
-            "escalation", f"Routed straight to a human agent — {packet.root_cause_hypothesis}",
-            action="Routed directly to a human agent",
-            evidence=[packet.situation, packet.root_cause_hypothesis],
+            "planner", decision.reasoning, action=plan_action,
+            duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
+            # [EXPLAIN] issue #89: the actions NOT chosen, straight from the
+            # Planner's own structured output — see planner.py.
+            alternatives=decision.alternatives_considered,
+        )
+
+        if decision.action == "escalate":
+            t0, t0_wall = time.perf_counter(), datetime.utcnow()
+            packet = build_handoff_packet(
+                message=message,
+                attempted_fixes=[step.output for step in trace],
+                urgency=classification.urgency,
+            )
+            _record(
+                "escalation", f"Routed straight to a human agent — {packet.root_cause_hypothesis}",
+                action="Routed directly to a human agent",
+                evidence=[packet.situation, packet.root_cause_hypothesis],
+                duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
+            )
+            ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
+            investigation_id = _persist_investigation(
+                db, ticket_id, customer_id, investigation_started_at, step_records,
+                status="escalated", root_cause=packet.root_cause_hypothesis,
+                resolution=packet.recommended_action, confidence=classification.confidence,
+            )
+            _finish(ticket_id, investigation_id)
+            return ChatResult(
+                reply="A human agent will follow up shortly.",
+                status="escalated",
+                trace=trace,
+                handoff_packet=packet,
+                ticket_id=ticket_id,
+            )
+
+        t0, t0_wall = time.perf_counter(), datetime.utcnow()
+        specialist_fn = SPECIALISTS.get(decision.target_agent, SPECIALISTS["technical"])
+        response = specialist_fn(db, customer_id, message)
+
+        # Extract root_cause safely if it was populated by the specialist
+        root_cause = getattr(response, "root_cause", None)
+        resolution = getattr(response, "resolution", None)
+        _record(
+            f"{decision.target_agent}_specialist", response.reply,
+            action=root_cause or f"{decision.target_agent.title()} specialist investigated and responded",
+            evidence=getattr(response, "evidence", []),
+            duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
+            confidence=response.confidence, root_cause=root_cause, resolution=resolution,
+            # [SWARM] issue #77 / [EXPLAIN] #91: the tools actually called and
+            # their structured, id-addressable evidence refs.
+            used_tools=getattr(response, "used_tools", []),
+            evidence_refs=getattr(response, "evidence_refs", []),
+        )
+
+        t0, t0_wall = time.perf_counter(), datetime.utcnow()
+        verification = verify(response)
+        _record(
+            "verification", verification.reasoning,
+            action="Verified the proposed resolution" if verification.approved else "Verification failed",
+            status="completed" if verification.approved else "failed",
             duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
         )
-        ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
-        _persist_investigation(
-            db, ticket_id, customer_id, investigation_started_at, step_records,
-            status="escalated", root_cause=packet.root_cause_hypothesis,
-            resolution=packet.recommended_action, confidence=classification.confidence,
-        )
-        return ChatResult(
-            reply="A human agent will follow up shortly.",
-            status="escalated",
-            trace=trace,
-            handoff_packet=packet,
-            ticket_id=ticket_id,
-        )
 
-    t0, t0_wall = time.perf_counter(), datetime.utcnow()
-    specialist_fn = SPECIALISTS.get(decision.target_agent, SPECIALISTS["technical"])
-    response = specialist_fn(db, customer_id, message)
+        if not verification.approved:
+            t0, t0_wall = time.perf_counter(), datetime.utcnow()
+            packet = build_handoff_packet(
+                message=message,
+                attempted_fixes=[step.output for step in trace],
+                urgency=classification.urgency,
+                confidence=response.confidence,
+            )
+            _record(
+                "escalation", f"Verification failed — escalating to a human agent — {packet.root_cause_hypothesis}",
+                action="Escalated after failed verification",
+                evidence=[packet.situation, packet.root_cause_hypothesis],
+                duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
+            )
+            ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
+            investigation_id = _persist_investigation(
+                db, ticket_id, customer_id, investigation_started_at, step_records,
+                status="escalated", root_cause=packet.root_cause_hypothesis,
+                resolution=packet.recommended_action, confidence=response.confidence,
+            )
+            _finish(ticket_id, investigation_id)
+            return ChatResult(
+                reply="A human agent will follow up shortly.",
+                status="escalated",
+                trace=trace,
+                handoff_packet=packet,
+                ticket_id=ticket_id,
+            )
 
-    # Extract root_cause safely if it was populated by the specialist
-    root_cause = getattr(response, "root_cause", None)
-    resolution = getattr(response, "resolution", None)
-    _record(
-        f"{decision.target_agent}_specialist", response.reply,
-        action=root_cause or f"{decision.target_agent.title()} specialist investigated and responded",
-        evidence=getattr(response, "evidence", []),
-        duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
-        confidence=response.confidence, root_cause=root_cause, resolution=resolution,
-        # [SWARM] issue #77 / [EXPLAIN] #91: the tools actually called and
-        # their structured, id-addressable evidence refs.
-        used_tools=getattr(response, "used_tools", []),
-        evidence_refs=getattr(response, "evidence_refs", []),
-    )
-
-    t0, t0_wall = time.perf_counter(), datetime.utcnow()
-    verification = verify(response)
-    _record(
-        "verification", verification.reasoning,
-        action="Verified the proposed resolution" if verification.approved else "Verification failed",
-        status="completed" if verification.approved else "failed",
-        duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
-    )
-
-    if not verification.approved:
         t0, t0_wall = time.perf_counter(), datetime.utcnow()
-        packet = build_handoff_packet(
-            message=message,
-            attempted_fixes=[step.output for step in trace],
-            urgency=classification.urgency,
+        _update_memory(customer_id, message, response.reply, db, trace)
+        memory_step = trace[-1]
+        step_records.append({
+            "agent_name": memory_step.agent,
+            "action": memory_step.output,
+            "status": "completed",
+            "evidence": [],
+            "evidence_refs": [],
+            "duration_ms": round((time.perf_counter() - t0) * 1000),
+            "confidence": None,
+            "started_at": t0_wall,
+            "reasoning_text": memory_step.output,
+            "used_tools": [],
+            "alternatives": [],
+        })
+        if stream_key:
+            stream_bus.publish(stream_key, {
+                "type": "step", "step_number": len(step_records), "agent_name": memory_step.agent,
+                "action": memory_step.output, "status": "completed", "confidence": None, "duration_ms": step_records[-1]["duration_ms"],
+            })
+
+        ticket_id = _create_ticket(db, customer_id, message, classification, trace, "resolved")
+        investigation_id = _persist_investigation(
+            db, ticket_id, customer_id, investigation_started_at, step_records,
+            status="resolved", root_cause=root_cause, resolution=resolution or response.reply,
             confidence=response.confidence,
         )
-        _record(
-            "escalation", f"Verification failed — escalating to a human agent — {packet.root_cause_hypothesis}",
-            action="Escalated after failed verification",
-            evidence=[packet.situation, packet.root_cause_hypothesis],
-            duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
-        )
-        ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
-        _persist_investigation(
-            db, ticket_id, customer_id, investigation_started_at, step_records,
-            status="escalated", root_cause=packet.root_cause_hypothesis,
-            resolution=packet.recommended_action, confidence=response.confidence,
-        )
-        return ChatResult(
-            reply="A human agent will follow up shortly.",
-            status="escalated",
-            trace=trace,
-            handoff_packet=packet,
-            ticket_id=ticket_id,
-        )
-
-    t0, t0_wall = time.perf_counter(), datetime.utcnow()
-    _update_memory(customer_id, message, response.reply, db, trace)
-    memory_step = trace[-1]
-    step_records.append({
-        "agent_name": memory_step.agent,
-        "action": memory_step.output,
-        "status": "completed",
-        "evidence": [],
-        "evidence_refs": [],
-        "duration_ms": round((time.perf_counter() - t0) * 1000),
-        "confidence": None,
-        "started_at": t0_wall,
-        "reasoning_text": memory_step.output,
-        "used_tools": [],
-        "alternatives": [],
-    })
-
-    ticket_id = _create_ticket(db, customer_id, message, classification, trace, "resolved")
-    _persist_investigation(
-        db, ticket_id, customer_id, investigation_started_at, step_records,
-        status="resolved", root_cause=root_cause, resolution=resolution or response.reply,
-        confidence=response.confidence,
-    )
-    return ChatResult(reply=response.reply, status="resolved", trace=trace, ticket_id=ticket_id)
+        _finish(ticket_id, investigation_id)
+        return ChatResult(reply=response.reply, status="resolved", trace=trace, ticket_id=ticket_id)
+    finally:
+        # [SWARM] issue #79: unconditionally send the "no more events"
+        # sentinel — on a normal return, `_finish()` above already
+        # published the real "done" event with the ticket/investigation
+        # id; this is the separate signal that tells the SSE generator to
+        # stop reading and close the connection. On an exception (e.g. an
+        # LLMError propagating to app/api/chat.py's own 502 handler),
+        # `_finish()` never ran, so this is the ONLY signal the stream
+        # gets — without it, that SSE connection would hang open until
+        # its own idle timeout instead of closing promptly. The
+        # customer-facing error itself still surfaces normally through
+        # chat.py's existing HTTPException handling — this only affects
+        # the live Swarm view, which simply stops updating.
+        if stream_key:
+            stream_bus.close(stream_key)
 
 
 def _create_ticket(
@@ -289,7 +344,7 @@ def _persist_investigation(
     root_cause: str | None,
     resolution: str | None,
     confidence: float | None,
-) -> None:
+) -> int:
     """[FEATURE] Investigation Board: persists the normalized
     Investigation + InvestigationStep rows for this pipeline run,
     alongside (not instead of) the Ticket.trace_json snapshot
@@ -300,6 +355,11 @@ def _persist_investigation(
     paths and the resolved path) — mirrors _create_ticket()'s call sites
     exactly, since an Investigation always maps 1:1 to the Ticket just
     created.
+
+    Returns the new Investigation's id — [SWARM] issue #79 threads this
+    into the stream's final "done" event so a live-mode frontend can hand
+    off to fetching the completed record normally, without a second
+    round-trip through GET /api/investigations/by-ticket/{ticket_id}.
     """
     investigation = Investigation(
         ticket_id=ticket_id,
@@ -344,6 +404,7 @@ def _persist_investigation(
             confidence=rec["confidence"],
         ))
     db.commit()
+    return investigation.id
 
 
 def _update_memory(customer_id: int, message: str, reply: str, db: Session, trace: list[TraceStep]) -> None:
