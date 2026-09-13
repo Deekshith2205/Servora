@@ -5,6 +5,7 @@ import { sendChatMessage } from "../api/client";
 const DEMO_CUSTOMER_ID = 1;
 
 import InvestigationTimeline from "../components/InvestigationTimeline";
+import ExplainableAIPanel from "../components/ExplainableAIPanel";
 
 export default function CustomerChat() {
   const [messages, setMessages] = useState([]);
@@ -32,10 +33,11 @@ export default function CustomerChat() {
         ...prev,
         { 
           role: "agent", 
-          text: result.reply, 
-          status: result.status, 
+          text: result.reply,
+          status: result.status,
           trace: result.trace,
           handoffPacket: result.handoff_packet,
+          ticketId: result.ticket_id,
           timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
         },
       ]);
@@ -97,6 +99,11 @@ export default function CustomerChat() {
               
               {m.role === 'agent' && m.trace && m.trace.length > 0 && (
                 <InvestigationTimeline trace={m.trace} />
+              )}
+
+              {/* [EXPLAIN] issue #93/#99: "Why did Servora recommend this?" */}
+              {m.role === 'agent' && m.ticketId && (
+                <ExplainableAIPanel ticketId={m.ticketId} mode="compact" />
               )}
             </div>
           ))}

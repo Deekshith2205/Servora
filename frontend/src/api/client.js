@@ -109,3 +109,8 @@ export function fetchInvestigationByTicket(ticketId) {
 export function fetchAgentPerformanceMetrics() {
   return request("/api/investigations/metrics/agents");
 }
+
+// [EXPLAIN] issue #92.
+export function fetchExplanation(investigationId) {
+  return request(`/api/investigations/${investigationId}/explanation`);
+}
