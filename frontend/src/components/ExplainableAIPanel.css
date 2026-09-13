@@ -92,6 +92,29 @@
   background: var(--app-primary-soft);
 }
 
+.eap-alt-chosen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: var(--app-success-bg);
+  border-radius: var(--app-radius-md);
+  width: fit-content;
+}
+
+.eap-alt-chosen-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-success-text);
+}
+
+.eap-alt-chosen .eap-alt-action {
+  color: var(--app-success-text);
+}
+
 .eap-alternatives-list {
   margin: 0;
   padding-left: 1.1rem;
@@ -101,6 +124,12 @@
 .eap-alternatives-list li {
   margin-bottom: 4px;
   color: var(--app-text-secondary);
+}
+
+.eap-alt-rejected {
+  color: var(--app-text-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--app-border);
 }
 
 .eap-alt-action {

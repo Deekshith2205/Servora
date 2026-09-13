@@ -15,15 +15,26 @@ import { ConfidenceBreakdownBars, ConfidenceGauge } from "./ConfidenceGauge";
 import { agentLabel } from "./agentMeta";
 import "./ExplainableAIPanel.css";
 
-function AlternativesSection({ alternatives }) {
+// [EXPLAIN] issue #96: the chosen action rendered visually distinct from
+// (and above) the rejected alternatives — `chosen_action` and
+// `alternatives_considered` are mutually exclusive by construction on the
+// backend (see explanations.py::_chosen_action's docstring), so this
+// never risks showing the same action in both places.
+function AlternativesSection({ chosenAction, alternatives }) {
   if (!alternatives || alternatives.length === 0) return null;
   return (
     <div className="eap-section">
       <div className="eap-section-label">Alternative Actions Considered</div>
+      {chosenAction && (
+        <div className="eap-alt-chosen">
+          <span className="eap-alt-chosen-badge">Chosen</span>
+          <span className="eap-alt-action">{chosenAction}</span>
+        </div>
+      )}
       <ul className="eap-alternatives-list">
         {alternatives.map((a, i) => (
           <li key={i}>
-            <span className="eap-alt-action">{a.action}</span>
+            <span className="eap-alt-action eap-alt-rejected">{a.action}</span>
             <span className="eap-alt-reason"> — {a.rejected_because}</span>
           </li>
         ))}
@@ -71,7 +82,7 @@ function PanelBody({ explanation }) {
       </div>
 
       <ContributingAgentsSection agents={explanation.agents_consulted} />
-      <AlternativesSection alternatives={explanation.alternatives_considered} />
+      <AlternativesSection chosenAction={explanation.chosen_action} alternatives={explanation.alternatives_considered} />
       <PolicyReferencesSection policyReferences={explanation.policy_references} />
 
       {explanation.evidence.length > 0 && (
