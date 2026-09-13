@@ -1,16 +1,22 @@
 import { useState, useRef, useEffect } from "react";
-import { sendChatMessage } from "../api/client";
+import { openInvestigationStream, sendChatMessage } from "../api/client";
+import { appendLiveStep, clearLive, finishLive, startLive } from "../liveInvestigation";
 
 // Demo customer — issue "Wire up real auth / customer identity" replaces this.
 const DEMO_CUSTOMER_ID = 1;
 
 import InvestigationTimeline from "../components/InvestigationTimeline";
 import ExplainableAIPanel from "../components/ExplainableAIPanel";
+import { AgentIcon, agentLabel } from "../components/agentMeta";
 
 export default function CustomerChat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  // [SWARM] issue #79: real steps arriving live via SSE while /api/chat is
+  // still in flight — replaces the old "Investigating..." dots-only
+  // placeholder with the actual pipeline stages as they complete.
+  const [liveSteps, setLiveSteps] = useState([]);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -19,7 +25,7 @@ export default function CustomerChat() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, loading]);
+  }, [messages, loading, liveSteps]);
 
   async function handleSend() {
     if (!input.trim()) return;
@@ -27,12 +33,30 @@ export default function CustomerChat() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setLoading(true);
+    setLiveSteps([]);
+
+    // [SWARM] issue #79: open the real-time stream BEFORE the request that
+    // will actually produce events on it — see openInvestigationStream's
+    // docstring in api/client.js. [SWARM] issue #85: publish to the
+    // shared liveInvestigation module too, so the Agent Swarm view (a
+    // different page) can show this same investigation as "LIVE" if the
+    // user switches to it mid-flight.
+    const streamKey = crypto.randomUUID();
+    startLive(streamKey);
+    const closeStream = openInvestigationStream(streamKey, {
+      onStep: (step) => {
+        setLiveSteps((prev) => [...prev, step]);
+        appendLiveStep(step);
+      },
+      onDone: (doneEvent) => finishLive(doneEvent),
+    });
+
     try {
-      const result = await sendChatMessage(DEMO_CUSTOMER_ID, userMessage.text);
+      const result = await sendChatMessage(DEMO_CUSTOMER_ID, userMessage.text, streamKey);
       setMessages((prev) => [
         ...prev,
-        { 
-          role: "agent", 
+        {
+          role: "agent",
           text: result.reply,
           status: result.status,
           trace: result.trace,
@@ -43,15 +67,18 @@ export default function CustomerChat() {
       ]);
     } catch (err) {
       setMessages((prev) => [
-        ...prev, 
-        { 
-          role: "agent", 
+        ...prev,
+        {
+          role: "agent",
           text: `Error: ${err.message}`,
           timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
         }
       ]);
     } finally {
       setLoading(false);
+      setLiveSteps([]);
+      closeStream();
+      clearLive();
     }
   }
 
@@ -110,9 +137,23 @@ export default function CustomerChat() {
           
           {loading && (
             <div className="chat-bubble-wrapper agent">
-              <div className="chat-bubble agent" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                <span style={{opacity: 0.5}}>Investigating</span>
-                <span className="dot-pulse">...</span>
+              <div className="chat-bubble agent live-investigating-bubble">
+                {liveSteps.length === 0 ? (
+                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                    <span style={{opacity: 0.5}}>Investigating</span>
+                    <span className="dot-pulse">...</span>
+                  </div>
+                ) : (
+                  <div className="live-steps-list">
+                    {liveSteps.map((s, i) => (
+                      <div key={i} className="live-step-row">
+                        <span className="live-step-icon"><AgentIcon agentName={s.agent_name} /></span>
+                        <span>{agentLabel(s.agent_name)}</span>
+                        <span className="live-step-dots">...</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -117,18 +117,36 @@ mention if the demo is going well:
   sends the (mocked, see `app/services/notifications.py`) customer
   notification from issue #21.
 - **Agent Swarm tab + "Why did Servora recommend this?"** (the [SWARM]/
-  [EXPLAIN] P0 batch, #77-#98): reuses Scenario 2's exact duplicate-charge
-  message — after it resolves, this is the moment to switch to it.
-  1. Type Scenario 2's message again (or reuse the same conversation) and
-     switch to the **Agent Swarm** tab. Point out the node/edge graph is
-     the SAME real investigation just created — not a separate diagram —
-     rendered left-to-right in real execution order (Classifier → Planner
-     → Billing → Verification → Memory), each node showing its real
-     confidence and duration. Click the **Billing Agent** node to expand
-     its card: real reasoning, the exact tools it called
-     (`get_customer_orders`, `check_payment_issue`, `issue_refund`), and
-     the evidence each one produced.
-  2. Back in **Customer Chat**, click **"Why did Servora recommend
+  [EXPLAIN] batch, #77-#98): reuses Scenario 2's exact duplicate-charge
+  message.
+  1. **Before** sending Scenario 2's message again, switch to the
+     **Agent Swarm** tab first and leave it open — issue #79 made this
+     tab genuinely live, not a replay. Then go back to **Customer Chat**
+     and send the message. Switch back to **Agent Swarm** immediately
+     (don't wait for the reply): if the pipeline hasn't finished yet
+     you'll see a red **LIVE** entry at the top of "Recent
+     Investigations" with real agent nodes appearing one at a time as
+     they actually complete — this is genuinely real-time (SSE), not a
+     timer. **Timing note**: this demo customer's seeded ticket history
+     is deliberately rich, so several scenarios resolve or escalate in
+     as little as 3-4 seconds — switch tabs quickly, or narrate that the
+     live view is what a slower/larger pipeline run would show more of.
+  2. Once it finishes (LIVE hands off to the completed record
+     automatically), point out the node/edge graph is the SAME real
+     investigation just created — not a separate diagram — rendered
+     left-to-right in real execution order (Classifier → Planner →
+     Billing → Verification → Memory), each node showing a real
+     Idle/Running/Completed/Failed status (#83) and its real confidence/
+     duration. Click the **Billing Agent** node to expand its card: real
+     reasoning, the exact tools it called (`get_customer_orders`,
+     `check_payment_issue`, `issue_refund`), and the evidence each one
+     produced.
+  3. Point out the **Swarm Timeline** strip below it (#84) — the same
+     steps as a Gantt-style bar, width proportional to real execution
+     time, and the **REPLAY** speed control (0.5x/1x/2x/Instant, #85) in
+     the top-right of the graph card — useful for re-watching a past
+     investigation without waiting through it in real time.
+  4. Back in **Customer Chat**, click **"Why did Servora recommend
      this?"** under the reply. Point out, in order: the large confidence
      gauge (90%) with a per-agent breakdown underneath (not just one
      number); the Decision Rationale paragraph; **Alternative Actions
@@ -136,8 +154,12 @@ mention if the demo is going well:
      (`resolve`), with the OTHER two actions (`clarify`, `escalate`) shown
      struck through alongside the specific reason each was rejected —
      this is the Planner's actual deliberation, not a fabricated list of
-     options.
-  3. The same panel, in full-page form, is also in the **Staff
+     options; the **Decision Tree** (#97) showing the same branch
+     visually, plus a second Verification pass/fail branch point; and
+     the **Evidence Explorer** (#95) — click any evidence card (an order,
+     a customer, a KB article) to see a real inline preview fetched live
+     from the database, not a static string.
+  5. The same panel, in full-page form, is also in the **Staff
      Dashboard**'s escalation drawer for any escalated ticket (Scenario
      3) — worth showing once to make clear it's one shared component, not
      a customer-only feature.

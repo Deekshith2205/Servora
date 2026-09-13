@@ -318,3 +318,70 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* [SWARM] issue #85: live entry + mode banner + speed control */
+
+.swarm-list-item-live {
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-danger-bg);
+}
+
+.swarm-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ib-pulse 1.1s ease-in-out infinite;
+}
+
+.swarm-mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+}
+
+.swarm-mode-live {
+  color: var(--app-danger-text);
+  gap: 6px;
+}
+
+.swarm-mode-replay {
+  color: var(--app-text-muted);
+}
+
+.swarm-speed-control {
+  display: flex;
+  gap: 4px;
+}
+
+.swarm-speed-btn {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.swarm-speed-btn.active {
+  background: var(--app-primary);
+  color: white;
+  border-color: var(--app-primary);
+}
+
+.swarm-node-pending-next {
+  opacity: 0.3;
+  cursor: default;
+  animation: ib-pulse 1.1s ease-in-out infinite;
+}
