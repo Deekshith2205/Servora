@@ -293,6 +293,11 @@ def test_explanation_endpoint_for_a_resolved_investigation():
         {"action": "escalate", "rejected_because": "confidence sufficient to resolve automatically"}
     ]
 
+    # [EXPLAIN] #96: the chosen action is reported separately from (and
+    # never equal to) any rejected alternative.
+    assert body["chosen_action"] == "resolve"
+    assert not any(a["action"] == body["chosen_action"] for a in body["alternatives_considered"])
+
     # [EXPLAIN] #92: agents_consulted + a non-empty, composed rationale.
     consulted = {row["agent_name"] for row in body["agents_consulted"]}
     assert {"classifier", "planner", "billing_specialist", "verification", "memory"} <= consulted
@@ -324,6 +329,9 @@ def test_explanation_endpoint_for_an_escalated_investigation_falls_back_to_the_h
     assert body["alternatives_considered"] == [
         {"action": "resolve", "rejected_because": "no specialist can grant a policy exception"}
     ]
+    # [EXPLAIN] #96: the direct-escalate branch's chosen action is
+    # "escalate", not fabricated as "resolve".
+    assert body["chosen_action"] == "escalate"
 
 
 def test_evidence_endpoint_matches_the_explanation_endpoints_evidence():
