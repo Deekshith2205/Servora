@@ -1090,11 +1090,32 @@ newly-tracked agent. No console errors either run.
 Full backend suite: **231 passed** (224 + 7 new: 6 in `test_critic.py`,
 1 API round-trip test). `npm run lint`/`build`: clean.
 
+### 2026-09-13 (continued) — same merge-target gap recurred a third time: PR #115 lands the Critic Agent on `main`
+
+PR #107 merged `p2-parallel-multi-specialist` into `main`. PR #114 then
+merged `p3-critic-agent` (the Critic Agent work) into
+`p2-parallel-multi-specialist` — its base branch, not `main` — the exact
+same recurring gap, now a third time despite being documented twice
+already. Caught the same way: checked `git log
+origin/main..origin/p2-parallel-multi-specialist` directly rather than
+trusting `gh pr list`'s MERGED status, found the 2 missing commits,
+opened **PR #115** to land them. CI green (both checks pass).
+
+**This has now recurred three times** (#101→#102, #106→#107, #114→#115)
+despite the standing lesson already being written down after the first
+one. Worth being explicit about the actual root cause: a stacked PR
+whose base is a feature branch (not `main`) will show as `MERGED` in
+every listing exactly like a normal merge — there is no different status
+for "merged into a dead-end branch." The only way to know for certain
+`main` has what a PR claims to close is a direct diff/file check against
+`origin/main`, not the PR's own merged/closed state. Do this check after
+*every* stacked-PR merge from now on, not just when something seems off.
+
 ## Next up (in priority order)
 
-0. **Merge PR #107** (`p2-parallel-multi-specialist` → `main`) — the one
-   remaining commit (#88's work) not yet on `main`. Everything else
-   through PR #105 is already merged.
+0. **Merge PR #115** (`p2-parallel-multi-specialist` → `main`) — the two
+   remaining commits (the Critic Agent, #108-#113) not yet on `main`.
+   Everything else through PR #107 is already merged.
 1. **Still the single highest-priority loose thread, now spanning the
    ENTIRE backlog.** Nobody has confirmed `call_llm()` against a real
    Anthropic API key. Real bugs have repeatedly been found without one —
