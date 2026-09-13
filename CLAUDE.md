@@ -620,6 +620,116 @@ Board rendered every section (A-G plus Agent Performance Metrics)
 correctly against that live data — not a mock. Full backend suite: **204
 passed** (196 pre-existing + 8 new). Frontend lint/build: clean.
 
+### 2026-09-13 (continued) — [SWARM] 12 new issues opened: Agent Swarm Visualization batch, gap-checked against the real pipeline first
+
+A hackathon-judging pass asked for an "Agent Swarm Visualization System" —
+before opening anything, checked the request's example flow (Billing Agent
++ Order Agent investigating in parallel, plus separate Knowledge/Resolution
+agents) against the actual code: Planner routes to exactly ONE specialist
+per ticket, sequentially; `search_kb` is a tool call inside a specialist,
+not its own agent; resolution text comes from the specialist itself. That
+parallel-investigation flow doesn't exist today, so it was filed as its own
+explicitly-out-of-scope issue (#88) rather than silently assumed as a
+prerequisite. The other 11 issues visualize the REAL graph (Classifier →
+Planner → chosen specialist → Verification → Escalation/Memory):
+
+- **#77** [P0, Backend] `InvestigationStep` gains real `started_at`,
+  `reasoning_text`, `used_tools_json` — data that's already computed in
+  `orchestrator.py`/`specialists.py` today and silently dropped before
+  reaching the DB.
+- **#78** [P1, Backend] Explicit `depends_on_step_numbers` per step — the
+  pipeline's branches (direct-escalate vs. verification-fail-escalate vs.
+  resolve) aren't representable by step_number ordering alone.
+- **#79** [P2-stretch, Backend] True SSE streaming — replaces the
+  Investigation Board's existing "honest limitation" (a staggered replay
+  of already-complete data, `/api/chat` being fully synchronous) with
+  genuine live push. Recommends the smaller of two designs (client-
+  generated stream key alongside the existing synchronous call) rather
+  than a bigger job-queue rewrite.
+- **#80** [P1, Backend] `graph` field (nodes+edges) added to the existing
+  `InvestigationOut` — deliberately NOT four new endpoints as the original
+  request implied, since three of those would just duplicate
+  `/api/investigations/{id}`.
+- **#81** [P0, Frontend] New Agent Swarm Network page — node/edge diagram,
+  the one visualization Servora doesn't have at all today (explicitly cut
+  from the original Investigation Board's scope as a "bonus, if
+  feasible" item).
+- **#82** [P0, Frontend] Shared expandable agent-card component (reasoning
+  + evidence + tools + outputs) — reused by both the new Swarm view and
+  retrofitted into the existing Board's checklist.
+- **#83** [P1, Frontend] Idle/Running/Waiting/Completed/Failed status —
+  ships a v1 against replay timing now; `Waiting` explicitly deferred
+  until #79 exists rather than faked.
+- **#84** [P1, Frontend] Swarm execution-order timeline strip (a third,
+  Gantt-style view distinct from the network graph and the existing
+  checklist).
+- **#85** [P2-stretch, Frontend] Live-mode/replay-speed toggle — has no
+  real content until #79 ships.
+- **#86** [P0, Integration] One explicit test matrix proving #77/#78's new
+  fields are populated *correctly per branch* at all three of
+  `orchestrator.py`'s return points — this codebase's track record shows
+  multi-call-site changes reliably miss one path on the first pass.
+- **#87** [P1, Integration] Live-key verification pass + a Swarm-specific
+  `docs/DEMO_SCRIPT.md` addition, done last — explicitly reuses (doesn't
+  duplicate) the long-standing real-API-key-verification blocker already
+  tracked below.
+- **#88** [P3, out-of-scope flag] Genuine parallel multi-specialist
+  investigation, filed separately as agent-architecture work, not a
+  visualization task — not part of the current push.
+
+No code changed yet — issues only, per the session's own instruction to
+analyze and scope before implementing.
+
+### 2026-09-13 (continued) — [EXPLAIN] 11 new issues opened: Explainable AI Panel batch
+
+Same gap-check-first approach as the [SWARM] batch: checked the request's
+example ("Billing policy section **4.2**" as a citation) against
+`KBArticle` (title/body/tags only, no section granularity) before writing
+anything — flagged as an explicit, documented scope limit in #91 rather
+than silently promising sub-article citations the KB model can't back.
+Also found and flagged (not yet fixed) a real display bug while scoping
+#93: `InvestigationTimeline.jsx` (the customer-chat trace view) matches
+agent labels/icons against the literal string `"specialist"`, which never
+equals a real `agent_name` like `"billing_specialist"` — every specialist
+step has silently been falling through to the generic fallback icon/label.
+Scheduled to be fixed as part of #93 rather than patched in isolation.
+
+- **#89** [P0, Backend] Planner gains `alternatives_considered` — the
+  resolve/clarify/escalate space already maps cleanly onto the requested
+  "Escalate to human / Request clarification / Auto refund" example.
+- **#90** [P0, Backend] Per-agent confidence breakdown — pure aggregation,
+  `InvestigationStep.confidence` already exists per step today.
+- **#91** [P0, Backend] Structured `evidence_refs`/`policy_references`
+  (typed, id-addressable) alongside the existing prose `evidence` list —
+  KB citation is whole-article only, documented as a scope limit.
+- **#92** [P1, Backend] `/explanation`, `/evidence`, `/confidence` endpoints
+  under `app/api/explanations.py`, built on the existing
+  Investigation/InvestigationStep tables (no new storage) — includes a
+  deterministically-composed `decision_rationale` (explicitly NOT a new
+  LLM call).
+- **#93** [P0, Frontend] Shared `ExplainableAIPanel.jsx` ("Why did Servora
+  recommend this?"), compact mode for Customer Chat + full mode for the
+  Staff Dashboard drawer — one component, not two divergent ones. Fixes
+  the agent-label bug above along the way.
+- **#94** [P0, Frontend] Large confidence gauge + per-agent breakdown bars.
+- **#95** [P1, Frontend] Evidence Explorer + Policy References (clickable,
+  reuses the existing KB router from issue #17 rather than a new viewer).
+- **#96** [P1, Frontend] Alternative Actions Considered section.
+- **#97** [P1, Frontend] Decision Tree visualization — deliberately kept
+  distinct from the Swarm batch's execution graph (#81): one shows what
+  ran, this shows what else could have run.
+- **#98** [P0, Integration] Cross-branch consistency test matrix (same
+  pattern as the Swarm batch's #86) — new fields must degrade honestly on
+  branches where they don't apply (e.g. no specialist confidence on a
+  direct-Planner escalation), never show a fake value.
+- **#99** [P1, Integration] Wire the panel into both real call sites +
+  demo script. Explicitly notes two of the original "bonus" asks
+  ("interactive reasoning graph," "decision replay") are already the
+  Swarm batch's #81/#85 — flagged so they don't get rebuilt twice under
+  different names.
+
+No code changed yet — issues only.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the
@@ -633,7 +743,20 @@ passed** (196 pre-existing + 8 new). Frontend lint/build: clean.
 2. New [P6] backlog (#57-#63) — #57 (classifier confidence) and #58
    (persist resolved-ticket trace) are worth doing first since #62
    (analytics) and part of #59/#60's detection work depend on data those
-   two issues add.
+   two issues add. **Update: #57-#63 are done — see that section above.**
+   New: the [SWARM] batch (#77-#88) — do #77 first (cheapest, everything
+   else reads its data), then #78/#86 together, then the frontend issues
+   (#81/#82 before #83/#84), and only reach for the P2-stretch items
+   (#79, #85) if time remains. #88 is explicitly not part of this push.
+   Also new: the [EXPLAIN] batch (#89-#99) — do #89/#90/#91 (backend
+   capture) before #92 (the endpoints that read them), then #93/#94
+   (panel shell + confidence gauge) before #95/#96/#97 (the remaining
+   sections). #98 before either batch is called "done." #89-#99 and
+   #77-#88 both touch `orchestrator.py`'s three return points and
+   `InvestigationStep` — land the [SWARM] batch's #77 (step timing/
+   reasoning columns) first if both are being picked up, since [EXPLAIN]'s
+   #90/#91 read the same rows and a merge conflict is easier to avoid than
+   resolve.
 3. Two small, well-scoped fixes identified previously, still not done:
    (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite

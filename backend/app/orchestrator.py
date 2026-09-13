@@ -87,7 +87,9 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
     def _record(agent: str, output: str, *, action: str, status: str = "completed",
                 evidence: list[str] | None = None, duration_ms: int = 0,
                 confidence: float | None = None, root_cause: str | None = None,
-                resolution: str | None = None) -> None:
+                resolution: str | None = None, started_at: datetime | None = None,
+                used_tools: list[str] | None = None, alternatives: list | None = None,
+                evidence_refs: list[dict] | None = None) -> None:
         trace.append(TraceStep(agent, output, confidence=confidence, root_cause=root_cause, resolution=resolution))
         step_records.append({
             "agent_name": agent,
@@ -96,18 +98,31 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
             "evidence": evidence or [],
             "duration_ms": duration_ms,
             "confidence": confidence,
+            # [SWARM] issue #77: real wall-clock start (falls back to "now"
+            # if a call site forgets to pass one, rather than leaving a
+            # required DB column null).
+            "started_at": started_at or datetime.utcnow(),
+            # [SWARM] issue #77: the fuller reasoning text — previously
+            # only the short `action` label reached InvestigationStep.
+            "reasoning_text": output,
+            # [SWARM] issue #77 / [EXPLAIN] #89/#91: additive, all default
+            # to empty so most steps (classifier, verification, memory)
+            # simply record nothing here.
+            "used_tools": used_tools or [],
+            "alternatives": [asdict(a) for a in (alternatives or [])],
+            "evidence_refs": evidence_refs or [],
         })
 
-    t0 = time.perf_counter()
+    t0, t0_wall = time.perf_counter(), datetime.utcnow()
     classification = classify(message)
     _record(
         "classifier", classification.reasoning,
         action=f"Classified issue as {classification.category} (urgency {classification.urgency}/10)",
         duration_ms=round((time.perf_counter() - t0) * 1000),
-        confidence=classification.confidence,
+        confidence=classification.confidence, started_at=t0_wall,
     )
 
-    t0 = time.perf_counter()
+    t0, t0_wall = time.perf_counter(), datetime.utcnow()
     decision = plan(classification, customer_id, db)
     plan_action = (
         f"Decided to resolve via the {decision.target_agent} specialist"
@@ -116,11 +131,14 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
     )
     _record(
         "planner", decision.reasoning, action=plan_action,
-        duration_ms=round((time.perf_counter() - t0) * 1000),
+        duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
+        # [EXPLAIN] issue #89: the actions NOT chosen, straight from the
+        # Planner's own structured output — see planner.py.
+        alternatives=decision.alternatives_considered,
     )
 
     if decision.action == "escalate":
-        t0 = time.perf_counter()
+        t0, t0_wall = time.perf_counter(), datetime.utcnow()
         packet = build_handoff_packet(
             message=message,
             attempted_fixes=[step.output for step in trace],
@@ -130,7 +148,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
             "escalation", f"Routed straight to a human agent — {packet.root_cause_hypothesis}",
             action="Routed directly to a human agent",
             evidence=[packet.situation, packet.root_cause_hypothesis],
-            duration_ms=round((time.perf_counter() - t0) * 1000),
+            duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
         )
         ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
         _persist_investigation(
@@ -146,7 +164,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
             ticket_id=ticket_id,
         )
 
-    t0 = time.perf_counter()
+    t0, t0_wall = time.perf_counter(), datetime.utcnow()
     specialist_fn = SPECIALISTS.get(decision.target_agent, SPECIALISTS["technical"])
     response = specialist_fn(db, customer_id, message)
 
@@ -157,21 +175,25 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
         f"{decision.target_agent}_specialist", response.reply,
         action=root_cause or f"{decision.target_agent.title()} specialist investigated and responded",
         evidence=getattr(response, "evidence", []),
-        duration_ms=round((time.perf_counter() - t0) * 1000),
+        duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
         confidence=response.confidence, root_cause=root_cause, resolution=resolution,
+        # [SWARM] issue #77 / [EXPLAIN] #91: the tools actually called and
+        # their structured, id-addressable evidence refs.
+        used_tools=getattr(response, "used_tools", []),
+        evidence_refs=getattr(response, "evidence_refs", []),
     )
 
-    t0 = time.perf_counter()
+    t0, t0_wall = time.perf_counter(), datetime.utcnow()
     verification = verify(response)
     _record(
         "verification", verification.reasoning,
         action="Verified the proposed resolution" if verification.approved else "Verification failed",
         status="completed" if verification.approved else "failed",
-        duration_ms=round((time.perf_counter() - t0) * 1000),
+        duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
     )
 
     if not verification.approved:
-        t0 = time.perf_counter()
+        t0, t0_wall = time.perf_counter(), datetime.utcnow()
         packet = build_handoff_packet(
             message=message,
             attempted_fixes=[step.output for step in trace],
@@ -182,7 +204,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
             "escalation", f"Verification failed — escalating to a human agent — {packet.root_cause_hypothesis}",
             action="Escalated after failed verification",
             evidence=[packet.situation, packet.root_cause_hypothesis],
-            duration_ms=round((time.perf_counter() - t0) * 1000),
+            duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
         )
         ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
         _persist_investigation(
@@ -198,7 +220,7 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
             ticket_id=ticket_id,
         )
 
-    t0 = time.perf_counter()
+    t0, t0_wall = time.perf_counter(), datetime.utcnow()
     _update_memory(customer_id, message, response.reply, db, trace)
     memory_step = trace[-1]
     step_records.append({
@@ -206,8 +228,13 @@ def handle_message(db: Session, customer_id: int, message: str) -> ChatResult:
         "action": memory_step.output,
         "status": "completed",
         "evidence": [],
+        "evidence_refs": [],
         "duration_ms": round((time.perf_counter() - t0) * 1000),
         "confidence": None,
+        "started_at": t0_wall,
+        "reasoning_text": memory_step.output,
+        "used_tools": [],
+        "alternatives": [],
     })
 
     ticket_id = _create_ticket(db, customer_id, message, classification, trace, "resolved")
@@ -292,10 +319,19 @@ def _persist_investigation(
             investigation_id=investigation.id,
             step_number=i,
             timestamp=datetime.utcnow(),
+            # [SWARM] issue #77: real wall-clock start, distinct from
+            # `timestamp` above (which marks completion) — `.get(...)`
+            # rather than a bare index since not every historical
+            # step_records dict is guaranteed to carry every new key.
+            started_at=rec.get("started_at"),
             agent_name=rec["agent_name"],
             action=rec["action"],
             status=rec["status"],
+            reasoning_text=rec.get("reasoning_text"),
             evidence_json=json.dumps(rec["evidence"]),
+            evidence_refs_json=json.dumps(rec.get("evidence_refs", [])),
+            used_tools_json=json.dumps(rec.get("used_tools", [])),
+            alternatives_json=json.dumps(rec.get("alternatives", [])),
             duration_ms=rec["duration_ms"],
             confidence=rec["confidence"],
         ))

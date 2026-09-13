@@ -14,7 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import (
     AgentPerformanceOut,
+    GraphEdgeOut,
+    GraphNodeOut,
     InvestigationAgentSummaryOut,
+    InvestigationGraphOut,
     InvestigationListItemOut,
     InvestigationMetricsOut,
     InvestigationOut,
@@ -50,10 +53,15 @@ def _to_investigation_out(investigation: Investigation) -> InvestigationOut:
             InvestigationStepOut(
                 step_number=s.step_number,
                 timestamp=s.timestamp.isoformat(),
+                started_at=s.started_at.isoformat() if s.started_at else None,
                 agent_name=s.agent_name,
                 action=s.action,
                 status=s.status,
+                reasoning=s.reasoning_text,
                 evidence=s.evidence,
+                evidence_refs=s.evidence_refs,
+                used_tools=s.used_tools,
+                alternatives_considered=s.alternatives_considered,
                 duration_ms=s.duration_ms,
                 confidence=s.confidence,
             )
@@ -64,7 +72,26 @@ def _to_investigation_out(investigation: Investigation) -> InvestigationOut:
             for name, vals in agent_totals.items()
         ],
         evidence=all_evidence,
+        graph=_build_graph(steps),
     )
+
+
+def _build_graph(steps: list[InvestigationStep]) -> InvestigationGraphOut:
+    """[SWARM] issue #80. See GraphEdgeOut's docstring: today's pipeline
+    never fans out, so "step N depends on step N-1" is a correct (not
+    just convenient) edge set for every branch this app can currently
+    produce — a direct-Planner escalation is just a shorter chain, not a
+    different shape."""
+    nodes = [
+        GraphNodeOut(step_number=s.step_number, agent_name=s.agent_name, status=s.status,
+                     confidence=s.confidence, duration_ms=s.duration_ms)
+        for s in steps
+    ]
+    edges = [
+        GraphEdgeOut(from_step=steps[i].step_number, to_step=steps[i + 1].step_number)
+        for i in range(len(steps) - 1)
+    ]
+    return InvestigationGraphOut(nodes=nodes, edges=edges)
 
 
 @router.get("", response_model=list[InvestigationListItemOut])

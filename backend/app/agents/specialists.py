@@ -45,6 +45,12 @@ class SpecialistResponse:
     # never placeholder text. Empty when no tools were called. Threaded
     # through to Investigation/InvestigationStep by orchestrator.py.
     evidence: list[str] = field(default_factory=list)
+    # [EXPLAIN] issue #91: structured, id-addressable counterpart to
+    # `evidence` above (`{type, ref_id, label}`) — same real tool results,
+    # shaped so a frontend can deep-link to the actual order/customer/
+    # ticket/KB-article row instead of only displaying a sentence. See
+    # _describe_evidence_refs() below.
+    evidence_refs: list[dict] = field(default_factory=list)
 
 
 def _estimate_confidence(used_tools: list[str]) -> float:
@@ -117,6 +123,46 @@ def _describe_evidence(tool_name: str, args: dict, result) -> str:
     return f"Called {tool_name} with {args}."
 
 
+def _describe_evidence_refs(tool_name: str, args: dict, result) -> list[dict]:
+    """[EXPLAIN] issue #91: structured counterpart to `_describe_evidence`
+    above — zero or more `{type, ref_id, label}` dicts an "Evidence
+    Explorer"/"Policy References" UI can deep-link to a real DB row.
+    Derived from the exact same tool results (never a second lookup, never
+    placeholder ids). Returns a list (not a single dict) because a tool
+    like `get_customer_orders` can legitimately produce several refs from
+    one call.
+
+    Deliberate, documented scope limit (see issue #91): `KBArticle` has no
+    section/paragraph granularity, so a `kb_article` ref always cites the
+    whole article — not a sub-section.
+    """
+    if tool_name == "get_customer":
+        if result is None:
+            return []
+        return [{"type": "customer", "ref_id": result.id, "label": result.name}]
+
+    if tool_name == "get_customer_orders":
+        return [{"type": "order", "ref_id": o.id, "label": f"Order #{o.id}"} for o in (result or [])]
+
+    if tool_name == "get_customer_tickets":
+        return [{"type": "ticket", "ref_id": t.id, "label": f"Ticket #{t.id}: {t.subject}"} for t in (result or [])]
+
+    if tool_name == "search_kb":
+        return [{"type": "kb_article", "ref_id": a.id, "label": a.title} for a in (result or [])]
+
+    if tool_name in ("check_payment_issue", "check_order_issue"):
+        if isinstance(result, dict) and result.get("order_id") is not None:
+            return [{"type": "order", "ref_id": result["order_id"], "label": f"Order #{result['order_id']}"}]
+        return []
+
+    if tool_name == "issue_refund":
+        if isinstance(result, dict) and result.get("order_id") is not None:
+            return [{"type": "order", "ref_id": result["order_id"], "label": f"Refund on order #{result['order_id']}"}]
+        return []
+
+    return []
+
+
 def _run_specialist(
     db: Session,
     system_prompt: str,
@@ -161,11 +207,15 @@ def _run_specialist(
     # true tool result to reason about, while evidence is recorded
     # regardless of which specialist/tool ran.
     evidence: list[str] = []
+    # [EXPLAIN] issue #91: structured counterpart to `evidence` above,
+    # captured at the same point from the same real tool results.
+    evidence_refs: list[dict] = []
 
     def _make_evidence_wrapper(name, fn):
         def wrapped(args):
             result = fn(args)
             evidence.append(_describe_evidence(name, args, result))
+            evidence_refs.extend(_describe_evidence_refs(name, args, result))
             return result
         return wrapped
 
@@ -222,6 +272,7 @@ def _run_specialist(
         root_cause=root_cause,
         resolution=resolution,
         evidence=evidence,
+        evidence_refs=evidence_refs,
     )
 
 

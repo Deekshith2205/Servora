@@ -226,16 +226,41 @@ class UpdateBookingResponse(BaseModel):
     notification: NotificationOut | None = None
 
 
+class AlternativeOut(BaseModel):
+    """One rejected alternative from app.agents.planner.Alternative —
+    [EXPLAIN] issue #89."""
+
+    action: str
+    rejected_because: str
+
+
+class EvidenceRefOut(BaseModel):
+    """One structured, id-addressable evidence reference — [EXPLAIN]
+    issue #91. `type` is one of: order | customer | ticket | kb_article."""
+
+    type: str
+    ref_id: int
+    label: str
+
+
 class InvestigationStepOut(BaseModel):
     """One row from app.db.models.InvestigationStep — [FEATURE]
-    Investigation Board."""
+    Investigation Board. `started_at`/`reasoning`/`used_tools`/
+    `alternatives_considered`/`evidence_refs` added by [SWARM] #77 and
+    [EXPLAIN] #89/#91 — all optional/default-empty so older rows (written
+    before these columns existed) still serialize cleanly."""
 
     step_number: int
     timestamp: str
+    started_at: str | None = None
     agent_name: str
     action: str
     status: str
+    reasoning: str | None = None
     evidence: list[str]
+    evidence_refs: list[EvidenceRefOut] = []
+    used_tools: list[str] = []
+    alternatives_considered: list[AlternativeOut] = []
     duration_ms: int
     confidence: float | None = None
 
@@ -252,6 +277,35 @@ class InvestigationAgentSummaryOut(BaseModel):
     total_duration_ms: int
 
 
+class GraphNodeOut(BaseModel):
+    """[SWARM] issue #80. One InvestigationStep, shaped for a node/edge
+    render rather than a flat list."""
+
+    step_number: int
+    agent_name: str
+    status: str
+    confidence: float | None = None
+    duration_ms: int
+
+
+class GraphEdgeOut(BaseModel):
+    """[SWARM] issue #80. Today's pipeline is strictly sequential per run
+    (no fan-out/fan-in yet — see issue #78 for the future, explicitly-
+    modeled version of this), so edges are correctly derivable from step
+    order alone: step N -> step N+1. Kept as its own type (not just
+    "the next step_number") so the frontend graph renderer doesn't need
+    to know that today's rule is "sequential" — a future #78 could repoint
+    edges to real fan-in/fan-out without changing this shape at all."""
+
+    from_step: int
+    to_step: int
+
+
+class InvestigationGraphOut(BaseModel):
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+
+
 class InvestigationOut(BaseModel):
     id: int
     ticket_id: int
@@ -265,6 +319,8 @@ class InvestigationOut(BaseModel):
     timeline: list[InvestigationStepOut]
     agents: list[InvestigationAgentSummaryOut]
     evidence: list[str]
+    # [SWARM] issue #80 — additive.
+    graph: InvestigationGraphOut
 
 
 class InvestigationListItemOut(BaseModel):
@@ -294,3 +350,48 @@ class AgentPerformanceOut(BaseModel):
 
 class InvestigationMetricsOut(BaseModel):
     agents: list[AgentPerformanceOut]
+
+
+class ConfidenceBreakdownOut(BaseModel):
+    """[EXPLAIN] issue #90. One agent's own confidence, WITHIN one
+    investigation — distinct from AgentPerformanceOut's avg_confidence,
+    which is a cross-investigation aggregate."""
+
+    agent_name: str
+    confidence: float
+
+
+class ConfidenceOut(BaseModel):
+    """GET /api/investigations/{id}/confidence — [EXPLAIN] issue #92."""
+
+    overall: float | None = None
+    by_agent: list[ConfidenceBreakdownOut] = []
+
+
+class EvidenceOut(BaseModel):
+    """GET /api/investigations/{id}/evidence — [EXPLAIN] issue #92.
+    `evidence`/`policy_references` are disjoint views of the same
+    underlying evidence_refs — `policy_references` is exactly the
+    `type == "kb_article"` subset."""
+
+    evidence: list[str] = []
+    evidence_refs: list[EvidenceRefOut] = []
+    policy_references: list[EvidenceRefOut] = []
+
+
+class ExplanationOut(BaseModel):
+    """GET /api/investigations/{id}/explanation — [EXPLAIN] issue #92.
+    The Explainable AI Panel's single source of data. `decision_rationale`
+    is composed deterministically from existing fields (root_cause +
+    resolution, or the HandoffPacket for an escalation) — no extra LLM
+    call, per that issue's explicit design choice."""
+
+    investigation_id: int
+    status: str
+    confidence: ConfidenceOut
+    evidence: list[str] = []
+    evidence_refs: list[EvidenceRefOut] = []
+    policy_references: list[EvidenceRefOut] = []
+    alternatives_considered: list[AlternativeOut] = []
+    agents_consulted: list[InvestigationAgentSummaryOut] = []
+    decision_rationale: str
