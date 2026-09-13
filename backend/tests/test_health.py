@@ -1,11 +1,17 @@
 from fastapi.testclient import TestClient
 
 from app.agents.classifier import ClassificationResult
+from app.agents.critic import CriticReview
 from app.agents.escalation import HandoffPacket
 from app.agents.planner import PlanDecision
 from app.agents.specialists import SpecialistResponse
 from app.llm import LLMError
 from app.main import app
+
+# [CRITIC] issue #110: the critic now runs on every resolve-path
+# conversation, same treatment as every other real-LLM-calling agent —
+# mocked here so tests stay network-free.
+_MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 
 client = TestClient(app)
 
@@ -41,6 +47,7 @@ def test_chat_endpoint_runs_end_to_end(monkeypatch):
         "app.orchestrator.SPECIALISTS",
         {"order": mocked_specialist, "technical": mocked_specialist},
     )
+    monkeypatch.setattr("app.orchestrator.critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr("app.orchestrator.extract_facts", lambda message, reply: [])
 
     resp = client.post("/api/chat", json={"customer_id": 1, "message": "Where is my order?"})

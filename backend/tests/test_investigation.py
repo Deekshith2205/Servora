@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 
 import app.orchestrator as orchestrator_module
 from app.agents.classifier import ClassificationResult
+from app.agents.critic import CriticReview
 from app.agents.escalation import HandoffPacket
 from app.agents.planner import PlanDecision
 from app.agents.specialists import SpecialistResponse
@@ -21,6 +22,9 @@ from app.agents.verification import VerificationResult
 from app.db.database import Base
 from app.db.models import Customer, Investigation, InvestigationStep
 from app.orchestrator import handle_message
+
+# [CRITIC] issue #110: mocked so resolve-path tests here stay network-free.
+_MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 
 
 @pytest.fixture
@@ -72,6 +76,7 @@ def test_resolved_conversation_creates_an_investigation_linked_to_its_ticket(mon
         # used — a pre-existing orchestrator.py quirk, not exercised by this test.
         {"billing": billing_specialist, "technical": billing_specialist},
     )
+    monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="grounded and acted"))
     monkeypatch.setattr(orchestrator_module, "extract_facts", lambda message, reply: [])
 
@@ -95,12 +100,20 @@ def test_resolved_conversation_creates_an_investigation_linked_to_its_ticket(mon
         .order_by(InvestigationStep.step_number)
         .all()
     )
-    # classifier, planner, billing_specialist, verification, memory
-    assert [s.agent_name for s in steps] == ["classifier", "planner", "billing_specialist", "verification", "memory"]
-    assert [s.step_number for s in steps] == [1, 2, 3, 4, 5]
+    # classifier, planner, billing_specialist, critic, verification, memory
+    assert [s.agent_name for s in steps] == ["classifier", "planner", "billing_specialist", "critic", "verification", "memory"]
+    assert [s.step_number for s in steps] == [1, 2, 3, 4, 5, 6]
     for s in steps:
         assert s.duration_ms >= 0
         assert s.status in ("completed", "failed")
+
+    # [CRITIC] #110: critic AND verification both depend on the specialist
+    # step directly (3), not on each other.
+    critic_step = steps[3]
+    assert critic_step.depends_on == [3]
+    assert critic_step.critic_review is not None
+    verification_step = steps[4]
+    assert verification_step.depends_on == [3]
 
     specialist_step = steps[2]
     assert specialist_step.evidence == [
@@ -171,6 +184,7 @@ def test_verification_failure_escalation_also_creates_an_investigation(monkeypat
         orchestrator_module, "SPECIALISTS",
         {"technical": lambda db, customer_id, message: SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2, evidence=[])},
     )
+    monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=False, reasoning="too low"))
     monkeypatch.setattr(
         orchestrator_module, "build_handoff_packet",
@@ -193,5 +207,8 @@ def test_verification_failure_escalation_also_creates_an_investigation(monkeypat
         .order_by(InvestigationStep.step_number)
         .all()
     )
-    assert [s.agent_name for s in steps] == ["classifier", "planner", "technical_specialist", "verification", "escalation"]
-    assert steps[3].status == "failed"  # verification step itself is marked failed
+    # [CRITIC] #110: the critic runs even on a path that ends up escalating
+    # after a failed verification — it reviewed the specialist's response
+    # before Verification ever ran, so its own step is unaffected either way.
+    assert [s.agent_name for s in steps] == ["classifier", "planner", "technical_specialist", "critic", "verification", "escalation"]
+    assert steps[4].status == "failed"  # verification step itself is marked failed

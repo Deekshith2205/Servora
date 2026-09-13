@@ -532,3 +532,57 @@
   font-size: 0.72rem;
   color: var(--app-success-text);
 }
+
+/* [CRITIC] issue #112 */
+
+.ib-critic-card {
+  border-left: 4px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  padding: 16px;
+}
+
+.ib-critic-agrees {
+  border-left-color: var(--app-success-text);
+  background: var(--app-success-bg);
+}
+
+.ib-critic-disagrees {
+  border-left-color: var(--app-danger-text);
+  background: var(--app-danger-bg);
+}
+
+.ib-critic-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ib-critic-reasoning {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--app-text-primary);
+  line-height: 1.5;
+}
+
+.ib-critic-alternative {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.ib-critic-alternative-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-danger-text);
+  margin-bottom: 4px;
+}
+
+.ib-critic-alternative p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--app-text-primary);
+  line-height: 1.5;
+}

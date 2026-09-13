@@ -62,6 +62,7 @@ def _to_investigation_out(investigation: Investigation) -> InvestigationOut:
                 evidence_refs=s.evidence_refs,
                 used_tools=s.used_tools,
                 alternatives_considered=s.alternatives_considered,
+                critic_review=s.critic_review,
                 duration_ms=s.duration_ms,
                 confidence=s.confidence,
             )

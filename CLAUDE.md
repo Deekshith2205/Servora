@@ -1015,6 +1015,81 @@ show origin/main:<path>`) rather than trusting that "the PR merged" means
 "the code is on `main`" — a stacked PR can merge successfully into a
 non-`main` base and look identical to a real merge in `gh pr list`.
 
+### 2026-09-13 (continued) — [CRITIC] Critic Agent: independent review of root cause, evidence, and resolution (#108-#113)
+
+New backlog, built on the same branch as #88 (`p2-parallel-multi-
+specialist`, on top of the not-yet-merged #107): a genuine second LLM
+opinion on a specialist's finding, closing the exact gap
+`verification.py`'s own docstring named as future hardening ("a real
+semantic/second-LLM-judge pass would catch more... not done here").
+
+- **#108** (Database) — `InvestigationStep` gains `critic_review_json`
+  (nullable, a single object unlike every other `*_json` column here) +
+  a `critic_review` property, populated only on the critic's own step.
+- **#109** (Backend) — new `app/agents/critic.py::critique()`: one
+  structured-output LLM call reviewing root_cause + resolution +
+  evidence, returning `agrees`/`confidence`/`alternative_hypothesis`/
+  `reasoning`. Deliberately does NOT see the specialist's own confidence
+  score, so it can't defer to a number instead of actually reviewing.
+  Advisory only — a fail-safe default (`agrees=True`, confidence 0.0,
+  reasoning noting the failure) on any `LLMError`, same spirit as
+  `classifier.py`'s deterministic fallback.
+- **#110** (Backend/Integration) — wired into `orchestrator.py` right
+  after the specialist (or, for #88's fan-out, the reconciliation) step:
+  one new "critic" `InvestigationStep`. **A real design subtlety, not
+  glossed over**: inserting a step between the specialist and Verification
+  meant Verification's *default* dependency (issue #78's "depends on the
+  immediately preceding step") would have silently pointed at the new
+  critic step instead of the specialist it actually reviews — `verify()`
+  never sees the critic's opinion, only `response`. Fixed with an
+  explicit `depends_on` override on Verification's own `_record()` call,
+  so both Critic and Verification now correctly branch directly off the
+  specialist/reconciliation step (a small diamond shape, not a flattened
+  chain). Explicitly does NOT change Verification's approve/reject
+  decision — advisory, not a gate, by design.
+- **#111** (API) — `critic_review` surfaced on `InvestigationStepOut`,
+  riding through the existing `GET /api/investigations/{id}` response
+  (no new endpoint), same convention `alternatives_considered` already
+  established for the planner.
+- **#112** (Frontend) — new "Critic Review — Independent Second Opinion"
+  card in `InvestigationBoard.jsx`, right after the Resolution card:
+  Agree/Disagree badge, confidence, reasoning, and (only when
+  disagreeing) the Alternative Hypothesis. **Agent Performance Metrics
+  picked up "Critic" as a tracked agent for free** — it's the same
+  cross-investigation `GROUP BY` every other agent already flows through,
+  no new dashboard code needed — direct proof the "reuse existing
+  storage" requirement actually held.
+- **#113** (Testing) — `tests/test_critic.py` (6 new unit tests) found
+  **two real bugs** before they shipped: `critique()`'s alternative-
+  hypothesis normalization was backwards (`if result.agrees is False else
+  (x or None)` doesn't clear `alternative_hypothesis` when the model
+  contradictorily agrees AND fills the field — fixed to `if not
+  result.agrees else None`); and the original confidence-clamp test
+  couldn't even be written the naive way, since `_CriticSchema`'s own
+  `ge=0.0, le=1.0` already rejects an out-of-range value at construction
+  — fixed by using `_CriticSchema.model_construct()` to bypass validation
+  the same way a genuinely non-conformant provider response theoretically
+  could. Every existing resolve-path test across 6 other files
+  (`test_health.py`, `test_investigation.py`, `test_investigations_api.py`,
+  `test_orchestrator.py`, `test_parallel_specialists.py`,
+  `test_explainability.py`, `test_streaming.py`) needed a `critique` mock
+  added (same "any future real-LLM-calling agent needs the same
+  treatment" note `test_health.py` already carried) plus updated
+  exact-sequence/depends_on assertions now that "critic" is a real step.
+
+**Verified LIVE against real Gemini calls, twice**: a direct-Planner
+escalation (no specialist ran — critic correctly never ran either, no
+Critic step in the trace) and a resolved technical-support case, where
+the Critic Review card rendered a genuine, specific critique ("The
+resolution to escalate to a human specialist is a reasonable and safe
+response when documentation is missing, especially for a VIP tier
+customer" — citing real evidence, not a generic verdict) with real 95%
+confidence, and Agent Performance Metrics correctly showed "Critic" as a
+newly-tracked agent. No console errors either run.
+
+Full backend suite: **231 passed** (224 + 7 new: 6 in `test_critic.py`,
+1 API round-trip test). `npm run lint`/`build`: clean.
+
 ## Next up (in priority order)
 
 0. **Merge PR #107** (`p2-parallel-multi-specialist` → `main`) — the one

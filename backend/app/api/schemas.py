@@ -249,12 +249,24 @@ class EvidenceRefOut(BaseModel):
     label: str
 
 
+class CriticReviewOut(BaseModel):
+    """[CRITIC] issue #111. Mirrors app.agents.critic.CriticReview — only
+    populated on the critic's own InvestigationStep (agent_name ==
+    "critic"), `None` everywhere else."""
+
+    agrees: bool
+    confidence: float
+    alternative_hypothesis: str | None = None
+    reasoning: str
+
+
 class InvestigationStepOut(BaseModel):
     """One row from app.db.models.InvestigationStep — [FEATURE]
     Investigation Board. `started_at`/`reasoning`/`used_tools`/
     `alternatives_considered`/`evidence_refs` added by [SWARM] #77 and
     [EXPLAIN] #89/#91 — all optional/default-empty so older rows (written
-    before these columns existed) still serialize cleanly."""
+    before these columns existed) still serialize cleanly. `critic_review`
+    added by [CRITIC] #108/#111, same convention."""
 
     step_number: int
     timestamp: str
@@ -267,6 +279,7 @@ class InvestigationStepOut(BaseModel):
     evidence_refs: list[EvidenceRefOut] = []
     used_tools: list[str] = []
     alternatives_considered: list[AlternativeOut] = []
+    critic_review: CriticReviewOut | None = None
     duration_ms: int
     confidence: float | None = None
 

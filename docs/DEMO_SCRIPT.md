@@ -134,6 +134,30 @@ reconciled into one answer. Issue #88.
    two specialists' — deliberately conservative, so one weakly-grounded
    finding can't be hidden behind the other's higher confidence.
 
+## Scenario 5 — Critic Agent: an independent second opinion
+
+**What it shows:** the system checking its own work, not just trusting a
+specialist's first answer. Issue #109/#110.
+
+1. In Customer Chat, type any message that resolves through a specialist
+   (Scenario 1's or Scenario 2's message both work). After it resolves,
+   the Investigation timeline now shows a **Critic** step between the
+   specialist and Verification.
+2. Switch to the **Investigation Board**, select that investigation, and
+   scroll to the **Critic Review — Independent Second Opinion** card
+   (right after the Resolution card). Point out it's a genuinely separate
+   LLM call reviewing the root cause, evidence, and resolution — not the
+   same specialist restating its own answer — with its own confidence
+   score and specific reasoning citing the actual evidence gathered.
+3. Note (verified live): the critic doesn't always just agree — it can
+   flag a gap and propose a real **Alternative Hypothesis**, shown struck
+   through in red when it disagrees. Either outcome is a legitimate,
+   real review, not a scripted "always agrees" rubber stamp.
+4. Point out **Agent Performance Metrics** at the bottom now tracks
+   "Critic" as its own agent (avg duration, avg confidence) — this came
+   for free from the existing cross-investigation aggregate, no new
+   dashboard needed.
+
 ## Optional bonus material (if time allows)
 
 These aren't part of the required 3-scenario script but are worth a

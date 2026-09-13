@@ -9,6 +9,7 @@ produce, not a hand-built fixture.
 from unittest.mock import patch
 
 from app.agents.classifier import ClassificationResult
+from app.agents.critic import CriticReview
 from app.agents.escalation import HandoffPacket
 from app.agents.planner import PlanDecision
 from app.agents.specialists import SpecialistResponse
@@ -16,6 +17,9 @@ from app.db.database import SessionLocal
 from app.db.models import Customer
 from app.main import app
 from fastapi.testclient import TestClient
+
+# [CRITIC] issue #110: mocked so resolve-path tests here stay network-free.
+_MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 
 _email_counter = 0
 
@@ -49,8 +53,9 @@ def _resolve_via_chat(client, customer_id):
                 with patch("app.orchestrator.verify") as mock_verify:
                     from app.agents.verification import VerificationResult
                     mock_verify.return_value = VerificationResult(approved=True, reasoning="grounded")
-                    with patch("app.orchestrator.extract_facts", return_value=[]):
-                        return client.post("/api/chat", json={"customer_id": customer_id, "message": "Where is my order?"})
+                    with patch("app.orchestrator.critique", return_value=_MOCK_CRITIC_REVIEW):
+                        with patch("app.orchestrator.extract_facts", return_value=[]):
+                            return client.post("/api/chat", json={"customer_id": customer_id, "message": "Where is my order?"})
 
 
 def _escalate_via_chat(client, customer_id):
@@ -88,7 +93,7 @@ def test_get_investigation_by_id_for_a_resolved_conversation():
     assert body["status"] == "resolved"
     assert body["confidence"] == 0.6
     agent_names = [step["agent_name"] for step in body["timeline"]]
-    assert agent_names == ["classifier", "planner", "order_specialist", "verification", "memory"]
+    assert agent_names == ["classifier", "planner", "order_specialist", "critic", "verification", "memory"]
     assert "Retrieved 1 order(s) for customer #1: #1." in body["evidence"]
 
 

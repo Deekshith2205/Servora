@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 
 import app.orchestrator as orchestrator_module
 from app.agents.classifier import ClassificationResult
+from app.agents.critic import CriticReview
 from app.agents.escalation import HandoffPacket
 from app.agents.planner import PlanDecision
 from app.agents.specialists import SpecialistResponse
@@ -28,6 +29,9 @@ from app.db.models import Customer
 from app.main import app
 from app.orchestrator import handle_message
 from app.services import stream_bus
+
+# [CRITIC] issue #110: mocked so these tests stay network-free.
+_MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 
 
 @pytest.fixture
@@ -76,6 +80,7 @@ def test_handle_message_publishes_step_events_and_a_final_done_event(monkeypatch
         {"order": lambda db, customer_id, message: SpecialistResponse(reply="On its way.", used_tools=["get_customer_orders"], confidence=0.6, evidence=["ev"]),
          "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a")},
     )
+    monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="ok"))
     monkeypatch.setattr(orchestrator_module, "extract_facts", lambda message, reply: [])
 
@@ -84,12 +89,18 @@ def test_handle_message_publishes_step_events_and_a_final_done_event(monkeypatch
     q = stream_bus.subscribe(stream_key)
     events = _drain(q)
 
-    # classifier, planner, order_specialist, verification, memory (5 "step"
-    # events) + 1 "done" event + the None close() sentinel.
+    # classifier, planner, order_specialist, critic, verification, memory
+    # (6 "step" events) + 1 "done" event + the None close() sentinel.
     step_events = [e for e in events if e is not None and e.get("type") == "step"]
     done_events = [e for e in events if e is not None and e.get("type") == "done"]
-    assert [e["agent_name"] for e in step_events] == ["classifier", "planner", "order_specialist", "verification", "memory"]
-    assert [e["step_number"] for e in step_events] == [1, 2, 3, 4, 5]
+    assert [e["agent_name"] for e in step_events] == ["classifier", "planner", "order_specialist", "critic", "verification", "memory"]
+    assert [e["step_number"] for e in step_events] == [1, 2, 3, 4, 5, 6]
+    # [CRITIC] #110: critic and verification both depend on the specialist
+    # step (3) directly, not on each other.
+    critic_event = next(e for e in step_events if e["agent_name"] == "critic")
+    verification_event = next(e for e in step_events if e["agent_name"] == "verification")
+    assert critic_event["depends_on"] == [3]
+    assert verification_event["depends_on"] == [3]
     assert len(done_events) == 1
     assert done_events[0]["ticket_id"] == result.ticket_id
     assert done_events[0]["investigation_id"] is not None

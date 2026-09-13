@@ -12,12 +12,16 @@ from sqlalchemy.orm import sessionmaker
 
 import app.orchestrator as orchestrator_module
 from app.agents.classifier import ClassificationResult
+from app.agents.critic import CriticReview
 from app.agents.planner import PlanDecision
 from app.agents.specialists import SpecialistResponse
 from app.agents.verification import VerificationResult
 from app.db.database import Base
 from app.db.models import Customer, Investigation, InvestigationStep
 from app.orchestrator import handle_message
+
+# [CRITIC] issue #110: mocked so these tests stay network-free.
+_MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 
 
 @pytest.fixture
@@ -69,6 +73,7 @@ def test_cross_cutting_issue_runs_two_specialists_and_reconciles_them(monkeypatc
             "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a"),
         },
     )
+    monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="grounded"))
     monkeypatch.setattr(orchestrator_module, "extract_facts", lambda message, reply: [])
 
@@ -90,7 +95,14 @@ def test_cross_cutting_issue_runs_two_specialists_and_reconciles_them(monkeypatc
     )
     by_agent = {s.agent_name: s for s in steps}
 
-    assert set(by_agent) == {"classifier", "planner", "billing_specialist", "order_specialist", "reconciliation", "verification", "memory"}
+    assert set(by_agent) == {"classifier", "planner", "billing_specialist", "order_specialist", "reconciliation", "critic", "verification", "memory"}
+
+    # [CRITIC] #110: the critic reviews the RECONCILED response (what
+    # Verification sees), not either individual specialist — it depends
+    # on the reconciliation step, same as verification does.
+    reconciliation_step_number = by_agent["reconciliation"].step_number
+    assert by_agent["critic"].depends_on == [reconciliation_step_number]
+    assert by_agent["verification"].depends_on == [reconciliation_step_number]
 
     planner_step_number = by_agent["planner"].step_number
     billing_step = by_agent["billing_specialist"]
@@ -136,6 +148,7 @@ def test_single_specialist_path_is_unaffected_by_the_fan_out_code(monkeypatch, d
         {"order": lambda db, customer_id, message: SpecialistResponse(reply="On its way.", used_tools=["get_customer_orders"], confidence=0.6, evidence=["ev"]),
          "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a")},
     )
+    monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="ok"))
     monkeypatch.setattr(orchestrator_module, "extract_facts", lambda message, reply: [])
 
@@ -146,5 +159,5 @@ def test_single_specialist_path_is_unaffected_by_the_fan_out_code(monkeypatch, d
         s.agent_name for s in
         db_session.query(InvestigationStep).filter_by(investigation_id=investigation.id).order_by(InvestigationStep.step_number).all()
     ]
-    assert agent_names == ["classifier", "planner", "order_specialist", "verification", "memory"]
+    assert agent_names == ["classifier", "planner", "order_specialist", "critic", "verification", "memory"]
     assert "reconciliation" not in agent_names
