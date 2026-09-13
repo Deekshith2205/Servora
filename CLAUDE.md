@@ -824,13 +824,118 @@ chosen/alternatives split degrades correctly on the branch that skips the
 specialist entirely, not just the happy path. `pytest`: 212 passed.
 `npm run lint`/`build`: clean.
 
+### 2026-09-13 (continued) — all 9 remaining [SWARM]/[EXPLAIN] issues done: #78, #83, #84, #95, #97, #79, #85, #87, plus #99/#96's manual-close cleanup
+
+Three more stacked PRs, in priority order, each built on the previous:
+
+- **PR #103** (`p1-swarm-status-timeline-graph`, base `main`) — closes
+  #78, #83, #84. `InvestigationStep` gained `depends_on_json`, set
+  explicitly per step in `orchestrator.py` rather than the graph API
+  assuming step order implies dependency (`investigations.py::
+  _build_graph()` now reads it directly). Real Idle/Running/Completed/
+  Failed status vocabulary in the Agent Swarm view — "Waiting"
+  intentionally omitted until real streaming existed (see #79 below).
+  New Swarm Timeline strip (Gantt-style, real duration_ms widths).
+- **PR #104** (`p1-evidence-explorer-decision-tree`, base #103) — closes
+  #95, #97. New `app/api/records.py` (`GET /api/records/orders|customers|
+  tickets/{id}`, deliberately NOT under `/api/orders` etc. — `/api/
+  tickets/{id}` would have collided with the existing literal
+  `GET /api/tickets/resolved`) plus `GET /api/kb-articles/{id}`, backing
+  a real clickable Evidence Explorer instead of plain text. New
+  `DecisionTree.jsx` — the Planner's real branch point plus a Verification
+  pass/fail branch when a specialist ran; deliberately distinct from the
+  Swarm execution graph (that shows what ran, this shows what else could
+  have). **Found while building it**: `orchestrator.py` doesn't actually
+  special-case "clarify" differently from "resolve" — both hit the same
+  code path — the tree says so via an inline caption instead of drawing a
+  fictional distinct flow. **A real pre-existing test-isolation bug found
+  and fixed**: several test files (`test_analytics.py`, `test_kb_api.py`)
+  delete all `Ticket` rows on the same shared file-based test DB
+  `conftest.py` uses for the whole session; since SQLite reuses low
+  ROWIDs once a table empties, a plain autoincrement insert in a new test
+  could collide with a `ticket_id` an earlier test's `Investigation` row
+  (UNIQUE) already claims — order-dependent, and it actually fired once
+  new tests shifted the row count. Fixed with an explicit out-of-range id
+  for the one new test that needed to insert a `Ticket`.
+- **PR #105** (`p2-live-streaming-swarm`, base #104) — closes #79, #85,
+  #87. The big one: `app/services/stream_bus.py` (new) — a plain
+  thread-safe `queue.Queue`-per-`stream_key` pub/sub (not `asyncio.Queue`:
+  `handle_message()` runs in FastAPI's sync-endpoint worker thread, not
+  the event loop). `POST /api/chat` gained an optional `stream_key`
+  (client-generated UUID); `orchestrator.py::handle_message()` publishes
+  one real event per stage AS it completes when given one, wrapped in
+  `try/finally` so the stream always closes even if an LLMError
+  propagates. New `GET /api/investigations/stream/{stream_key}` (SSE, hand-
+  rolled `text/event-stream` — no new dependency) with a keepalive/idle-
+  timeout so an orphaned key can't leak a queue+connection forever.
+  Frontend: `liveInvestigation.js` (new) — a tiny cross-page singleton so
+  Customer Chat (which starts a stream) and the Agent Swarm view (a
+  different page/component tree) agree on the one in-flight investigation
+  without threading a React Context through `App.jsx`. Customer Chat's
+  "Investigating…" placeholder now shows real agent names arriving live.
+  Agent Swarm gained a genuine LIVE mode (nodes appear as real SSE events
+  arrive, no timer) distinct from REPLAY mode (now with a 0.5x/1x/2x/
+  Instant speed control, since it's honestly labeled as a replay).
+
+  **A real bug found and fixed while live-testing this**:
+  `AgentSwarmView.jsx` unmounts/remounts every time the user switches
+  tabs (`App.jsx` swaps `<ActiveComponent />`), but `subscribeLive()` only
+  pushed FUTURE state changes to a new subscriber — a component mounting
+  after `startLive()` had already fired (exactly the "switch to Agent
+  Swarm mid-investigation" demo path) started from `null` and never
+  learned a stream was active until its next event, missing an
+  already-in-progress or already-finished investigation entirely. Fixed
+  by having `subscribeLive()` push the current value immediately on
+  subscribe (a standard "push current value" pub-sub pattern) — verified
+  fixed by reproducing the exact failure live, then confirming the retry
+  auto-selected the just-finished investigation correctly on every
+  subsequent attempt.
+
+  **Honest limitation, not glossed over**: this session verified real-time
+  streaming directly (Customer Chat's own "Investigating…" indicator
+  showed real agent names — Classifier, Planner, Account, Verification —
+  appearing progressively DURING a real Gemini call, confirmed via
+  repeated live captures) and verified the LIVE→completed hand-off logic
+  is correct and consistent (5-for-5 across different messages/step
+  counts, the just-finished investigation was always auto-selected
+  correctly in the Agent Swarm view). What was NOT captured in this
+  session: a screenshot of the Agent Swarm tab's red LIVE badge itself
+  mid-flight — this demo customer's seeded ticket history makes most
+  scenarios resolve/escalate in as little as 3-4 seconds, faster than
+  this session's browser-automation round-trip could reliably win the
+  race. The underlying mechanism is verified correct by direct evidence
+  and code review; only that one specific screenshot is missing. `docs/
+  DEMO_SCRIPT.md` was updated with a timing note about this for whoever
+  runs the real demo.
+
+  Full backend suite: **222 passed** (219 + 3 new in
+  `tests/test_streaming.py`). `npm run lint`/`build`: clean throughout.
+
+**Also cleaned up while pushing this work**: issues #99 and #96 had
+actually already been solved (merged via PR #102) but stayed open on
+GitHub — `Closes #96, #99` in a PR body apparently only auto-links the
+first issue in a comma-separated list. The same problem was found to have
+silently left 10 more already-merged issues open (#80, #82, #86, #89,
+#90, #91, #92, #93, #94, #98) — all now closed manually with a comment
+pointing at the actual merging PR. **Worth remembering for every future
+PR in this repo**: write `Closes #N` on its own line per issue, never a
+comma-separated list, and don't trust a closed-issue count to mean
+"nothing was missed" without spot-checking.
+
+**Every issue from both the [SWARM] and [EXPLAIN] batches is now done**
+except the one deliberately-out-of-scope issue: #88 (parallel
+multi-specialist investigation — a real agent-architecture change, not a
+visualization task, filed as its own future consideration rather than
+quietly built or quietly dropped).
+
 ## Next up (in priority order)
 
-0. **Merge PR #102** (`p0-swarm-explain-backend` → `main`) — this is the
-   one that actually gets the [SWARM]/[EXPLAIN] frontend work (and #96/
-   #99) onto `main`; #100 alone (already merged) only has the backend
-   half. See the entry directly above for why #101 being merged didn't
-   already handle this.
+0. **Merge PR #103 → #104 → #105 in order** (`main` ← `p1-swarm-status-
+   timeline-graph` ← `p1-evidence-explorer-decision-tree` ←
+   `p2-live-streaming-swarm`) — each is stacked on the previous, not on
+   `main` directly. See the entry directly above for what's in each. (PR
+   #102, `p0-swarm-explain-backend` → `main`, is already merged — it
+   carried the earlier [SWARM]/[EXPLAIN] P0 frontend work plus #96/#99.)
 1. **Still the single highest-priority loose thread, now spanning the
    ENTIRE backlog.** Nobody has confirmed `call_llm()` against a real
    Anthropic API key. Real bugs have repeatedly been found without one —
@@ -839,31 +944,13 @@ specialist entirely, not just the happy path. `pytest`: 212 passed.
    find something categorically different (actual model behavior,
    which nothing here can substitute for). Also the only way to actually
    run `docs/DEMO_SCRIPT.md`'s 3 scenarios for real.
-2. New [P6] backlog (#57-#63) — #57 (classifier confidence) and #58
-   (persist resolved-ticket trace) are worth doing first since #62
-   (analytics) and part of #59/#60's detection work depend on data those
-   two issues add. **Update: #57-#63 are done — see that section above.**
-   New: the [SWARM] batch (#77-#88) — do #77 first (cheapest, everything
-   else reads its data), then #78/#86 together, then the frontend issues
-   (#81/#82 before #83/#84), and only reach for the P2-stretch items
-   (#79, #85) if time remains. #88 is explicitly not part of this push.
-   Also new: the [EXPLAIN] batch (#89-#99) — do #89/#90/#91 (backend
-   capture) before #92 (the endpoints that read them), then #93/#94
-   (panel shell + confidence gauge) before #95/#96/#97 (the remaining
-   sections). #98 before either batch is called "done." #89-#99 and
-   #77-#88 both touch `orchestrator.py`'s three return points and
-   `InvestigationStep` — land the [SWARM] batch's #77 (step timing/
-   reasoning columns) first if both are being picked up, since [EXPLAIN]'s
-   #90/#91 read the same rows and a merge conflict is easier to avoid than
-   resolve.
-
-   **Update: all 10 P0 issues from both batches (#77, #80, #81, #82, #86,
-   #89, #90, #91, #92, #93, #94) are implemented — see PR #100 (backend,
-   merge first) and PR #101 (frontend, based on #100). Verified live
-   against a real Gemini call, not just mocked tests.** Remaining, not yet
-   picked up: #78 (deliberately deferred — see PR #100's description for
-   why it isn't needed yet), #79/#83/#84/#85/#95/#96/#97/#99 (P1/P2, the
-   rest of both batches), #88 (explicitly out of scope).
+2. ~~New [P6] backlog (#57-#63)~~ — done. ~~[SWARM] batch (#77-#88)~~ /
+   ~~[EXPLAIN] batch (#89-#99)~~ — **fully done as of PR #103/#104/#105
+   (pending merge, see Next up #0)**, except #88 (explicitly out of
+   scope). This item's original detailed sequencing plan is left out of
+   this entry now that it's obsolete — see the 2026-09-13 progress-log
+   entries above (the P6 one, and the two [SWARM]/[EXPLAIN] ones) for the
+   real implementation history if needed.
 3. Two small, well-scoped fixes identified previously, still not done:
    (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite

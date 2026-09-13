@@ -4,6 +4,12 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     customer_id: int
     message: str
+    # [SWARM] issue #79: optional, client-generated (a UUID) — when
+    # present, the frontend has already opened
+    # GET /api/investigations/stream/{stream_key} and wants real-time
+    # events published there as this pipeline run actually executes.
+    # None (the default) reproduces the exact previous behavior.
+    stream_key: str | None = None
 
 
 class TraceStepOut(BaseModel):
@@ -377,6 +383,38 @@ class EvidenceOut(BaseModel):
     evidence: list[str] = []
     evidence_refs: list[EvidenceRefOut] = []
     policy_references: list[EvidenceRefOut] = []
+
+
+class OrderRecordOut(BaseModel):
+    """[EXPLAIN] issue #95: the inline preview an Evidence Explorer "order"
+    reference opens — just enough fields to explain the evidence, not a
+    full order-management view."""
+
+    id: int
+    customer_id: int
+    product: str
+    amount: float
+    status: str
+    payment_status: str
+    failure_reason: str | None = None
+    duplicate_of: int | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class TicketRecordOut(BaseModel):
+    """[EXPLAIN] issue #95: the inline preview a "ticket" evidence
+    reference opens."""
+
+    id: int
+    customer_id: int
+    category: str
+    subject: str
+    status: str
+    sentiment: str
+    urgency: int
+    created_at: str
 
 
 class ExplanationOut(BaseModel):

@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import analytics, booking, bookings, chat, explanations, investigations, kb, notifications, tickets
+from app.api import analytics, booking, bookings, chat, explanations, investigations, kb, notifications, records, stream, tickets
 from app.config import settings
 from app.db.database import Base, engine
 from app.db.seed import seed_if_empty
@@ -32,8 +32,10 @@ app.include_router(kb.router)
 app.include_router(booking.router)
 app.include_router(bookings.router)
 app.include_router(notifications.router)
+app.include_router(stream.router)
 app.include_router(investigations.router)
 app.include_router(explanations.router)
+app.include_router(records.router)
 
 
 @app.get("/health")

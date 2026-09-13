@@ -5,13 +5,13 @@
 // two divergent implementations.
 //
 // Sections here: Confidence Score, Reasoning Summary, Contributing
-// Agents, Alternative Decisions, Policy References. Evidence Explorer and
-// Decision Tree are their own follow-on issues (#95/#97) to keep this
-// component reviewable — this panel already renders `evidence`/
-// `evidence_refs` in a plain list as a placeholder for #95's richer view.
+// Agents, Alternative Decisions, Evidence Explorer, Policy References,
+// Decision Tree (#97).
 import { useEffect, useState } from "react";
 import { fetchExplanation, fetchInvestigationByTicket } from "../api/client";
 import { ConfidenceBreakdownBars, ConfidenceGauge } from "./ConfidenceGauge";
+import DecisionTree from "./DecisionTree";
+import { EvidenceExplorer, PolicyReferenceExplorer } from "./EvidenceExplorer";
 import { agentLabel } from "./agentMeta";
 import "./ExplainableAIPanel.css";
 
@@ -39,18 +39,6 @@ function AlternativesSection({ chosenAction, alternatives }) {
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function PolicyReferencesSection({ policyReferences }) {
-  if (!policyReferences || policyReferences.length === 0) return null;
-  return (
-    <div className="eap-section">
-      <div className="eap-section-label">Policy References</div>
-      <div className="eap-chip-row">
-        {policyReferences.map((r) => <span key={r.ref_id} className="eap-chip">{r.label}</span>)}
-      </div>
     </div>
   );
 }
@@ -83,16 +71,9 @@ function PanelBody({ explanation }) {
 
       <ContributingAgentsSection agents={explanation.agents_consulted} />
       <AlternativesSection chosenAction={explanation.chosen_action} alternatives={explanation.alternatives_considered} />
-      <PolicyReferencesSection policyReferences={explanation.policy_references} />
-
-      {explanation.evidence.length > 0 && (
-        <div className="eap-section">
-          <div className="eap-section-label">Evidence Used</div>
-          <ul className="eap-evidence-list">
-            {explanation.evidence.map((e, i) => <li key={i}>{e}</li>)}
-          </ul>
-        </div>
-      )}
+      <DecisionTree chosenAction={explanation.chosen_action} alternatives={explanation.alternatives_considered} status={explanation.status} agentsConsulted={explanation.agents_consulted} />
+      <EvidenceExplorer evidenceRefs={explanation.evidence_refs} />
+      <PolicyReferenceExplorer policyReferences={explanation.policy_references} />
     </div>
   );
 }

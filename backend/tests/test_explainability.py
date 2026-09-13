@@ -127,6 +127,11 @@ def test_resolved_step_carries_real_timing_reasoning_tools_and_refs(monkeypatch,
     assert by_agent["classifier"].alternatives_considered == []
     assert by_agent["billing_specialist"].alternatives_considered == []
 
+    # [SWARM] #78: explicit dependency graph — a plain chain for a
+    # resolved run (classifier -> planner -> specialist -> verification
+    # -> memory), first step has no dependency.
+    assert [s.depends_on for s in steps] == [[], [1], [2], [3], [4]]
+
 
 def test_direct_escalation_step_has_timing_but_no_fabricated_tools_or_alternatives(monkeypatch, db_session):
     """[SWARM] #86 / [EXPLAIN] #98: a direct-Planner escalation never runs
@@ -176,6 +181,10 @@ def test_direct_escalation_step_has_timing_but_no_fabricated_tools_or_alternativ
     # No specialist ever ran — nothing fabricated here.
     assert by_agent["escalation"].used_tools == []
     assert by_agent["escalation"].evidence_refs == []
+
+    # [SWARM] #78: a direct escalation is a SHORTER chain, not a
+    # differently-shaped one — still just "depends on the step before."
+    assert [s.depends_on for s in steps] == [[], [1], [2]]
 
 
 # --------------------------------------------------------------------- #

@@ -447,6 +447,50 @@
   margin-top: 0.25rem;
 }
 
+/* [SWARM] issue #79: real live steps arriving via SSE while /api/chat is
+   still in flight — replaces the plain "Investigating..." dots. */
+.live-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.live-step-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--app-text-secondary);
+  animation: swarm-fade-in-up 0.25s ease both;
+}
+
+.live-step-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--app-primary-soft);
+  color: var(--app-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.live-step-dots {
+  animation: dot-pulse-blink 1s steps(1) infinite;
+  opacity: 0.6;
+}
+
+@keyframes dot-pulse-blink {
+  50% { opacity: 0.15; }
+}
+
+@keyframes swarm-fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Trace / Investigation Panel */
 .investigation-panel {
   margin-top: 0.75rem;
@@ -565,6 +609,8 @@
 .badge-danger { background: var(--app-danger-bg); color: var(--app-danger-text); }
 .badge-info { background: var(--app-info-bg); color: var(--app-info-text); }
 .badge-neutral { background: var(--app-neutral-bg); color: var(--app-neutral-text); }
+/* [SWARM] issue #85 */
+.badge-live { background: var(--app-danger-bg); color: var(--app-danger-text); gap: 6px; }
 
 /* Escalation Drawer */
 .app-drawer-overlay {

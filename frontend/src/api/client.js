@@ -22,11 +22,42 @@ async function request(path, options = {}) {
   return res.json();
 }
 
-export function sendChatMessage(customerId, message) {
+export function sendChatMessage(customerId, message, streamKey = null) {
+  // [SWARM] issue #79: streamKey is optional/additive — omitting it
+  // reproduces the exact previous request body.
+  const body = { customer_id: customerId, message };
+  if (streamKey) body.stream_key = streamKey;
   return request("/api/chat", {
     method: "POST",
-    body: JSON.stringify({ customer_id: customerId, message }),
+    body: JSON.stringify(body),
   });
+}
+
+// [SWARM] issue #79: opens the real-time SSE stream for one in-flight
+// investigation. Returns a cleanup function — call it to close the
+// connection (component unmount, or once the stream naturally ends).
+// Plain EventSource, not a wrapper library: the format is simple and
+// EventSource's built-in auto-reconnect is explicitly NOT wanted here —
+// a stream_key is single-use (one investigation), so a reconnect after
+// "end"/"timeout" would just hang forever against an already-cleaned-up
+// server-side queue.
+export function openInvestigationStream(streamKey, { onStep, onDone, onEnd }) {
+  const source = new EventSource(`${BASE_URL}/api/investigations/stream/${streamKey}`);
+
+  source.addEventListener("message", (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      if (data.type === "step") onStep?.(data);
+      else if (data.type === "done") onDone?.(data);
+    } catch {
+      // Malformed event — ignore rather than crash the live view over one bad frame.
+    }
+  });
+  source.addEventListener("end", () => { onEnd?.(); source.close(); });
+  source.addEventListener("timeout", () => { onEnd?.(); source.close(); });
+  source.onerror = () => { onEnd?.(); source.close(); };
+
+  return () => source.close();
 }
 
 export function fetchEscalations() {
@@ -113,4 +144,21 @@ export function fetchAgentPerformanceMetrics() {
 // [EXPLAIN] issue #92.
 export function fetchExplanation(investigationId) {
   return request(`/api/investigations/${investigationId}/explanation`);
+}
+
+// [EXPLAIN] issue #95 — Evidence Explorer inline-preview lookups.
+export function fetchOrderRecord(orderId) {
+  return request(`/api/records/orders/${orderId}`);
+}
+
+export function fetchCustomerRecord(customerId) {
+  return request(`/api/records/customers/${customerId}`);
+}
+
+export function fetchTicketRecord(ticketId) {
+  return request(`/api/records/tickets/${ticketId}`);
+}
+
+export function fetchKBArticle(articleId) {
+  return request(`/api/kb-articles/${articleId}`);
 }
