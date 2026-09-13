@@ -62,35 +62,96 @@ function GraphNode({ node, status, active, onClick }) {
   );
 }
 
+// [SWARM] issue #88: layered layout so genuine parallel investigation
+// (two-plus specialists depending on the SAME planner step, and a
+// reconciliation step depending on all of them) actually reads as
+// fan-out/fan-in — not a flat left-to-right row pretending every step is
+// a simple chain. `depends_on` (from the real graph.edges, or from a live
+// event — see orchestrator.py's stream payload) determines each node's
+// column: depth 0 = no dependencies, depth N = one more than the deepest
+// parent. Nodes at the same depth render as a vertical stack within one
+// column.
+//
+// Documented assumption, true for everything this orchestrator can
+// currently produce (see _reconcile_specialist_responses()'s fan-out/
+// fan-in shape): every edge connects ADJACENT columns — a node's parents
+// are never more than one depth shallower. If a future change ever
+// produced a dependency that skips a column, this renderer would still
+// place both nodes correctly by depth, it just wouldn't draw that
+// specific long-distance connector.
+function computeLayers(nodes, edges) {
+  const parentsOf = {};
+  for (const n of nodes) parentsOf[n.step_number] = [];
+  for (const e of edges) {
+    if (parentsOf[e.to_step]) parentsOf[e.to_step].push(e.from_step);
+  }
+  const depthOf = {};
+  for (const n of nodes) {
+    const parents = parentsOf[n.step_number];
+    depthOf[n.step_number] = parents.length === 0 ? 0 : 1 + Math.max(...parents.map((p) => depthOf[p] ?? 0));
+  }
+  const maxDepth = nodes.length === 0 ? -1 : Math.max(...nodes.map((n) => depthOf[n.step_number]));
+  const layers = Array.from({ length: maxDepth + 1 }, () => []);
+  for (const n of nodes) layers[depthOf[n.step_number]].push(n);
+  return { layers, parentsOf };
+}
+
+function ConnectorSVG({ fromLayer, toLayer, parentsOf, flowing }) {
+  const fromIndexOf = Object.fromEntries(fromLayer.map((n, i) => [n.step_number, i]));
+  const lines = toLayer.flatMap((toNode, toIdx) =>
+    (parentsOf[toNode.step_number] || [])
+      .filter((p) => p in fromIndexOf)
+      .map((p) => ({
+        y1: ((fromIndexOf[p] + 0.5) / fromLayer.length) * 100,
+        y2: ((toIdx + 0.5) / toLayer.length) * 100,
+        key: `${p}-${toNode.step_number}`,
+      }))
+  );
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="swarm-connector-svg">
+      {lines.map((l) => (
+        <path key={l.key} d={`M0,${l.y1} C50,${l.y1} 50,${l.y2} 100,${l.y2}`} className={`swarm-connector-path ${flowing ? "flowing" : ""}`} />
+      ))}
+    </svg>
+  );
+}
+
 function SwarmGraph({ graph, revealedCount, activeStep, onSelectStep, liveGrowing }) {
   const nodes = graph.nodes;
   const total = nodes.length;
+  const visibleNodes = liveGrowing ? nodes : nodes.filter((_, i) => i < revealedCount);
+  const { layers, parentsOf } = useMemo(() => computeLayers(nodes, graph.edges), [nodes, graph.edges]);
+  // Only render columns/nodes that are currently "visible" (revealed in
+  // replay mode, or arrived in live mode) — filter each layer down.
+  const visibleStepNumbers = new Set(visibleNodes.map((n) => n.step_number));
+  const visibleLayers = layers.map((layer) => layer.filter((n) => visibleStepNumbers.has(n.step_number))).filter((l) => l.length > 0);
+
   return (
-    <div className="swarm-graph">
-      {nodes.map((node, i) => {
-        // [SWARM] issue #85 live mode: every arrived node is genuinely
-        // completed/failed (a real event) — "running"/"idle" don't apply
-        // the same way as in replay mode, since there's no known future
-        // step count to pre-render as idle.
-        const status = liveGrowing ? (node.status === "failed" ? "failed" : "completed") : stepStatus(i, revealedCount, total, node);
-        return (
-          <div className="swarm-graph-item" key={node.step_number}>
-            <GraphNode node={node} status={status} active={activeStep === node.step_number} onClick={onSelectStep} />
-            {i < nodes.length - 1 && (
-              <div className={`swarm-edge ${liveGrowing || i < revealedCount - 1 ? "flowing" : "idle"}`}>
-                <svg viewBox="0 0 60 12" preserveAspectRatio="none">
-                  <line x1="0" y1="6" x2="60" y2="6" className="swarm-edge-line" />
-                  {(liveGrowing || i < revealedCount - 1) && <line x1="0" y1="6" x2="60" y2="6" className="swarm-edge-pulse" />}
-                </svg>
-              </div>
-            )}
+    <div className="swarm-columns">
+      {visibleLayers.map((layer, colIdx) => (
+        <div className="swarm-column-group" key={colIdx}>
+          {colIdx > 0 && (
+            <div className="swarm-connector">
+              <ConnectorSVG fromLayer={visibleLayers[colIdx - 1]} toLayer={layer} parentsOf={parentsOf} flowing />
+            </div>
+          )}
+          <div className={`swarm-column ${layer.length > 1 ? "swarm-column-parallel" : ""}`}>
+            {layer.length > 1 && <div className="swarm-parallel-badge">PARALLEL</div>}
+            {layer.map((node) => {
+              const i = nodes.findIndex((n) => n.step_number === node.step_number);
+              const status = liveGrowing ? (node.status === "failed" ? "failed" : "completed") : stepStatus(i, revealedCount, total, node);
+              return <GraphNode key={node.step_number} node={node} status={status} active={activeStep === node.step_number} onClick={onSelectStep} />;
+            })}
           </div>
-        );
-      })}
+        </div>
+      ))}
       {liveGrowing && (
-        <div className="swarm-graph-item">
-          <div className="swarm-node status-idle swarm-node-pending-next">
-            <span className="swarm-node-label">…</span>
+        <div className="swarm-column-group">
+          <div className="swarm-connector"><div className="swarm-connector-idle-line"></div></div>
+          <div className="swarm-column">
+            <div className="swarm-node status-idle swarm-node-pending-next">
+              <span className="swarm-node-label">…</span>
+            </div>
           </div>
         </div>
       )}
@@ -234,7 +295,11 @@ export default function AgentSwarmView() {
       step_number: s.step_number, agent_name: s.agent_name, status: s.status,
       confidence: s.confidence, duration_ms: s.duration_ms,
     }));
-    const edges = nodes.slice(1).map((n, i) => ({ from_step: nodes[i].step_number, to_step: n.step_number }));
+    // [SWARM] issue #88: real dependency info from each live event
+    // (orchestrator.py::_record() publishes it — see that function) —
+    // NOT assumed to be a flat chain, so a genuine parallel fan-out shows
+    // up live, not just on replay.
+    const edges = liveState.steps.flatMap((s) => (s.depends_on || []).map((from) => ({ from_step: from, to_step: s.step_number })));
     return { nodes, edges };
   }, [liveState]);
 
