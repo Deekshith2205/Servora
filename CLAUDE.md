@@ -1219,6 +1219,63 @@ each breakpoint (480px desktop / 420px tablet / full-screen mobile,
 each measured directly via `getBoundingClientRect()`, not just eyeballed).
 Backend: 240 passed, 1 skipped, +12 new tests. `npm run lint`/`build`: clean.
 
+### 2026-09-13 (continued) — PR #128 merged to `main`; general
+unhandled-exception → CORS handler closes a long-standing open question
+
+**PR #128 merge**: verified branch/PR state, base, and clean working
+tree first; merged via `gh pr merge 128 --merge` (commit `99f569a1`);
+pulled `origin/main`; confirmed via both
+`git log origin/main..origin/p4-explainability-drilldown` (empty) and
+`git merge-base --is-ancestor` that nothing was left unmerged; spot-
+checked a specific file directly against `origin/main`. Full backend
+suite (240 passed, 1 skipped) and frontend lint/build re-run clean on
+the merged code, then verified live in a real browser against the
+actual merged `main` — real evidence-drawer data confirmed one more
+time, no console errors. **Found and fixed a small real gap**: 10 of
+the 11 tracking issues (#117-#126) auto-closed on merge, but #127
+("Documentation") didn't — its `Closes #127` line had been left out of
+the PR body — closed manually with an accurate comment (also noting
+`docs/DEMO_SCRIPT.md` was never actually updated in that PR, only
+`CLAUDE.md` + inline docstrings were).
+
+**General FastAPI exception handler** (PR #129,
+https://github.com/Deekshith2205/Servora/pull/129, CI green, not yet
+merged): closes the general unhandled-exception/CORS gap this log has
+flagged since issue #17 (which only fixed ONE specific exception type
+in `llm.py`). A single `@app.exception_handler(Exception)` in
+`app/main.py` — preserves existing `HTTPException`/
+`RequestValidationError` behavior untouched (Starlette always prefers
+the most specific handler by MRO), logs the real exception+traceback
+server-side, returns only a generic `{"detail": "..."}` to the client.
+
+**A real Starlette mechanic found while building this, not assumed**:
+a handler registered for the base `Exception` type is invoked by the
+*outermost* `ServerErrorMiddleware` (see Starlette's own
+`build_middleware_stack()`), which sits **outside** `CORSMiddleware`
+and sends its response via the raw ASGI `send` it was originally given
+— so simply registering the handler does **not**, by itself, add CORS
+headers. Confirmed empirically (a first-pass test failed: 500 with no
+`Access-Control-Allow-Origin` header at all) before fixing it by
+manually adding the same header `CORSMiddleware` would have, replicating
+its exact current single-origin configuration. Worth remembering for
+any future Starlette/FastAPI exception-handling work in this repo — the
+naive "just register `@app.exception_handler(Exception)`" answer that's
+all over blog posts/StackOverflow is incomplete for a CORS-enabled app.
+
+Live-verified properly rather than assumed: temporarily added a
+debug-only route raising a real exception, drove it from the actual
+frontend origin via browser `fetch()` (not curl — curl can't prove the
+browser's own CORS check passes), confirmed no "blocked by CORS policy"
+console error and a clean (not CORS-blocked) network entry, then fully
+removed the debug route (confirmed via `git diff`) before committing.
+6 new tests (`tests/test_error_handling.py`) — including a real
+Starlette/TestClient nuance documented there: `ServerErrorMiddleware`
+re-raises the original exception after sending the response (by
+design, so a real server still logs it), which needs
+`TestClient(app, raise_server_exceptions=False)` for the specific tests
+that intentionally trigger this path. Full suite: 246 passed (240 + 6
+new), 1 skipped. Backend-only change — no frontend files touched.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the
@@ -1231,20 +1288,19 @@ Backend: 240 passed, 1 skipped, +12 new tests. `npm run lint`/`build`: clean.
    run `docs/DEMO_SCRIPT.md`'s 3 scenarios for real.
 2. ~~New [P6] backlog (#57-#63)~~ — done. ~~[SWARM] batch (#77-#88)~~ /
    ~~[EXPLAIN] batch (#89-#99)~~ — **fully done and merged to `main`**
-   (PR #103/#104/#105, plus #88 via #107, the Critic Agent via #115, and
-   the Agent Collaboration Graph via #116). This item's original detailed
-   sequencing plan is left out of
-   this entry now that it's obsolete — see the 2026-09-13 progress-log
-   entries above (the P6 one, and the two [SWARM]/[EXPLAIN] ones) for the
-   real implementation history if needed.
-3. Two small, well-scoped fixes identified previously, still not done:
-   (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
+   (PR #103/#104/#105, plus #88 via #107, the Critic Agent via #115, the
+   Agent Collaboration Graph via #116, and the Explainability
+   Drill-Down Panel via #128). This item's original detailed sequencing
+   plan is left out of this entry now that it's obsolete — see the
+   2026-09-13 progress-log entries above for the real implementation
+   history if needed.
+3. **Merge PR #129** (general FastAPI exception handler, CI green) —
+   the general CORS/opaque-error gap is otherwise already fixed in
+   code, just not yet on `main`. One small fix still genuinely not
+   started: a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite
-   tables — hit repeatedly again this session, once per new
-   migration-touching PR), (b) a **general** FastAPI exception handler
-   so an unhandled error of any kind still carries CORS headers back to
-   the browser — #17 fixed one specific exception *type*, not the
-   general gap.
+   tables — hit repeatedly this session, once per new migration-
+   touching PR).
 4. Optional, not blocking a demo: wire up a real Gmail/SMS provider
    behind `app/services/notifications.py` (see #21's entry above for
    why it's mocked today) — self-contained, doesn't change any caller.
@@ -1268,10 +1324,11 @@ Backend: 240 passed, 1 skipped, +12 new tests. `npm run lint`/`build`: clean.
   add a branch protection rule on `main` → require the CI status checks
   before merging. Nobody in any session so far has had admin rights to
   do it directly.
-- **General unhandled-exception → CORS gap still open** (only the one
-  specific `TypeError` case was fixed in #17) — see Next up #3(b).
+- **General unhandled-exception → CORS gap — fixed in code, PR #129,
+  not yet merged to `main`.** See the 2026-09-13 progress-log entry and
+  Next up #3.
 - **`servora.db` schema drift after `create_all()` still requires a
-  manual delete** — see Next up #3(a).
+  manual delete** — see Next up #3.
 - **No staff-identity/auth system exists at all** — flagged concretely
   while scoping #63 (reassign needs *someone* to reassign to). Worth a
   real decision (even a fake/demo login) before #63 is picked up, rather
