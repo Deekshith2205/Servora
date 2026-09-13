@@ -990,14 +990,36 @@ lint`/`build`: clean.
 **Every issue from both the [SWARM] and [EXPLAIN] batches is now
 implemented**, including the one originally flagged out-of-scope.
 
+### 2026-09-13 (continued) — merge-tracking cleanup: #83/#84 closed manually, #88's code landed on `main` via PR #107
+
+`main` was checked directly rather than trusted from memory: PRs #103,
+#104, and #105 were ALL already merged (someone merged the stack
+correctly this time — #104/#105/#106 landing into each other's branches,
+then #103's branch merge brought the whole chain into `main` in one
+commit). Only **one commit was still missing from `main`**: #106's
+[SWARM] #88 work, which had merged into its base branch
+(`p2-live-streaming-swarm`) rather than `main` — the exact same gap
+PR #102 fixed once before. Opened **PR #107** to land it; CI green.
+
+Also found: PR #103's body used `Closes #78, #83, #84.` on one line —
+the same comma-list mistake flagged earlier in this log slipped through
+again on this one PR. Only #78 auto-closed. #83 and #84 were both
+genuinely done (merged, on `main`) but stayed open on GitHub — closed
+manually with comments pointing at PR #103.
+
+**Standing lesson, worth repeating since it recurred even after being
+documented once**: always write one `Closes #N` per line, and after any
+multi-PR push, verify against `main` directly (`git log
+origin/main..origin/<branch>`, or check specific files exist via `git
+show origin/main:<path>`) rather than trusting that "the PR merged" means
+"the code is on `main`" — a stacked PR can merge successfully into a
+non-`main` base and look identical to a real merge in `gh pr list`.
+
 ## Next up (in priority order)
 
-0. **Merge PR #103 → #104 → #105 → #106 in order** (`main` ← `p1-swarm-status-
-   timeline-graph` ← `p1-evidence-explorer-decision-tree` ←
-   `p2-live-streaming-swarm`) — each is stacked on the previous, not on
-   `main` directly. See the entry directly above for what's in each. (PR
-   #102, `p0-swarm-explain-backend` → `main`, is already merged — it
-   carried the earlier [SWARM]/[EXPLAIN] P0 frontend work plus #96/#99.)
+0. **Merge PR #107** (`p2-parallel-multi-specialist` → `main`) — the one
+   remaining commit (#88's work) not yet on `main`. Everything else
+   through PR #105 is already merged.
 1. **Still the single highest-priority loose thread, now spanning the
    ENTIRE backlog.** Nobody has confirmed `call_llm()` against a real
    Anthropic API key. Real bugs have repeatedly been found without one —
