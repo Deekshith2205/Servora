@@ -39,6 +39,7 @@ existing trace/Ticket persistence works.
 """
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
@@ -48,8 +49,9 @@ from app.agents.classifier import ClassificationResult, classify
 from app.agents.escalation import HandoffPacket, build_handoff_packet
 from app.agents.memory import extract_facts, merge_profile
 from app.agents.planner import plan
-from app.agents.specialists import SPECIALISTS
+from app.agents.specialists import SPECIALISTS, SpecialistResponse
 from app.agents.verification import verify
+from app.db.database import SessionLocal
 from app.db.models import Investigation, InvestigationStep, Ticket
 from app.llm import LLMError
 from app.services import stream_bus
@@ -98,7 +100,7 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
                 confidence: float | None = None, root_cause: str | None = None,
                 resolution: str | None = None, started_at: datetime | None = None,
                 used_tools: list[str] | None = None, alternatives: list | None = None,
-                evidence_refs: list[dict] | None = None) -> None:
+                evidence_refs: list[dict] | None = None, depends_on: list[int] | None = None) -> int:
         trace.append(TraceStep(agent, output, confidence=confidence, root_cause=root_cause, resolution=resolution))
         step_records.append({
             "agent_name": agent,
@@ -120,21 +122,35 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
             "used_tools": used_tools or [],
             "alternatives": [asdict(a) for a in (alternatives or [])],
             "evidence_refs": evidence_refs or [],
+            # [SWARM] issue #88: an explicit override for _persist_
+            # investigation()'s dependency graph — None (the default)
+            # keeps the existing "depends on the immediately preceding
+            # step" behavior (issue #78). Only the parallel-fan-out path
+            # below ever passes a real value: multiple specialist steps
+            # that all depend on the SAME planner step (fan-out), and a
+            # reconciliation step that depends on ALL of them (fan-in).
+            "depends_on_override": depends_on,
         })
+        step_number = len(step_records)
         # [SWARM] issue #79: real-time push, same shape a step_records
         # entry has (minus the pieces only meaningful once persisted, like
         # a DB-assigned step_number — the frontend uses list position for
         # that, same as it already does for the replay-based Swarm view).
+        # [SWARM] issue #88: `depends_on` computed with the EXACT same
+        # fallback _persist_investigation() uses, so a live viewer sees
+        # real fan-out/fan-in as it happens, not just a flat chain.
         if stream_key:
             stream_bus.publish(stream_key, {
                 "type": "step",
-                "step_number": len(step_records),
+                "step_number": step_number,
                 "agent_name": agent,
                 "action": action,
                 "status": status,
                 "confidence": confidence,
                 "duration_ms": duration_ms,
+                "depends_on": depends_on if depends_on is not None else ([step_number - 1] if step_number > 1 else []),
             })
+        return step_number
 
     def _finish(ticket_id: int, investigation_id: int) -> None:
         """[SWARM] issue #79: the stream's final event — carries the real,
@@ -156,12 +172,16 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
 
         t0, t0_wall = time.perf_counter(), datetime.utcnow()
         decision = plan(classification, customer_id, db)
+        # [SWARM] issue #88: agents_to_run is [target_agent] in the common
+        # case, or [target_agent, *additional_agents] when the Planner
+        # found a genuinely cross-cutting issue — see planner.py.
+        agents_to_run = [decision.target_agent] + list(decision.additional_agents)
         plan_action = (
-            f"Decided to resolve via the {decision.target_agent} specialist"
+            f"Decided to resolve via the {' and '.join(agents_to_run)} specialist{'s' if len(agents_to_run) > 1 else ''}"
             if decision.action == "resolve"
             else f"Decided to {decision.action}"
         )
-        _record(
+        planner_step_number = _record(
             "planner", decision.reasoning, action=plan_action,
             duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
             # [EXPLAIN] issue #89: the actions NOT chosen, straight from the
@@ -197,24 +217,76 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
                 ticket_id=ticket_id,
             )
 
-        t0, t0_wall = time.perf_counter(), datetime.utcnow()
-        specialist_fn = SPECIALISTS.get(decision.target_agent, SPECIALISTS["technical"])
-        response = specialist_fn(db, customer_id, message)
+        if len(agents_to_run) > 1:
+            # [SWARM] issue #88: genuine parallel investigation — each
+            # specialist runs concurrently in its OWN thread with its OWN
+            # DB session (see _run_specialist_isolated()'s docstring for
+            # why sharing the request's `db` across threads would be
+            # unsafe), and one InvestigationStep is recorded per
+            # specialist, each depending on the SAME planner step
+            # (fan-out) rather than chaining off each other. A
+            # reconciliation step then depends on ALL of them (fan-in) —
+            # see _reconcile_specialist_responses()'s docstring for why
+            # that's deterministic composition, not a second LLM call.
+            t0 = time.perf_counter()
+            responses: dict[str, object] = {}
+            with ThreadPoolExecutor(max_workers=len(agents_to_run)) as executor:
+                future_to_agent = {
+                    executor.submit(_run_specialist_isolated, agent, customer_id, message): agent
+                    for agent in agents_to_run
+                }
+                for future in as_completed(future_to_agent):
+                    agent = future_to_agent[future]
+                    responses[agent] = future.result()
 
-        # Extract root_cause safely if it was populated by the specialist
-        root_cause = getattr(response, "root_cause", None)
-        resolution = getattr(response, "resolution", None)
-        _record(
-            f"{decision.target_agent}_specialist", response.reply,
-            action=root_cause or f"{decision.target_agent.title()} specialist investigated and responded",
-            evidence=getattr(response, "evidence", []),
-            duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
-            confidence=response.confidence, root_cause=root_cause, resolution=resolution,
-            # [SWARM] issue #77 / [EXPLAIN] #91: the tools actually called and
-            # their structured, id-addressable evidence refs.
-            used_tools=getattr(response, "used_tools", []),
-            evidence_refs=getattr(response, "evidence_refs", []),
-        )
+            specialist_step_numbers = []
+            for agent in agents_to_run:  # fixed order for the trace, not completion order
+                r = responses[agent]
+                r_root_cause = getattr(r, "root_cause", None)
+                step_number = _record(
+                    f"{agent}_specialist", r.reply,
+                    action=r_root_cause or f"{agent.title()} specialist investigated and responded",
+                    evidence=getattr(r, "evidence", []),
+                    duration_ms=round((time.perf_counter() - t0) * 1000),
+                    confidence=r.confidence, root_cause=r_root_cause, resolution=getattr(r, "resolution", None),
+                    used_tools=getattr(r, "used_tools", []),
+                    evidence_refs=getattr(r, "evidence_refs", []),
+                    depends_on=[planner_step_number],
+                )
+                specialist_step_numbers.append(step_number)
+
+            t0, t0_wall = time.perf_counter(), datetime.utcnow()
+            response = _reconcile_specialist_responses(responses)
+            root_cause = response.root_cause
+            resolution = response.resolution
+            _record(
+                "reconciliation", response.reply,
+                action=f"Reconciled findings from {len(agents_to_run)} specialists ({', '.join(agents_to_run)})",
+                evidence=response.evidence,
+                duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
+                confidence=response.confidence, root_cause=root_cause, resolution=resolution,
+                used_tools=response.used_tools, evidence_refs=response.evidence_refs,
+                depends_on=specialist_step_numbers,
+            )
+        else:
+            t0, t0_wall = time.perf_counter(), datetime.utcnow()
+            specialist_fn = SPECIALISTS.get(decision.target_agent, SPECIALISTS["technical"])
+            response = specialist_fn(db, customer_id, message)
+
+            # Extract root_cause safely if it was populated by the specialist
+            root_cause = getattr(response, "root_cause", None)
+            resolution = getattr(response, "resolution", None)
+            _record(
+                f"{decision.target_agent}_specialist", response.reply,
+                action=root_cause or f"{decision.target_agent.title()} specialist investigated and responded",
+                evidence=getattr(response, "evidence", []),
+                duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
+                confidence=response.confidence, root_cause=root_cause, resolution=resolution,
+                # [SWARM] issue #77 / [EXPLAIN] #91: the tools actually called and
+                # their structured, id-addressable evidence refs.
+                used_tools=getattr(response, "used_tools", []),
+                evidence_refs=getattr(response, "evidence_refs", []),
+            )
 
         t0, t0_wall = time.perf_counter(), datetime.utcnow()
         verification = verify(response)
@@ -299,6 +371,66 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
         # the live Swarm view, which simply stops updating.
         if stream_key:
             stream_bus.close(stream_key)
+
+
+def _run_specialist_isolated(agent: str, customer_id: int, message: str) -> SpecialistResponse:
+    """[SWARM] issue #88: runs one specialist on ITS OWN DB session, in a
+    thread pool worker — never the request's shared `db` session.
+
+    SQLAlchemy `Session` objects are not safe for concurrent use from
+    multiple threads at once; `database.py`'s `check_same_thread: False`
+    only lifts sqlite3's own single-thread restriction; it does not make
+    sharing one `Session`/connection across threads correct. Each parallel
+    specialist therefore gets a fresh `SessionLocal()` here, used only for
+    the lifetime of this one call, and closed before returning — exactly
+    the same lifecycle `app.db.database.get_db()` gives a normal request.
+
+    `database.py`'s SQLite `connect_args` also gained a `timeout` for this
+    same reason: two of these threads COULD legitimately try to write
+    (e.g. two specialists that both call an action tool) at close to the
+    same moment, and SQLite's default is to fail immediately rather than
+    wait for the lock.
+    """
+    thread_db = SessionLocal()
+    try:
+        specialist_fn = SPECIALISTS.get(agent, SPECIALISTS["technical"])
+        return specialist_fn(thread_db, customer_id, message)
+    finally:
+        thread_db.close()
+
+
+def _reconcile_specialist_responses(responses: dict[str, SpecialistResponse]) -> SpecialistResponse:
+    """[SWARM] issue #88: combines N independent specialists' findings into
+    ONE customer-facing response — the "reconciliation step" the issue
+    called for. Deterministic composition, no extra LLM call: each
+    specialist's reply is already a complete, grounded answer for its own
+    slice of the issue, so this only needs to concatenate them clearly
+    labeled by specialist — matching this codebase's established
+    preference (see explanations.py's decision_rationale) for cheap
+    composition over another network round trip when the pieces already
+    say what's needed. A future enhancement could ask an LLM to blend
+    these into one seamless paragraph; deliberately not done here to avoid
+    a synthesis step that could subtly misstate what a specialist actually
+    found.
+
+    Confidence is the MINIMUM across all specialists, not an average —
+    conservative on purpose, matching Verification's existing philosophy
+    (see verification.py) of never trusting a combined answer more than
+    its single weakest-grounded part.
+    """
+    parts = [f"{agent.title()} specialist: {r.reply}" for agent, r in responses.items()]
+    root_causes = [r.root_cause for r in responses.values() if r.root_cause]
+    resolutions = [r.resolution for r in responses.values() if r.resolution]
+
+    return SpecialistResponse(
+        reply="\n\n".join(parts),
+        used_tools=[t for r in responses.values() for t in r.used_tools],
+        confidence=min(r.confidence for r in responses.values()),
+        root_cause=" ".join(root_causes) if root_causes else None,
+        resolution=" ".join(resolutions) if resolutions else None,
+        evidence=[e for r in responses.values() for e in r.evidence],
+        evidence_refs=[ref for r in responses.values() for ref in r.evidence_refs],
+    )
 
 
 def _create_ticket(
@@ -392,14 +524,19 @@ def _persist_investigation(
             evidence_refs_json=json.dumps(rec.get("evidence_refs", [])),
             used_tools_json=json.dumps(rec.get("used_tools", [])),
             alternatives_json=json.dumps(rec.get("alternatives", [])),
-            # [SWARM] issue #78: explicit dependency, not just an
-            # assumption the graph API makes from step order. Today's
-            # pipeline never fans out — every step causally depends on
-            # exactly the one immediately before it, for every branch
-            # (a direct-Planner escalation is a shorter chain, not a
-            # differently-shaped one) — so this is genuinely correct,
-            # not just convenient, per step_number alone.
-            depends_on_json=json.dumps([i - 1] if i > 1 else []),
+            # [SWARM] issue #78/#88: explicit dependency, not just an
+            # assumption the graph API makes from step order. Defaults to
+            # "the immediately preceding step" (correct for every
+            # non-fan-out branch — a direct-Planner escalation is a
+            # shorter chain, not a differently-shaped one), UNLESS a call
+            # site passed an explicit override — issue #88's parallel
+            # specialists (which all depend on the SAME planner step, not
+            # each other) and its reconciliation step (which depends on
+            # ALL of them) are the only callers that ever do.
+            depends_on_json=json.dumps(
+                rec["depends_on_override"] if rec.get("depends_on_override") is not None
+                else ([i - 1] if i > 1 else [])
+            ),
             duration_ms=rec["duration_ms"],
             confidence=rec["confidence"],
         ))

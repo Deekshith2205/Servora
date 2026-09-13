@@ -110,15 +110,80 @@
   color: var(--app-text-muted);
 }
 
-.swarm-graph {
+/* [SWARM] issue #88: column-based layout — nodes are grouped into
+   columns by dependency depth (see AgentSwarmView.jsx's computeLayers()),
+   so a genuine parallel fan-out renders as multiple nodes stacked within
+   one column, connected by real curved lines rather than a flat row. */
+
+.swarm-columns {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   min-width: max-content;
 }
 
-.swarm-graph-item {
+.swarm-column-group {
   display: flex;
-  align-items: center;
+  align-items: stretch;
+}
+
+.swarm-column {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  position: relative;
+}
+
+.swarm-column-parallel {
+  padding: 10px;
+  border: 1px dashed var(--app-danger-text);
+  border-radius: var(--app-radius-lg);
+}
+
+.swarm-parallel-badge {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--app-danger-text);
+  color: white;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.swarm-connector {
+  width: 56px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.swarm-connector-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.swarm-connector-path {
+  fill: none;
+  stroke: var(--app-border);
+  stroke-width: 2;
+}
+
+.swarm-connector-path.flowing {
+  stroke: var(--app-primary);
+  stroke-dasharray: 6 10;
+  animation: swarm-flow 1s linear infinite;
+}
+
+.swarm-connector-idle-line {
+  width: 100%;
+  height: 2px;
+  background: var(--app-border);
+  margin-top: 50%;
 }
 
 .swarm-node {
@@ -232,30 +297,6 @@
 .swarm-node-duration {
   font-size: 0.65rem;
   color: var(--app-text-muted);
-}
-
-.swarm-edge {
-  width: 44px;
-  height: 12px;
-  flex-shrink: 0;
-}
-
-.swarm-edge svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.swarm-edge-line {
-  stroke: var(--app-border);
-  stroke-width: 2;
-}
-
-.swarm-edge-pulse {
-  stroke: var(--app-primary);
-  stroke-width: 2;
-  stroke-dasharray: 6 10;
-  animation: swarm-flow 1s linear infinite;
 }
 
 @keyframes swarm-flow {

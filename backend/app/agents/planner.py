@@ -38,7 +38,15 @@ known about this customer, and decide exactly one action:
 
 - "resolve": route to a specialist agent (billing, technical, order, or \
 account) who can plausibly fix this automatically. Set target_agent to \
-that specialist.
+that specialist. If the issue genuinely spans more than one specialist's \
+domain — e.g. "payment deducted but order not created" needs BOTH the \
+billing specialist (the charge) and the order specialist (why no order \
+exists) — set additional_agents to the other specialist(s) that should \
+ALSO investigate, in parallel with target_agent. This is the uncommon \
+case: leave additional_agents empty whenever one specialist can plausibly \
+handle the whole issue alone — do not add a second specialist just \
+because a message mentions two nouns (e.g. "my order" in an otherwise \
+ordinary billing question is not cross-cutting).
 - "clarify": the message is missing information a specialist would need \
 (e.g. no order number, an ambiguous request) — ask a follow-up instead of \
 guessing. Set target_agent to "none".
@@ -61,8 +69,13 @@ available to them (order lookups, refunds, KB search — not, for example, \
 legal disputes or requests outside company policy).
 
 target_agent must be exactly one of: billing, technical, order, account, none.
+additional_agents must be a list containing zero or more of: billing, \
+technical, order, account — never target_agent itself, never used unless \
+action is "resolve" and the issue is genuinely cross-cutting.
 reasoning must cite the specific signals that drove the decision (ticket \
-history, urgency, fixability) — not just restate the action.
+history, urgency, fixability, and — when additional_agents is non-empty — \
+specifically why this issue needs more than one specialist) — not just \
+restate the action.
 
 alternatives_considered: list the OTHER 1-2 actions from resolve/clarify/ \
 escalate that you did NOT choose, each with a specific one-line reason you \
@@ -89,6 +102,12 @@ class PlanDecision:
     # prompt above. Defaults to empty rather than fabricated content when
     # the LLM path isn't taken (e.g. a future deterministic fallback).
     alternatives_considered: list[Alternative] = field(default_factory=list)
+    # [SWARM] issue #88: OTHER specialists (besides target_agent) that
+    # should ALSO investigate, in parallel, for a genuinely cross-cutting
+    # issue. Empty for the common single-specialist case — this is
+    # additive, not a replacement for target_agent, so every existing
+    # caller that only ever reads target_agent is unaffected.
+    additional_agents: list[str] = field(default_factory=list)
 
 
 class _AlternativeSchema(BaseModel):
@@ -106,6 +125,11 @@ class _PlanSchema(BaseModel):
     alternatives_considered: list[_AlternativeSchema] = Field(
         default_factory=list,
         description="The 1-2 actions NOT chosen and a specific reason each was rejected.",
+    )
+    additional_agents: list[str] = Field(
+        default_factory=list,
+        description="Other specialist(s) that should ALSO investigate in parallel with target_agent, "
+        "for a genuinely cross-cutting issue only. Empty in the common case.",
     )
 
 
@@ -161,9 +185,23 @@ def plan(classification: ClassificationResult, customer_id: int, db: Session) ->
         if a.action in VALID_ACTIONS and a.action != action
     ]
 
+    # [SWARM] issue #88: only meaningful when actually resolving via a real
+    # target — defensive against the LLM naming target_agent itself, an
+    # invalid specialist, or "none" as one of its own additional agents.
+    valid_specialists = [t for t in VALID_TARGETS if t != "none"]
+    additional_agents = (
+        [
+            a for a in dict.fromkeys(getattr(result, "additional_agents", []))  # de-dupe, preserve order
+            if a in valid_specialists and a != target_agent
+        ]
+        if action == "resolve"
+        else []
+    )
+
     return PlanDecision(
         action=action,
         target_agent=target_agent,
         reasoning=result.reasoning,
         alternatives_considered=alternatives,
+        additional_agents=additional_agents,
     )
