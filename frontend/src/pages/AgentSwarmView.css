@@ -1,0 +1,224 @@
+/* [SWARM] issue #81 */
+
+.swarm-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.swarm-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .swarm-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.swarm-list-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-soft);
+  max-height: 78vh;
+  overflow-y: auto;
+}
+
+.swarm-list-header {
+  padding: 14px 16px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--app-text-primary);
+  border-bottom: 1px solid var(--app-border);
+  position: sticky;
+  top: 0;
+  background: var(--app-surface);
+}
+
+.swarm-list-loading,
+.swarm-empty-note {
+  padding: 1.5rem;
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+}
+
+.swarm-list-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.swarm-list-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--app-border);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.swarm-list-item:hover {
+  background: var(--app-surface-hover);
+}
+
+.swarm-list-item.active {
+  background: var(--app-primary-soft);
+  border-left: 3px solid var(--app-primary);
+}
+
+.swarm-list-item-cause {
+  font-size: 0.82rem;
+  color: var(--app-text-primary);
+  line-height: 1.4;
+}
+
+.swarm-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.swarm-graph-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-soft);
+  padding: 20px;
+  overflow-x: auto;
+}
+
+.swarm-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-text-secondary);
+  margin-bottom: 12px;
+}
+
+.swarm-hint {
+  margin: 12px 0 0;
+  font-size: 0.78rem;
+  color: var(--app-text-muted);
+}
+
+.swarm-graph {
+  display: flex;
+  align-items: center;
+  min-width: max-content;
+}
+
+.swarm-graph-item {
+  display: flex;
+  align-items: center;
+}
+
+.swarm-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 110px;
+  padding: 12px 8px;
+  border-radius: var(--app-radius-md);
+  border: 2px solid var(--app-border);
+  background: var(--app-surface-blue);
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.3s ease, transform 0.3s ease, border-color 0.2s ease;
+}
+
+.swarm-node.pending {
+  opacity: 0.25;
+  cursor: default;
+  transform: scale(0.92);
+}
+
+.swarm-node.revealed {
+  opacity: 1;
+  transform: scale(1);
+  border-color: var(--app-success-text);
+}
+
+.swarm-node.failed.revealed {
+  border-color: var(--app-danger-text);
+}
+
+.swarm-node.active {
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 3px var(--app-primary-soft);
+}
+
+.swarm-node-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--app-primary-soft);
+  color: var(--app-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.swarm-node-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--app-text-primary);
+  text-align: center;
+}
+
+.swarm-node-duration {
+  font-size: 0.65rem;
+  color: var(--app-text-muted);
+}
+
+.swarm-edge {
+  width: 44px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.swarm-edge svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.swarm-edge-line {
+  stroke: var(--app-border);
+  stroke-width: 2;
+}
+
+.swarm-edge-pulse {
+  stroke: var(--app-primary);
+  stroke-width: 2;
+  stroke-dasharray: 6 10;
+  animation: swarm-flow 1s linear infinite;
+}
+
+@keyframes swarm-flow {
+  to { stroke-dashoffset: -16; }
+}
+
+.swarm-selected-card {
+  animation: swarm-fade-in 0.2s ease both;
+}
+
+.swarm-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@keyframes swarm-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import "./App.css";
 import Analytics from "./pages/Analytics";
+import AgentSwarmView from "./pages/AgentSwarmView";
 import BookingChat from "./pages/BookingChat";
 import CustomerChat from "./pages/CustomerChat";
 import InvestigationBoard from "./pages/InvestigationBoard";
@@ -39,6 +40,21 @@ const TABS = {
         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         <line x1="11" y1="8" x2="11" y2="12"></line>
         <line x1="11" y1="14.5" x2="11.01" y2="14.5"></line>
+      </svg>
+    )
+  },
+  swarm: {
+    label: "Agent Swarm",
+    description: "Multi-agent network view of a single investigation",
+    component: AgentSwarmView,
+    icon: (
+      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="6" cy="6" r="3"></circle>
+        <circle cx="18" cy="6" r="3"></circle>
+        <circle cx="12" cy="18" r="3"></circle>
+        <line x1="8.6" y1="7.6" x2="10.5" y2="16.2"></line>
+        <line x1="15.4" y1="7.6" x2="13.5" y2="16.2"></line>
+        <line x1="9" y1="6" x2="15" y2="6"></line>
       </svg>
     )
   },

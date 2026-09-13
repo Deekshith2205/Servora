@@ -1,0 +1,121 @@
+/* [EXPLAIN] issue #93 */
+
+.eap-why-link {
+  background: none;
+  border: none;
+  color: var(--app-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  font-family: inherit;
+  text-decoration: underline;
+}
+
+.eap-popover {
+  margin-top: 8px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-soft);
+  padding: 16px;
+  max-width: 420px;
+}
+
+.eap-full {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-soft);
+  padding: 20px;
+}
+
+.eap-full-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--app-text-primary);
+  margin-bottom: 14px;
+}
+
+.eap-loading,
+.eap-error {
+  font-size: 0.82rem;
+  color: var(--app-text-muted);
+}
+
+.eap-error {
+  color: var(--app-danger-text);
+}
+
+.eap-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.eap-confidence-section {
+  text-align: center;
+}
+
+.eap-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-text-muted);
+  margin-bottom: 8px;
+}
+
+.eap-rationale {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--app-text-primary);
+  line-height: 1.5;
+}
+
+.eap-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.eap-chip {
+  background: var(--app-surface-blue);
+  color: var(--app-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.eap-chip-agent {
+  background: var(--app-primary-soft);
+}
+
+.eap-alternatives-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+}
+
+.eap-alternatives-list li {
+  margin-bottom: 4px;
+  color: var(--app-text-secondary);
+}
+
+.eap-alt-action {
+  font-weight: 700;
+  color: var(--app-text-primary);
+  text-transform: capitalize;
+}
+
+.eap-evidence-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+  color: var(--app-text-secondary);
+}
+
+.eap-evidence-list li {
+  margin-bottom: 4px;
+}

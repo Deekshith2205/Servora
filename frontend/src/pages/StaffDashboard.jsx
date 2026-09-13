@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolvedHistory, resolveEscalation, assignEscalation, closeEscalation } from "../api/client";
 import BookingsPanel from "./BookingsPanel";
 import InvestigationTimeline from "../components/InvestigationTimeline";
+import ExplainableAIPanel from "../components/ExplainableAIPanel";
 
 // Helper to determine badge class
 function getBadgeClass(type, value) {
@@ -682,9 +683,17 @@ export default function StaffDashboard() {
                     )}
                   </div>
                   {detail.trace && detail.trace.length > 0 ? (
-                    <div className="drawer-section">
-                      <InvestigationTimeline trace={detail.trace} />
-                    </div>
+                    <>
+                      <div className="drawer-section">
+                        <InvestigationTimeline trace={detail.trace} />
+                      </div>
+                      {/* [EXPLAIN] issue #93/#99: full-mode panel, same
+                          component the Customer Chat's compact "Why?"
+                          link opens. */}
+                      <div className="drawer-section">
+                        <ExplainableAIPanel ticketId={selectedEscalation.id} mode="full" />
+                      </div>
+                    </>
                   ) : (
                     <div className="drawer-section" style={{background: 'transparent', border: '1px dashed var(--app-border)', textAlign: 'center'}}>
                       <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-muted)'}}>No reasoning trace on file for this escalation.</p>
