@@ -379,6 +379,38 @@ class EvidenceOut(BaseModel):
     policy_references: list[EvidenceRefOut] = []
 
 
+class OrderRecordOut(BaseModel):
+    """[EXPLAIN] issue #95: the inline preview an Evidence Explorer "order"
+    reference opens — just enough fields to explain the evidence, not a
+    full order-management view."""
+
+    id: int
+    customer_id: int
+    product: str
+    amount: float
+    status: str
+    payment_status: str
+    failure_reason: str | None = None
+    duplicate_of: int | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class TicketRecordOut(BaseModel):
+    """[EXPLAIN] issue #95: the inline preview a "ticket" evidence
+    reference opens."""
+
+    id: int
+    customer_id: int
+    category: str
+    subject: str
+    status: str
+    sentiment: str
+    urgency: int
+    created_at: str
+
+
 class ExplanationOut(BaseModel):
     """GET /api/investigations/{id}/explanation — [EXPLAIN] issue #92.
     The Explainable AI Panel's single source of data. `decision_rationale`

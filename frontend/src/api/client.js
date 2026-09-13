@@ -114,3 +114,20 @@ export function fetchAgentPerformanceMetrics() {
 export function fetchExplanation(investigationId) {
   return request(`/api/investigations/${investigationId}/explanation`);
 }
+
+// [EXPLAIN] issue #95 — Evidence Explorer inline-preview lookups.
+export function fetchOrderRecord(orderId) {
+  return request(`/api/records/orders/${orderId}`);
+}
+
+export function fetchCustomerRecord(customerId) {
+  return request(`/api/records/customers/${customerId}`);
+}
+
+export function fetchTicketRecord(ticketId) {
+  return request(`/api/records/tickets/${ticketId}`);
+}
+
+export function fetchKBArticle(articleId) {
+  return request(`/api/kb-articles/${articleId}`);
+}
