@@ -730,8 +730,70 @@ Scheduled to be fixed as part of #93 rather than patched in isolation.
 
 No code changed yet — issues only.
 
+### 2026-09-13 (continued) — All 10 [SWARM]/[EXPLAIN] P0 issues implemented, tested, and verified LIVE against a real Gemini call
+
+Two stacked PRs, backend first (frontend branched off it, not off `main`,
+since the frontend genuinely needs the new API fields to render anything
+real):
+
+- **PR #100** (`p0-swarm-explain-backend`) — closes #77, #80, #86, #89,
+  #90, #91, #92, #98. `InvestigationStep` gained `started_at`,
+  `reasoning_text`, `used_tools_json`, `alternatives_json`,
+  `evidence_refs_json` (all additive). Planner's `PlanDecision` gained
+  `alternatives_considered` from the same structured-output LLM call — no
+  second call. Specialists' `SpecialistResponse` gained structured
+  `evidence_refs`. `orchestrator.py`'s `_record()`/`_persist_investigation()`
+  thread all of this through at all 3 pipeline branches. New
+  `app/api/explanations.py` (`/explanation`, `/evidence`, `/confidence`),
+  and `GET /api/investigations/{id}` gained a `graph` field — both P1
+  issues (#80, #92) done alongside the P0s since the P0 frontend has
+  nothing real to render without them. **#78's explicit
+  `depends_on_step_numbers` column was deliberately NOT added** — the
+  pipeline never fans out yet, so edges are correctly derivable from step
+  order alone (documented in `GraphEdgeOut`'s docstring); revisit only if
+  #78's future fan-out scenario actually gets built. 8 new tests
+  (`tests/test_explainability.py`), full suite 212 passed.
+- **PR #101** (`p0-swarm-explain-frontend`, based on #100) — closes #81,
+  #82, #93, #94. New shared `agentMeta.jsx` (agent label/icon/confidence-
+  tier helpers) extracted from `InvestigationBoard.jsx`. **Fixed the
+  `InvestigationTimeline.jsx` bug flagged when #89-#99 were scoped**: it
+  matched agent icons/labels against the literal string `"specialist"`,
+  which never equals a real `agent_name` — every specialist step was
+  silently using the generic fallback. New `AgentDetailCard.jsx` (#82,
+  shared), `ConfidenceGauge.jsx` (#94), `ExplainableAIPanel.jsx` (#93,
+  compact popover in Customer Chat / full section in the Staff Dashboard
+  drawer), and a new "Agent Swarm" page/nav tab (#81) rendering the
+  backend's `graph` field as an animated node/edge diagram.
+
+**Verified LIVE end-to-end, not just via mocked tests** — this environment
+already had a working `GOOGLE_API_KEY`/`LLM_PROVIDER=gemini` in
+`backend/.env`. Ran both dev servers, sent "I was charged twice for my
+order" as the real demo customer through the actual browser: a genuine
+duplicate-payment refund was investigated and resolved, the Agent Swarm
+graph rendered the real 5-step topology with real per-agent timing, the
+Explainable AI Panel showed a real 90% confidence gauge with a real
+per-agent breakdown (Classifier 98%, Billing 90%) — and, importantly,
+**two real `alternatives_considered` entries** ("Clarify" and "Escalate,"
+each with a specific real rejection reason), confirming the nested
+Pydantic structured-output schema (#89's biggest open risk, never
+confirmed against a real provider before this) actually works. No
+console errors. `InvestigationBoard.jsx` re-verified live with zero
+regressions from the `agentMeta.jsx` extraction.
+
+**Important precision, not to overclaim**: this confirms the **Gemini**
+path end-to-end for the first time on this project. The long-standing
+Open Questions item below is specifically about the **Anthropic** key/
+model path (`claude-opus-5` via `anthropic==1.5.0`) — that one specific
+gap is still open; a nested-schema call like `alternatives_considered`
+hasn't been confirmed against Anthropic's `messages.parse` yet, only
+Gemini's `response_schema`.
+
 ## Next up (in priority order)
 
+0. **Review and merge PR #100 then PR #101** (the [SWARM]/[EXPLAIN] P0
+   batch — see the 2026-09-13 entry above). #101 is based on #100's
+   branch, not `main` — merge #100 first, or rebase #101 onto `main`
+   afterward.
 1. **Still the single highest-priority loose thread, now spanning the
    ENTIRE backlog.** Nobody has confirmed `call_llm()` against a real
    Anthropic API key. Real bugs have repeatedly been found without one —
@@ -757,6 +819,14 @@ No code changed yet — issues only.
    reasoning columns) first if both are being picked up, since [EXPLAIN]'s
    #90/#91 read the same rows and a merge conflict is easier to avoid than
    resolve.
+
+   **Update: all 10 P0 issues from both batches (#77, #80, #81, #82, #86,
+   #89, #90, #91, #92, #93, #94) are implemented — see PR #100 (backend,
+   merge first) and PR #101 (frontend, based on #100). Verified live
+   against a real Gemini call, not just mocked tests.** Remaining, not yet
+   picked up: #78 (deliberately deferred — see PR #100's description for
+   why it isn't needed yet), #79/#83/#84/#85/#95/#96/#97/#99 (P1/P2, the
+   rest of both batches), #88 (explicitly out of scope).
 3. Two small, well-scoped fixes identified previously, still not done:
    (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite
@@ -775,7 +845,14 @@ No code changed yet — issues only.
   key, by any session, across the entire backlog.** This has already
   caused several real, independently-discovered bugs (missing customer
   ID in #11; the TestClient lifespan gap in #14; the bare-`TypeError`
-  gap in #17). Top priority — see Next up #1.
+  gap in #17). Top priority — see Next up #1. **Update, still precise
+  about what this does and doesn't cover**: the 2026-09-13 [SWARM]/
+  [EXPLAIN] P0 session verified the **Gemini** path live end-to-end for
+  the first time on this project (including a nested structured-output
+  schema, `PlanDecision.alternatives_considered`) — that specific class of
+  risk is now retired for Gemini. The **Anthropic** key/model path
+  (`claude-opus-5`) specifically remains unconfirmed; the same nested-
+  schema question is open for `messages.parse` there too.
 - **CI is not a required check yet.** Someone with admin access on
   github.com/Deekshith2205/Servora needs to go to Settings → Branches →
   add a branch protection rule on `main` → require the CI status checks
