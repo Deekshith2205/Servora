@@ -224,6 +224,15 @@ class InvestigationStep(Base):
         explicitly per branch, so a future fan-out/fan-in change would
         only need to set different values here, not rewrite the graph
         builder's assumptions.
+
+    Issue [CRITIC] #108 adds:
+      - `critic_review_json`: nullable, a single `{agrees, confidence,
+        alternative_hypothesis, reasoning}` object (NOT a list, unlike
+        every other `*_json` column here) — only ever populated on the
+        Critic Agent's own step (`agent_name == "critic"`), same
+        one-agent-only convention `alternatives_json` already uses for
+        the planner. `None` everywhere else, never a fabricated empty
+        review.
     """
 
     __tablename__ = "investigation_steps"
@@ -242,6 +251,7 @@ class InvestigationStep(Base):
     used_tools_json: Mapped[str] = mapped_column(String, default="[]")
     alternatives_json: Mapped[str] = mapped_column(String, default="[]")
     depends_on_json: Mapped[str] = mapped_column(String, default="[]")
+    critic_review_json: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
 
@@ -266,6 +276,10 @@ class InvestigationStep(Base):
     @property
     def depends_on(self) -> list[int]:
         return json.loads(self.depends_on_json) if self.depends_on_json else []
+
+    @property
+    def critic_review(self) -> dict | None:
+        return json.loads(self.critic_review_json) if self.critic_review_json else None
 
 
 class Notification(Base):

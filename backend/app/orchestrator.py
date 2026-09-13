@@ -46,6 +46,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.agents.classifier import ClassificationResult, classify
+from app.agents.critic import CriticReview, critique
 from app.agents.escalation import HandoffPacket, build_handoff_packet
 from app.agents.memory import extract_facts, merge_profile
 from app.agents.planner import plan
@@ -100,7 +101,8 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
                 confidence: float | None = None, root_cause: str | None = None,
                 resolution: str | None = None, started_at: datetime | None = None,
                 used_tools: list[str] | None = None, alternatives: list | None = None,
-                evidence_refs: list[dict] | None = None, depends_on: list[int] | None = None) -> int:
+                evidence_refs: list[dict] | None = None, depends_on: list[int] | None = None,
+                critic_review: CriticReview | None = None) -> int:
         trace.append(TraceStep(agent, output, confidence=confidence, root_cause=root_cause, resolution=resolution))
         step_records.append({
             "agent_name": agent,
@@ -130,6 +132,13 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
             # that all depend on the SAME planner step (fan-out), and a
             # reconciliation step that depends on ALL of them (fan-in).
             "depends_on_override": depends_on,
+            # [CRITIC] issue #110: only the Critic Agent's own step ever
+            # passes this — a single {agrees, confidence,
+            # alternative_hypothesis, reasoning} object, not a list (see
+            # models.py's InvestigationStep docstring for why this one
+            # column is shaped differently from every other `*_json`
+            # field here). None everywhere else.
+            "critic_review": asdict(critic_review) if critic_review is not None else None,
         })
         step_number = len(step_records)
         # [SWARM] issue #79: real-time push, same shape a step_records
@@ -259,7 +268,7 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
             response = _reconcile_specialist_responses(responses)
             root_cause = response.root_cause
             resolution = response.resolution
-            _record(
+            reviewed_step_number = _record(
                 "reconciliation", response.reply,
                 action=f"Reconciled findings from {len(agents_to_run)} specialists ({', '.join(agents_to_run)})",
                 evidence=response.evidence,
@@ -276,7 +285,7 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
             # Extract root_cause safely if it was populated by the specialist
             root_cause = getattr(response, "root_cause", None)
             resolution = getattr(response, "resolution", None)
-            _record(
+            reviewed_step_number = _record(
                 f"{decision.target_agent}_specialist", response.reply,
                 action=root_cause or f"{decision.target_agent.title()} specialist investigated and responded",
                 evidence=getattr(response, "evidence", []),
@@ -288,6 +297,26 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
                 evidence_refs=getattr(response, "evidence_refs", []),
             )
 
+        # [CRITIC] issue #110: an independent second opinion on whichever
+        # step Verification is about to see — the single specialist's
+        # response, or (issue #88) the reconciled response of a parallel
+        # fan-out. Advisory only: does not change verification's decision
+        # below (see critic.py's module docstring for why that's an
+        # explicit non-goal, not an oversight).
+        t0, t0_wall = time.perf_counter(), datetime.utcnow()
+        critic_review = critique(response, message)
+        critic_action = (
+            "Critic agrees with the root cause and resolution" if critic_review.agrees
+            else "Critic disagrees — proposed an alternative hypothesis"
+        )
+        _record(
+            "critic", critic_review.reasoning, action=critic_action,
+            duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
+            confidence=critic_review.confidence,
+            depends_on=[reviewed_step_number],
+            critic_review=critic_review,
+        )
+
         t0, t0_wall = time.perf_counter(), datetime.utcnow()
         verification = verify(response)
         _record(
@@ -295,6 +324,14 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
             action="Verified the proposed resolution" if verification.approved else "Verification failed",
             status="completed" if verification.approved else "failed",
             duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
+            # [CRITIC] issue #110: without this override, the default
+            # "depends on the immediately preceding step" (issue #78)
+            # would now point at the newly-inserted critic step instead
+            # of the specialist/reconciliation step Verification actually
+            # reviews (verify() only ever takes `response`, never the
+            # critic's opinion) — this keeps that edge semantically
+            # correct now that a step sits between them.
+            depends_on=[reviewed_step_number],
         )
 
         if not verification.approved:
@@ -524,6 +561,12 @@ def _persist_investigation(
             evidence_refs_json=json.dumps(rec.get("evidence_refs", [])),
             used_tools_json=json.dumps(rec.get("used_tools", [])),
             alternatives_json=json.dumps(rec.get("alternatives", [])),
+            # [CRITIC] issue #108/#110: a single object or None — never
+            # `json.dumps(None)`'s literal "null" string confused with the
+            # "not recorded" case; `.get(...)` is None for every step
+            # this issue's critic wiring didn't touch (including every
+            # historical row from before this column existed).
+            critic_review_json=json.dumps(rec["critic_review"]) if rec.get("critic_review") is not None else None,
             # [SWARM] issue #78/#88: explicit dependency, not just an
             # assumption the graph API makes from step order. Defaults to
             # "the immediately preceding step" (correct for every

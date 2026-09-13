@@ -20,10 +20,14 @@ from sqlalchemy.orm import sessionmaker
 
 import app.orchestrator as orchestrator_module
 from app.agents.classifier import ClassificationResult
+from app.agents.critic import CriticReview
 from app.agents.escalation import HandoffPacket
 from app.agents.planner import PlanDecision
 from app.agents.specialists import SpecialistResponse
 from app.agents.verification import VerificationResult
+
+# [CRITIC] issue #110: mocked so resolve-path tests here stay network-free.
+_MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 from app.db.database import Base
 from app.db.models import Customer, Ticket
 from app.orchestrator import handle_message
@@ -99,6 +103,7 @@ def test_verification_failure_escalate_produces_a_populated_handoff_packet_with_
         "SPECIALISTS",
         {"technical": lambda db, customer_id, message: SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2)},
     )
+    monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=False, reasoning="too low"))
 
     captured = {}
@@ -109,7 +114,7 @@ def test_verification_failure_escalate_produces_a_populated_handoff_packet_with_
     assert result.status == "escalated"
     assert result.handoff_packet is not None
     assert captured["confidence"] == 0.2
-    assert len(captured["attempted_fixes"]) == 4  # classifier, planner, specialist, verification
+    assert len(captured["attempted_fixes"]) == 5  # classifier, planner, specialist, critic, verification
 
 
 def test_resolved_path_creates_a_real_ticket_and_has_no_handoff_packet(monkeypatch, db_session):
@@ -134,6 +139,7 @@ def test_resolved_path_creates_a_real_ticket_and_has_no_handoff_packet(monkeypat
             )
         },
     )
+    monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="ok"))
     monkeypatch.setattr(orchestrator_module, "extract_facts", lambda message, reply: [])
 
