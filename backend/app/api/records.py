@@ -8,6 +8,7 @@ same rows `mock_tools.py` already queries for the specialists.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.analytics import CHURN_HIGH_THRESHOLD, CHURN_MEDIUM_THRESHOLD
 from app.api.schemas import CustomerProfileOut, OrderRecordOut, TicketRecordOut
 from app.db.database import get_db
 from app.db.models import Customer, Order, Ticket
@@ -31,11 +32,37 @@ def get_order(order_id: int, db: Session = Depends(get_db)) -> Order:
 
 
 @router.get("/customers/{customer_id}", response_model=CustomerProfileOut)
-def get_customer(customer_id: int, db: Session = Depends(get_db)) -> Customer:
+def get_customer(customer_id: int, db: Session = Depends(get_db)) -> CustomerProfileOut:
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
-    return customer
+    return CustomerProfileOut(
+        id=customer.id,
+        name=customer.name,
+        email=customer.email,
+        phone=customer.phone,
+        tier=customer.tier,
+        previous_tickets_count=len(customer.tickets),
+        risk_level=_risk_level(customer),
+    )
+
+
+def _risk_level(customer: Customer) -> str | None:
+    """[Explainability #123]: reuses analytics.py's existing churn-risk
+    thresholds (a customer with several unresolved tickets is worth
+    flagging) rather than inventing a second set of numbers — applied
+    here to one customer's own ALL-TIME ticket history (a single-record
+    detail view has no natural "lookback window" the way the Analytics
+    tab's time-boxed churn signal does). `None` (not "low") when there's
+    nothing concerning to report — a customer with zero or one
+    unresolved ticket isn't meaningfully "low risk", they're simply
+    unflagged, the same distinction compute_churn_signals() already
+    draws by omitting them entirely rather than fabricating a floor
+    value."""
+    unresolved = sum(1 for t in customer.tickets if t.status in ("open", "escalated"))
+    if unresolved < CHURN_MEDIUM_THRESHOLD:
+        return None
+    return "high" if unresolved >= CHURN_HIGH_THRESHOLD else "medium"
 
 
 @router.get("/tickets/{ticket_id}", response_model=TicketRecordOut)

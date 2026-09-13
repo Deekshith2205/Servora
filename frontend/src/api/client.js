@@ -162,3 +162,10 @@ export function fetchTicketRecord(ticketId) {
 export function fetchKBArticle(articleId) {
   return request(`/api/kb-articles/${articleId}`);
 }
+
+// [Explainability #123] — the drill-down drawer's data source.
+// `evidenceId` is "{step_number}:{index}" (see EvidenceDetailOut's
+// backend docstring for why).
+export function fetchEvidenceDetail(investigationId, evidenceId) {
+  return request(`/api/investigations/${investigationId}/evidence/${evidenceId}`);
+}

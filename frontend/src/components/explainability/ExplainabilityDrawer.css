@@ -1,0 +1,402 @@
+/* [Explainability #119/#125]: the drill-down drawer.
+   Mirrors the existing .app-drawer pattern (App.css — the Staff
+   Dashboard's Escalation Drawer) for visual consistency (same shadow
+   token, same slide-in curve, same sticky-header convention) but with
+   this feature's own required widths (480/420/full — the spec is more
+   specific than .app-drawer's fixed 450px) and its own six-section
+   content layout, so it gets dedicated classes instead of overloading
+   the shared ones. */
+
+.expl-overlay {
+  /* [Explainability #125]: `position: fixed` (not the existing
+     .app-drawer-overlay's `absolute`) — a real bug found via live
+     verification: .app-main (the nearest positioned ancestor, see
+     App.css) is itself the scrolling element, so an `absolute` overlay
+     anchors to its scrolled CONTENT offset, not the viewport — opening
+     this drawer while scrolled down rendered it far off-screen above.
+     `fixed` anchors to the viewport regardless of scroll position,
+     which also means covering the full window (sidebar included) is
+     the simplest correct behavior, rather than replicating
+     .app-drawer's leave-the-sidebar-usable nuance and its same
+     underlying scroll bug. */
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.25);
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.expl-drawer {
+  width: 480px;
+  max-width: 100%;
+  background: var(--app-surface);
+  height: 100%;
+  box-shadow: var(--app-shadow-drawer);
+  display: flex;
+  flex-direction: column;
+  animation: expl-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes expl-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@media (max-width: 1024px) {
+  .expl-drawer {
+    width: 420px;
+  }
+}
+
+@media (max-width: 640px) {
+  .expl-drawer {
+    width: 100%;
+  }
+}
+
+.expl-drawer-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--app-border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  background: var(--app-surface);
+  z-index: 2;
+}
+
+.expl-drawer-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--app-primary);
+  margin-bottom: 4px;
+}
+
+.expl-drawer-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--app-text-primary);
+  line-height: 1.3;
+}
+
+.expl-drawer-close {
+  background: transparent;
+  border: none;
+  color: var(--app-text-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--app-radius-sm);
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.expl-drawer-close:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text-primary);
+}
+
+.expl-drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.expl-section {
+  animation: expl-fade-in 0.25s ease both;
+}
+
+@keyframes expl-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.expl-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--app-text-secondary);
+  margin-bottom: 10px;
+}
+
+.expl-loading, .expl-error, .expl-empty-note {
+  font-size: 0.82rem;
+  color: var(--app-text-muted);
+  padding: 4px 0;
+}
+.expl-error {
+  color: var(--app-danger-text);
+}
+
+/* ---- Timeline strip (evidence-item navigator) ---- */
+
+.expl-timeline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--app-border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.expl-timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--app-border);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.expl-timeline-dot:hover {
+  background: var(--app-text-muted);
+}
+
+.expl-timeline-dot-active {
+  background: var(--app-primary);
+  transform: scale(1.4);
+}
+
+/* ---- Section 1: Evidence Summary ---- */
+
+.expl-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.expl-summary-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--app-primary-soft);
+  color: var(--app-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.expl-summary-agent {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--app-text-primary);
+}
+
+.expl-summary-type {
+  font-size: 0.72rem;
+  color: var(--app-text-muted);
+}
+
+.expl-summary-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--app-text-secondary);
+  flex-wrap: wrap;
+}
+
+.expl-summary-inv-id {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Section 2: Source Record ---- */
+
+.expl-record-card {
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  padding: 14px;
+}
+
+.expl-record-card-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-primary);
+  margin-bottom: 10px;
+}
+
+.expl-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+
+.expl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.expl-field-full {
+  grid-column: 1 / -1;
+}
+
+.expl-field-label {
+  font-size: 0.68rem;
+  color: var(--app-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.expl-field-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--app-text-primary);
+  overflow-wrap: break-word;
+}
+
+.expl-risk-badge {
+  display: inline-block;
+  width: fit-content;
+  padding: 1px 8px;
+  border-radius: 999px;
+  text-transform: capitalize;
+  font-size: 0.72rem;
+}
+.expl-risk-medium { background: var(--app-warning-bg); color: var(--app-warning-text); }
+.expl-risk-high { background: var(--app-danger-bg); color: var(--app-danger-text); }
+
+.expl-kb-excerpt {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--app-text-secondary);
+  line-height: 1.5;
+}
+
+/* ---- Section 3: Tool Execution ---- */
+
+.expl-tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.expl-tool-row {
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.expl-tool-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--app-text-primary);
+  font-family: var(--s-font-mono, monospace);
+}
+
+.expl-tool-name svg {
+  color: var(--app-primary);
+  flex-shrink: 0;
+}
+
+.expl-tool-stats {
+  display: flex;
+  gap: 14px;
+  font-size: 0.75rem;
+  color: var(--app-text-secondary);
+}
+
+.expl-tool-stats strong {
+  color: var(--app-text-primary);
+}
+
+/* ---- Section 4: Agent Reasoning ---- */
+
+.expl-reasoning-text {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--app-text-primary);
+  background: var(--app-surface-blue);
+  border-radius: var(--app-radius-md);
+  padding: 14px;
+}
+
+/* ---- Section 5: Confidence Breakdown ---- */
+
+.expl-bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.expl-bar-row-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  margin-bottom: 5px;
+}
+
+.expl-bar-label {
+  color: var(--app-text-secondary);
+  font-weight: 600;
+}
+
+.expl-bar-value {
+  color: var(--app-text-primary);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.expl-bar-track {
+  height: 7px;
+  background: var(--app-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.expl-bar-fill {
+  height: 100%;
+  background: var(--app-accent-gradient, linear-gradient(90deg, var(--app-primary), var(--app-accent)));
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- Section 6: Investigation Impact ---- */
+
+.expl-impact-section {
+  border-left: 4px solid var(--app-primary);
+  background: var(--app-primary-soft);
+  border-radius: var(--app-radius-md);
+  padding: 14px 16px;
+}
+
+.expl-impact-section .expl-section-title {
+  color: var(--app-primary);
+}
+
+.expl-impact-text {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--app-text-primary);
+  font-weight: 500;
+}

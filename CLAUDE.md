@@ -1158,6 +1158,67 @@ correctly) both render correctly; node click still opens
 `AgentDetailCard`; mobile width (375px) reflows correctly after the
 CSS fix.
 
+### 2026-09-13 (continued) — [Explainability] Drill-Down Panel: the
+Investigation Board's evidence goes from plain text to a real drawer
+
+10 new issues opened (#118-#127, epic #117) then fully implemented —
+see PR #128: https://github.com/Deekshith2205/Servora/pull/128 (base
+`main`, CI green, not yet merged). Click any evidence item on the
+Investigation Board -> a right-side drawer opens with 6 sections
+(summary, source record, tool execution, agent reasoning, confidence
+breakdown, investigation impact).
+
+Turned out to be mostly wiring, not new capability: [EXPLAIN] #91/#95
+already added structured `evidence_refs` (`{type, ref_id, label}`) and
+a record-lookup API (`/api/records/...`), but only
+`ExplainableAIPanel.jsx`'s Evidence Explorer ever used them — the
+Investigation Board still rendered the old plain-text `evidence`
+prose list. This PR extends that existing machinery rather than
+building a second evidence pipeline.
+
+New backend endpoint `GET /api/investigations/{id}/evidence/{evidenceId}`
+(`explanations.py`, same "derived, not stored, no new LLM call"
+family as `/explanation`) — `evidenceId` is `"{step_number}:{index}"`,
+addressing one `evidence_refs` entry without any schema change.
+Deliberately does NOT re-embed the source record itself (that's what
+`/api/records/...`/`/api/kb-articles/{id}` are for) — the frontend
+reuses those exact fetchers. Returns a deterministic 3-part confidence
+breakdown (evidence quality / data freshness / source reliability,
+each formula documented inline) and a step-level-attributed,
+deduplicated tool list (a step can legitimately call `search_kb` 2-3
+times with different queries — listing it 2-3 times with identical
+stats was pure noise and would have collided as a React key).
+`CustomerProfileOut` gained 2 additive fields
+(`previous_tickets_count`, `risk_level`) reusing `analytics.py`'s
+existing churn thresholds rather than new magic numbers.
+
+**Honesty over fabrication, again**: no "Account Status" field
+anywhere (not a real concept in this schema — `tier` is the closest
+real analog); the Order Record card shows only real fields, not the
+original spec mockup's invented Carrier/Last Location/Last Updated.
+
+**A real bug found via live verification**: the new drawer's overlay
+initially copied the existing `.app-drawer-overlay` pattern
+(`position: absolute`) — but since `.app-main` (its positioned
+ancestor) is itself the scrolling element, that anchors the overlay to
+the scrolled CONTENT offset, not the viewport. Opening the drawer
+while scrolled down rendered it far off-screen above (confirmed via
+`getBoundingClientRect()`: `top: -1267px`). Fixed with
+`position: fixed`. **Worth flagging**: the pre-existing
+`.app-drawer-overlay` (Staff Dashboard's Escalation Drawer) likely has
+this exact same bug and hasn't been checked — not fixed here since
+it's out of this PR's scope, but a real, findable issue for later.
+
+Verified live against the real #88 fan-out investigation's 30+
+`evidence_refs`: real source records (including the new
+`previous_tickets_count=7`/`risk_level=high` on the seeded VIP
+customer), deduplicated tools, real reasoning/confidence-breakdown/
+impact text, working timeline-strip navigation between evidence items,
+Escape/backdrop close, and the exact spec'd drawer widths confirmed at
+each breakpoint (480px desktop / 420px tablet / full-screen mobile,
+each measured directly via `getBoundingClientRect()`, not just eyeballed).
+Backend: 240 passed, 1 skipped, +12 new tests. `npm run lint`/`build`: clean.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the

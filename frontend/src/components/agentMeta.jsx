@@ -30,6 +30,29 @@ export function agentLabel(agentName) {
   return agentName.charAt(0).toUpperCase() + agentName.slice(1);
 }
 
+// [SWARM] "Agent Collaboration Graph": "agent type" distinct from
+// "agent name" (agentLabel() above, e.g. "Billing Agent") — a short
+// category word ("Specialist", "Classifier", ...) rather than a full
+// display name. Originally lived in utils/investigationToFlow.js;
+// moved here (the canonical agent-metadata module, per this file's own
+// header comment) so [Explainability]'s drawer can reuse it too without
+// importing from a graph-specific util.
+const AGENT_TYPE_LABELS = {
+  classifier: "Classifier",
+  planner: "Planner",
+  verification: "Verification",
+  escalation: "Escalation",
+  memory: "Memory",
+  critic: "Critic",
+  reconciliation: "Reconciliation",
+};
+
+export function agentType(agentName) {
+  if (!agentName) return "Agent";
+  if (agentName.endsWith("_specialist")) return "Specialist";
+  return AGENT_TYPE_LABELS[agentName] || "Agent";
+}
+
 export function AgentIcon({ agentName }) {
   const common = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" };
   if (agentName === "classifier") {

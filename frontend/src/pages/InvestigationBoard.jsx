@@ -5,6 +5,9 @@ import {
   fetchInvestigations,
 } from "../api/client";
 import { AgentIcon, ConfidenceBadge, agentLabel } from "../components/agentMeta";
+import EvidenceCard from "../components/explainability/EvidenceCard.jsx";
+import ExplainabilityDrawer from "../components/explainability/ExplainabilityDrawer.jsx";
+import { dedupeEvidence, flattenEvidence, unstructuredEvidence } from "../utils/investigationEvidence.js";
 import "./InvestigationBoard.css";
 
 // [FEATURE] AI Investigation Board & Autonomous Reasoning Timeline.
@@ -132,10 +135,17 @@ function InvestigationChecklistTimeline({ steps, revealedCount }) {
 }
 
 // -------------------------------------------------------------------------
-// D. Evidence Panel
+// D. Evidence Panel — [Explainability #118/#124]: clickable evidence
+// cards (built from structured `evidence_refs`, one card per real
+// order/customer/ticket/KB-article the investigation actually looked at)
+// instead of the old plain-text prose list. Clicking a card opens the
+// Explainability Drawer for exactly that evidence item.
 // -------------------------------------------------------------------------
-function EvidencePanel({ evidence }) {
-  if (evidence.length === 0) {
+function EvidencePanel({ timeline, activeEvidenceId, onSelectEvidence }) {
+  const structured = useMemo(() => dedupeEvidence(flattenEvidence(timeline)), [timeline]);
+  const prose = useMemo(() => unstructuredEvidence(timeline), [timeline]);
+
+  if (structured.length === 0 && prose.length === 0) {
     return (
       <div className="ib-section">
         <div className="ib-section-title">Evidence</div>
@@ -147,16 +157,23 @@ function EvidencePanel({ evidence }) {
     <div className="ib-section">
       <div className="ib-section-title">Evidence Collected</div>
       <div className="ib-evidence-grid">
-        {evidence.map((e, i) => (
-          <div key={i} className="ib-evidence-card">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-            </svg>
-            <span>{e}</span>
-          </div>
+        {structured.map((item) => (
+          <EvidenceCard
+            key={item.evidenceId}
+            item={item}
+            active={item.evidenceId === activeEvidenceId}
+            onClick={onSelectEvidence}
+          />
+        ))}
+        {/* A step can record a prose evidence sentence with no matching
+            structured ref (see unstructuredEvidence()'s docstring) —
+            shown as a plain, honestly non-clickable card rather than
+            silently dropped. */}
+        {prose.map((item) => (
+          <EvidenceCard key={item.key} item={{ evidenceId: item.key, ref: { type: null, label: item.text }, agentName: item.agentName, confidence: null, usedTools: [] }} />
         ))}
       </div>
+      <p className="ib-hint">Click any evidence item above to see exactly how it was gathered and how it affected the investigation.</p>
     </div>
   );
 }
@@ -302,6 +319,11 @@ export default function InvestigationBoard() {
 
   const [metrics, setMetrics] = useState(null);
 
+  // [Explainability #119/#124]: which evidence item (if any) the drawer
+  // currently shows — "{step_number}:{index}", or null when closed.
+  const [activeEvidenceId, setActiveEvidenceId] = useState(null);
+  const allEvidence = useMemo(() => dedupeEvidence(flattenEvidence(detail?.timeline)), [detail]);
+
   const loadList = () => {
     setListLoading(true);
     setListError(null);
@@ -326,6 +348,7 @@ export default function InvestigationBoard() {
     setDetailError(null);
     setDetail(null);
     setRevealedCount(0);
+    setActiveEvidenceId(null); // [Explainability #124]: don't leave the drawer open on a now-stale investigation
     fetchInvestigation(selectedId)
       .then(setDetail)
       .catch((err) => setDetailError(err.message || "Failed to load investigation"))
@@ -445,7 +468,11 @@ export default function InvestigationBoard() {
               <InvestigationChecklistTimeline steps={detail.timeline} revealedCount={revealedCount} />
               {isFullyRevealed && (
                 <>
-                  <EvidencePanel evidence={detail.evidence} />
+                  <EvidencePanel
+                    timeline={detail.timeline}
+                    activeEvidenceId={activeEvidenceId}
+                    onSelectEvidence={setActiveEvidenceId}
+                  />
                   <RootCauseCard rootCause={detail.root_cause} confidence={detail.confidence} />
                   <ResolutionCard resolution={detail.resolution} confidence={detail.confidence} status={detail.status} />
                   <CriticReviewCard steps={detail.timeline} />
@@ -458,6 +485,17 @@ export default function InvestigationBoard() {
       </div>
 
       <AgentPerformancePanel metrics={metrics} />
+
+      {/* [Explainability #119/#124] */}
+      {activeEvidenceId && detail && (
+        <ExplainabilityDrawer
+          investigationId={detail.id}
+          evidenceId={activeEvidenceId}
+          allEvidence={allEvidence}
+          onClose={() => setActiveEvidenceId(null)}
+          onSelectEvidence={setActiveEvidenceId}
+        />
+      )}
     </div>
   );
 }

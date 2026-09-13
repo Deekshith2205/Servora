@@ -57,6 +57,50 @@ def test_get_customer_returns_the_real_row():
     assert resp.json()["tier"] == "vip"
 
 
+def test_get_customer_reports_zero_previous_tickets_and_no_risk_level_when_clean():
+    """[Explainability #123]: `risk_level` is None (not a fabricated
+    "low") for a customer with no concerning ticket history — matches
+    analytics.py's compute_churn_signals(), which omits such customers
+    entirely rather than reporting a floor value."""
+    db = SessionLocal()
+    customer = _seed_customer(db)
+
+    with TestClient(app) as client:
+        resp = client.get(f"/api/records/customers/{customer.id}")
+
+    body = resp.json()
+    assert body["previous_tickets_count"] == 0
+    assert body["risk_level"] is None
+
+
+def test_get_customer_reports_previous_tickets_count_and_risk_level():
+    db = SessionLocal()
+    customer = _seed_customer(db)
+    # Same deliberately-out-of-range id pattern as test_get_ticket_returns_the_real_row
+    # below, for the same shared-test-DB ROWID-collision reason.
+    for i, status in enumerate(["escalated", "open", "resolved"]):
+        db.add(Ticket(
+            id=900100 + i, customer_id=customer.id, category="billing", subject=f"t{i}",
+            message="m", sentiment="neutral", urgency=5, status=status,
+        ))
+    db.commit()
+
+    with TestClient(app) as client:
+        resp = client.get(f"/api/records/customers/{customer.id}")
+
+    body = resp.json()
+    assert body["previous_tickets_count"] == 3  # all 3, regardless of status
+    # 2 unresolved (escalated + open) meets CHURN_MEDIUM_THRESHOLD (2) but
+    # not CHURN_HIGH_THRESHOLD (4) -> "medium".
+    assert body["risk_level"] == "medium"
+
+
+def test_get_customer_404_for_unknown_id():
+    with TestClient(app) as client:
+        resp = client.get("/api/records/customers/999999")
+    assert resp.status_code == 404
+
+
 def test_get_ticket_returns_the_real_row():
     db = SessionLocal()
     customer = _seed_customer(db)

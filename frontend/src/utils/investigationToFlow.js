@@ -12,28 +12,15 @@
 // in. No backend change, no new fields: every value read here already
 // exists on GraphNodeOut/GraphEdgeOut/InvestigationStepOut.
 import { MarkerType } from "@xyflow/react";
+// [Explainability]: agentType() moved to the canonical agentMeta.jsx so
+// the new drill-down drawer can reuse it too — re-exported here so
+// nothing importing `agentType` from this module needs to change.
+import { agentType } from "../components/agentMeta.jsx";
 
 const COLUMN_WIDTH = 260;
 const ROW_HEIGHT = 150;
 
-const AGENT_TYPE_LABELS = {
-  classifier: "Classifier",
-  planner: "Planner",
-  verification: "Verification",
-  escalation: "Escalation",
-  memory: "Memory",
-  critic: "Critic",
-  reconciliation: "Reconciliation",
-};
-
-// "Agent type" distinct from "agent name" (agentMeta.jsx's agentLabel(),
-// e.g. "Billing Agent") — e.g. type "Specialist" for any *_specialist,
-// otherwise a small fixed vocabulary, "Agent" as a last-resort fallback
-// for any future agent_name this hasn't been updated for (never throws).
-export function agentType(agentName) {
-  if (agentName.endsWith("_specialist")) return "Specialist";
-  return AGENT_TYPE_LABELS[agentName] || "Agent";
-}
+export { agentType };
 
 // Same fan-out/fan-in depth algorithm AgentSwarmView.jsx's computeLayers()
 // already used — step_number order is causal (backend always returns

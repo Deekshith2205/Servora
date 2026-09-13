@@ -413,3 +413,131 @@ def test_explanation_404_for_unknown_investigation():
     with TestClient(app) as client:
         resp = client.get("/api/investigations/999999/explanation")
     assert resp.status_code == 404
+
+
+# --------------------------------------------------------------------- #
+# [Explainability #123/#126]: GET /{id}/evidence/{evidenceId} — the
+# Explainability Drawer's data source.
+# --------------------------------------------------------------------- #
+
+
+def test_evidence_detail_for_a_real_order_ref():
+    """billing_specialist is step 3 (classifier=1, planner=2), and its
+    first evidence_refs entry ("3:0") is the real order it looked up —
+    see _resolve_via_chat above."""
+    db = SessionLocal()
+    customer = _seed_api_customer(db)
+    with TestClient(app) as client:
+        chat_resp = _resolve_via_chat(client, customer.id)
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:0")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["investigation_id"] == investigation_id
+    assert body["evidence_id"] == "3:0"
+    assert body["step_number"] == 3
+    assert body["title"] == "Order #5"
+    assert body["agent_name"] == "billing_specialist"
+    assert body["confidence"] == 0.9
+    assert body["evidence_ref"] == {"type": "order", "ref_id": 5, "label": "Order #5"}
+
+    # Real reasoning_text was recorded for this step (planner-level
+    # reasoning is separate) — not the deterministic fallback.
+    assert body["reasoning"]
+
+    # Both tools the step actually called are listed, each attributed the
+    # SAME step-level duration/records-returned (documented approximation
+    # — see ToolExecutionOut's docstring).
+    tool_names = {t["tool_name"] for t in body["tools"]}
+    assert tool_names == {"get_customer_orders", "issue_refund"}
+    durations = {t["duration_ms"] for t in body["tools"]}
+    assert len(durations) == 1  # identical across tools, by design
+
+    # Confidence breakdown: three real sub-scores, each in [0, 1].
+    breakdown = body["confidence_breakdown"]
+    for key in ("evidence_quality", "data_freshness", "source_reliability"):
+        assert 0.0 <= breakdown[key] <= 1.0
+    # An "order" ref's source_reliability is higher than a "kb_article"
+    # ref's — checked against the second evidence item below.
+
+    assert "Duplicate transaction detected." in body["impact"]
+
+
+def test_evidence_detail_for_a_kb_article_ref_has_lower_source_reliability_than_the_order_ref():
+    db = SessionLocal()
+    customer = _seed_api_customer(db)
+    with TestClient(app) as client:
+        chat_resp = _resolve_via_chat(client, customer.id)
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
+        order_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:0").json()
+        kb_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:1").json()
+
+    assert kb_evidence["title"] == "Billing Policy"
+    assert kb_evidence["evidence_ref"]["type"] == "kb_article"
+    assert (
+        kb_evidence["confidence_breakdown"]["source_reliability"]
+        < order_evidence["confidence_breakdown"]["source_reliability"]
+    )
+
+
+def test_evidence_detail_malformed_id_is_a_400_not_a_500():
+    db = SessionLocal()
+    customer = _seed_api_customer(db)
+    with TestClient(app) as client:
+        chat_resp = _resolve_via_chat(client, customer.id)
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/not-a-valid-id")
+    assert resp.status_code == 400
+
+
+def test_evidence_detail_out_of_range_index_is_404():
+    db = SessionLocal()
+    customer = _seed_api_customer(db)
+    with TestClient(app) as client:
+        chat_resp = _resolve_via_chat(client, customer.id)
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
+        # Step 3 only has 2 evidence_refs (indices 0-1).
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:99")
+    assert resp.status_code == 404
+
+
+def test_evidence_detail_unknown_step_is_404():
+    db = SessionLocal()
+    customer = _seed_api_customer(db)
+    with TestClient(app) as client:
+        chat_resp = _resolve_via_chat(client, customer.id)
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/999:0")
+    assert resp.status_code == 404
+
+
+def test_evidence_detail_404_for_unknown_investigation():
+    with TestClient(app) as client:
+        resp = client.get("/api/investigations/999999/evidence/1:0")
+    assert resp.status_code == 404
+
+
+def test_evidence_detail_on_escalation_reports_escalation_impact():
+    """[EXPLAIN #98]-style branch check: the direct-escalate path never
+    runs a specialist, so its evidence (if any) comes from the escalation
+    step itself — impact text must say "escalate", never fabricate a
+    root-cause-style sentence that branch never produced."""
+    db = SessionLocal()
+    customer = _seed_api_customer(db)
+    with TestClient(app) as client:
+        chat_resp = _escalate_via_chat(client, customer.id)
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
+        detail = client.get(f"/api/investigations/{investigation_id}")
+        # Find any step on this investigation that actually has an
+        # evidence ref to drill into — the escalation step itself may or
+        # may not, so search rather than assume step_number.
+        step_with_ref = next(
+            (s for s in detail.json()["timeline"] if s["evidence_refs"]), None
+        )
+        if step_with_ref is None:
+            pytest.skip("this escalation path recorded no structured evidence refs to drill into")
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/{step_with_ref['step_number']}:0")
+
+    assert resp.status_code == 200
+    assert "escalate" in resp.json()["impact"].lower()

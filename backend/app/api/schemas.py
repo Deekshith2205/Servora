@@ -68,6 +68,24 @@ class CustomerProfileOut(BaseModel):
     email: str
     phone: str
     tier: str
+    # [Explainability #123]: additive — every existing caller of
+    # GET /api/records/customers/{id} (EvidenceExplorer.jsx included)
+    # keeps working unchanged; the new drill-down drawer's
+    # SourceRecordViewer is just the first caller to actually render
+    # these. `previous_tickets_count` is a real count of this customer's
+    # own ticket history. `risk_level` reuses analytics.py's existing
+    # churn-risk thresholds (CHURN_MEDIUM_THRESHOLD/CHURN_HIGH_THRESHOLD)
+    # rather than inventing a second set of numbers — see
+    # app/api/records.py::get_customer() for the computation. Neither is
+    # a stored column; both are computed at read time from the same
+    # Ticket rows /api/analytics already aggregates. There is no
+    # "Account Status" concept anywhere in this schema — deliberately not
+    # fabricated here just to match an example UI mockup.
+    previous_tickets_count: int = 0
+    # None when there's nothing concerning to flag (not a fabricated
+    # "low") — only "medium"/"high" are ever set. See
+    # app/api/records.py::_risk_level() for the exact thresholds.
+    risk_level: str | None = None
 
 
 class CustomerHistoryTicketOut(BaseModel):
@@ -452,3 +470,56 @@ class ExplanationOut(BaseModel):
     alternatives_considered: list[AlternativeOut] = []
     agents_consulted: list[InvestigationAgentSummaryOut] = []
     decision_rationale: str
+
+
+class ToolExecutionOut(BaseModel):
+    """[Explainability #121/#123]: one tool that ran as part of the step an
+    evidence item came from. `duration_ms`/`records_returned` are
+    STEP-level values attributed to each tool the step used — this system
+    records timing and evidence-ref counts per InvestigationStep, not per
+    individual tool call within a step (no such column exists), so a step
+    that called two tools shows the same duration/count on both rather
+    than a fabricated per-tool split. Documented approximation, same
+    spirit as verification.py's own documented one."""
+
+    tool_name: str
+    duration_ms: int
+    records_returned: int
+
+
+class EvidenceConfidenceBreakdownOut(BaseModel):
+    """[Explainability #122/#123]: three sub-scores explaining *why* one
+    evidence item carries the confidence it does — deterministic, derived
+    from real existing signals, no new LLM call. See
+    app/api/explanations.py::_evidence_confidence_breakdown() for the
+    exact formulas and the reasoning behind each one."""
+
+    evidence_quality: float
+    data_freshness: float
+    source_reliability: float
+
+
+class EvidenceDetailOut(BaseModel):
+    """GET /api/investigations/{id}/evidence/{evidenceId} —
+    [Explainability #123]. `evidenceId` addresses one entry of a step's
+    `evidence_refs` list as "{step_number}:{index}" — evidence refs
+    aren't individually-addressable DB rows today, so this composite key
+    avoids a schema change entirely. Deliberately does NOT re-embed the
+    full source record (order/customer/ticket/kb_article) — that's
+    already served by /api/records/... and /api/kb-articles/{id}; the
+    frontend fetches it separately via those same existing endpoints
+    (see EvidenceExplorer.jsx), keeping this response focused on what
+    only THIS endpoint can provide."""
+
+    investigation_id: int
+    evidence_id: str
+    step_number: int
+    title: str
+    agent_name: str
+    timestamp: str
+    confidence: float | None = None
+    evidence_ref: EvidenceRefOut
+    reasoning: str
+    tools: list[ToolExecutionOut] = []
+    confidence_breakdown: EvidenceConfidenceBreakdownOut
+    impact: str
