@@ -1,0 +1,257 @@
+/* [SWARM] "Agent Collaboration Graph": styling for the React Flow
+   wrapper + custom AgentNode. Reuses the app's existing --app-* design
+   tokens (see App.css) so this fits the same enterprise-dashboard look
+   as the rest of AgentSwarmView.css, rather than introducing a new
+   palette. */
+
+.agent-collaboration-graph {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  border-radius: var(--app-radius-md);
+  overflow: hidden;
+  background: var(--app-surface);
+}
+
+.agent-collaboration-graph .react-flow__attribution {
+  display: none;
+}
+
+.agent-collaboration-graph .react-flow__edge-path {
+  stroke: var(--app-primary);
+  stroke-width: 1.75;
+}
+
+.agent-collaboration-graph .react-flow__edge-text {
+  fill: var(--app-text-secondary);
+  font-size: 11px;
+}
+
+.agent-collaboration-graph .react-flow__edge-textbg {
+  fill: var(--app-surface);
+}
+
+.agent-collaboration-graph .react-flow__controls {
+  box-shadow: var(--app-shadow-soft);
+  border-radius: var(--app-radius-sm);
+  overflow: hidden;
+}
+
+.agent-collaboration-graph .react-flow__controls-button {
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
+}
+
+.agent-graph-minimap {
+  border-radius: var(--app-radius-sm);
+  box-shadow: var(--app-shadow-soft);
+}
+
+/* Loading / empty states — same visual language as the rest of
+   AgentSwarmView (centered, muted copy). */
+.agent-graph-state {
+  width: 100%;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--app-text-muted);
+  background: var(--app-surface);
+  border-radius: var(--app-radius-md);
+  text-align: center;
+  padding: 32px;
+}
+
+.agent-graph-empty p {
+  margin: 0;
+}
+
+.agent-graph-empty-hint {
+  font-size: 13px;
+  color: var(--app-text-muted);
+  max-width: 320px;
+}
+
+.agent-graph-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid var(--app-border);
+  border-top-color: var(--app-primary);
+  animation: agent-graph-spin 0.8s linear infinite;
+}
+
+@keyframes agent-graph-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Custom Agent Node */
+.agent-node {
+  min-width: 200px;
+  border-radius: var(--app-radius-md);
+  border: 1.5px solid var(--app-border);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+  padding: 12px 14px;
+  font-family: inherit;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.agent-node-active {
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 3px var(--app-primary-soft), var(--app-shadow-card);
+  transform: translateY(-1px);
+}
+
+.agent-node-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--app-primary);
+}
+
+.agent-node-titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-node-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-node-type {
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+
+.agent-node-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.agent-node-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agent-node-dot-idle {
+  background: var(--app-neutral-text);
+  opacity: 0.4;
+}
+
+.agent-node-dot-running {
+  background: var(--app-info-text);
+  animation: agent-node-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-node-dot-completed {
+  background: var(--app-success-text);
+}
+
+.agent-node-dot-escalated {
+  background: var(--app-warning-text);
+}
+
+.agent-node-dot-failed {
+  background: var(--app-danger-text);
+}
+
+@keyframes agent-node-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0); }
+}
+
+.agent-node-status-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--app-text-secondary);
+}
+
+.agent-node-status-escalated .agent-node-status-label {
+  color: var(--app-warning-text);
+}
+
+.agent-node-status-failed .agent-node-status-label {
+  color: var(--app-danger-text);
+}
+
+.agent-node-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-node-duration {
+  font-size: 11px;
+  color: var(--app-text-muted);
+  font-family: var(--s-font-mono, monospace);
+}
+
+.agent-node-evidence {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--app-info-text);
+  background: var(--app-info-bg);
+  border-radius: var(--app-radius-sm);
+  padding: 2px 6px;
+  display: inline-block;
+}
+
+.agent-node-pending {
+  min-width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  box-shadow: none;
+  background: transparent;
+}
+
+.agent-node-pending-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.agent-node-pending-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--app-text-muted);
+  animation: agent-node-pending-bounce 1s ease-in-out infinite;
+}
+
+.agent-node-pending-dots span:nth-child(2) { animation-delay: 0.15s; }
+.agent-node-pending-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes agent-node-pending-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-3px); opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  .agent-collaboration-graph,
+  .agent-graph-state {
+    min-height: 320px;
+  }
+
+  .agent-node {
+    min-width: 160px;
+    padding: 10px 10px;
+  }
+}

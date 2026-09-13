@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchInvestigation, fetchInvestigations } from "../api/client";
 import AgentDetailCard from "../components/AgentDetailCard";
-import { AgentIcon, ConfidenceBadge, agentLabel } from "../components/agentMeta";
+import AgentCollaborationGraph from "../components/AgentCollaborationGraph";
+import { AgentIcon, agentLabel } from "../components/agentMeta";
 import { subscribeLive } from "../liveInvestigation";
 import "./AgentSwarmView.css";
 
@@ -35,129 +36,15 @@ function stepStatus(index, revealedCount, total, node) {
   return node.status === "failed" ? "failed" : "completed";
 }
 
-const STATUS_LABEL = { idle: "Idle", running: "Running", completed: "Completed", failed: "Failed" };
-
-function GraphNode({ node, status, active, onClick }) {
-  const label = agentLabel(node.agent_name);
-  const clickable = status !== "idle";
-  return (
-    <button
-      className={`swarm-node status-${status} ${active ? "active" : ""}`}
-      onClick={() => clickable && onClick(node.step_number)}
-      disabled={!clickable}
-    >
-      <span className="swarm-node-icon"><AgentIcon agentName={node.agent_name} /></span>
-      <span className="swarm-node-label">{label}</span>
-      <span className="swarm-node-status">
-        <span className="swarm-node-status-dot"></span>
-        {STATUS_LABEL[status]}
-      </span>
-      {status !== "idle" && (
-        <span className="swarm-node-meta">
-          <ConfidenceBadge value={node.confidence} />
-          <span className="swarm-node-duration">{node.duration_ms}ms</span>
-        </span>
-      )}
-    </button>
-  );
-}
-
-// [SWARM] issue #88: layered layout so genuine parallel investigation
-// (two-plus specialists depending on the SAME planner step, and a
-// reconciliation step depending on all of them) actually reads as
-// fan-out/fan-in — not a flat left-to-right row pretending every step is
-// a simple chain. `depends_on` (from the real graph.edges, or from a live
-// event — see orchestrator.py's stream payload) determines each node's
-// column: depth 0 = no dependencies, depth N = one more than the deepest
-// parent. Nodes at the same depth render as a vertical stack within one
-// column.
-//
-// Documented assumption, true for everything this orchestrator can
-// currently produce (see _reconcile_specialist_responses()'s fan-out/
-// fan-in shape): every edge connects ADJACENT columns — a node's parents
-// are never more than one depth shallower. If a future change ever
-// produced a dependency that skips a column, this renderer would still
-// place both nodes correctly by depth, it just wouldn't draw that
-// specific long-distance connector.
-function computeLayers(nodes, edges) {
-  const parentsOf = {};
-  for (const n of nodes) parentsOf[n.step_number] = [];
-  for (const e of edges) {
-    if (parentsOf[e.to_step]) parentsOf[e.to_step].push(e.from_step);
-  }
-  const depthOf = {};
-  for (const n of nodes) {
-    const parents = parentsOf[n.step_number];
-    depthOf[n.step_number] = parents.length === 0 ? 0 : 1 + Math.max(...parents.map((p) => depthOf[p] ?? 0));
-  }
-  const maxDepth = nodes.length === 0 ? -1 : Math.max(...nodes.map((n) => depthOf[n.step_number]));
-  const layers = Array.from({ length: maxDepth + 1 }, () => []);
-  for (const n of nodes) layers[depthOf[n.step_number]].push(n);
-  return { layers, parentsOf };
-}
-
-function ConnectorSVG({ fromLayer, toLayer, parentsOf, flowing }) {
-  const fromIndexOf = Object.fromEntries(fromLayer.map((n, i) => [n.step_number, i]));
-  const lines = toLayer.flatMap((toNode, toIdx) =>
-    (parentsOf[toNode.step_number] || [])
-      .filter((p) => p in fromIndexOf)
-      .map((p) => ({
-        y1: ((fromIndexOf[p] + 0.5) / fromLayer.length) * 100,
-        y2: ((toIdx + 0.5) / toLayer.length) * 100,
-        key: `${p}-${toNode.step_number}`,
-      }))
-  );
-  return (
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="swarm-connector-svg">
-      {lines.map((l) => (
-        <path key={l.key} d={`M0,${l.y1} C50,${l.y1} 50,${l.y2} 100,${l.y2}`} className={`swarm-connector-path ${flowing ? "flowing" : ""}`} />
-      ))}
-    </svg>
-  );
-}
-
-function SwarmGraph({ graph, revealedCount, activeStep, onSelectStep, liveGrowing }) {
-  const nodes = graph.nodes;
-  const total = nodes.length;
-  const visibleNodes = liveGrowing ? nodes : nodes.filter((_, i) => i < revealedCount);
-  const { layers, parentsOf } = useMemo(() => computeLayers(nodes, graph.edges), [nodes, graph.edges]);
-  // Only render columns/nodes that are currently "visible" (revealed in
-  // replay mode, or arrived in live mode) — filter each layer down.
-  const visibleStepNumbers = new Set(visibleNodes.map((n) => n.step_number));
-  const visibleLayers = layers.map((layer) => layer.filter((n) => visibleStepNumbers.has(n.step_number))).filter((l) => l.length > 0);
-
-  return (
-    <div className="swarm-columns">
-      {visibleLayers.map((layer, colIdx) => (
-        <div className="swarm-column-group" key={colIdx}>
-          {colIdx > 0 && (
-            <div className="swarm-connector">
-              <ConnectorSVG fromLayer={visibleLayers[colIdx - 1]} toLayer={layer} parentsOf={parentsOf} flowing />
-            </div>
-          )}
-          <div className={`swarm-column ${layer.length > 1 ? "swarm-column-parallel" : ""}`}>
-            {layer.length > 1 && <div className="swarm-parallel-badge">PARALLEL</div>}
-            {layer.map((node) => {
-              const i = nodes.findIndex((n) => n.step_number === node.step_number);
-              const status = liveGrowing ? (node.status === "failed" ? "failed" : "completed") : stepStatus(i, revealedCount, total, node);
-              return <GraphNode key={node.step_number} node={node} status={status} active={activeStep === node.step_number} onClick={onSelectStep} />;
-            })}
-          </div>
-        </div>
-      ))}
-      {liveGrowing && (
-        <div className="swarm-column-group">
-          <div className="swarm-connector"><div className="swarm-connector-idle-line"></div></div>
-          <div className="swarm-column">
-            <div className="swarm-node status-idle swarm-node-pending-next">
-              <span className="swarm-node-label">…</span>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// [SWARM] "Agent Collaboration Graph": the old hand-drawn column/SVG
+// renderer (GraphNode, computeLayers, ConnectorSVG, SwarmGraph) that used
+// to live here has been replaced by <AgentCollaborationGraph> (React
+// Flow), in ../components/AgentCollaborationGraph.jsx +
+// ../utils/investigationToFlow.js. That new mapping layer reuses this
+// exact `stepStatus()` and the same depth/column algorithm — only the
+// rendering technology changed, not the underlying data or layout logic.
+// See docs/DEMO_SCRIPT.md Scenario 4 for the fan-out/fan-in (#88) case
+// this must keep rendering correctly.
 
 // -------------------------------------------------------------------------
 // [SWARM] issue #84: Swarm Timeline — a horizontal, Gantt-style strip
@@ -367,13 +254,17 @@ export default function AgentSwarmView() {
                   <span className="swarm-live-dot"></span> LIVE — watching this investigation happen in real time
                 </div>
                 <div className="swarm-section-title">Agent Network</div>
-                {liveGraph.nodes.length === 0 ? (
-                  <p className="swarm-hint">Waiting for the first agent to respond…</p>
-                ) : (
-                  <SwarmGraph graph={liveGraph} activeStep={activeStep} onSelectStep={setActiveStep} liveGrowing />
-                )}
+                <div className="swarm-graph-canvas">
+                  <AgentCollaborationGraph
+                    graph={liveGraph}
+                    timeline={liveTimeline}
+                    activeStep={activeStep}
+                    onSelectStep={setActiveStep}
+                    liveGrowing
+                  />
+                </div>
               </div>
-              {liveGraph.nodes.length > 0 && (
+              {liveGraph && liveGraph.nodes.length > 0 && (
                 <div className="swarm-graph-card">
                   <div className="swarm-section-title">Swarm Timeline</div>
                   <SwarmTimelineStrip timeline={liveTimeline} activeStep={activeStep} onSelectStep={setActiveStep} liveGrowing />
@@ -405,12 +296,15 @@ export default function AgentSwarmView() {
                   </div>
                 </div>
                 <div className="swarm-section-title">Agent Network</div>
-                <SwarmGraph
-                  graph={detail.graph}
-                  revealedCount={revealedCount}
-                  activeStep={activeStep}
-                  onSelectStep={setActiveStep}
-                />
+                <div className="swarm-graph-canvas">
+                  <AgentCollaborationGraph
+                    graph={detail.graph}
+                    timeline={detail.timeline}
+                    revealedCount={revealedCount}
+                    activeStep={activeStep}
+                    onSelectStep={setActiveStep}
+                  />
+                </div>
                 <p className="swarm-hint">Click any agent above to inspect its reasoning, evidence, and tools.</p>
               </div>
 

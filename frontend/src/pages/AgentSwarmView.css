@@ -84,6 +84,13 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* [SWARM] "Agent Collaboration Graph": a grid item's automatic min-width
+     is `auto` by default, which lets its content's intrinsic size (the
+     React Flow canvas) force this whole grid track wider than the
+     viewport at narrow widths instead of shrinking — a real bug caught
+     via live mobile-width verification. min-width: 0 is the standard
+     fix; .swarm-graph-card's own overflow-x: auto then does its job. */
+  min-width: 0;
 }
 
 .swarm-graph-card {
@@ -110,197 +117,15 @@
   color: var(--app-text-muted);
 }
 
-/* [SWARM] issue #88: column-based layout — nodes are grouped into
-   columns by dependency depth (see AgentSwarmView.jsx's computeLayers()),
-   so a genuine parallel fan-out renders as multiple nodes stacked within
-   one column, connected by real curved lines rather than a flat row. */
+/* [SWARM] "Agent Collaboration Graph": the column/connector/node CSS that
+   used to live here (issue #88's .swarm-columns/.swarm-node/etc.) has
+   been replaced by React Flow's own layout plus
+   ../components/AgentCollaborationGraph.css (.agent-collaboration-graph,
+   .agent-node, etc.) — this card now just hosts that component. */
 
-.swarm-columns {
-  display: flex;
-  align-items: stretch;
-  min-width: max-content;
-}
-
-.swarm-column-group {
-  display: flex;
-  align-items: stretch;
-}
-
-.swarm-column {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 14px;
-  position: relative;
-}
-
-.swarm-column-parallel {
-  padding: 10px;
-  border: 1px dashed var(--app-danger-text);
-  border-radius: var(--app-radius-lg);
-}
-
-.swarm-parallel-badge {
-  position: absolute;
-  top: -10px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--app-danger-text);
-  color: white;
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 2px 8px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.swarm-connector {
-  width: 56px;
-  flex-shrink: 0;
-  align-self: stretch;
-}
-
-.swarm-connector-svg {
+.swarm-graph-canvas {
   width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.swarm-connector-path {
-  fill: none;
-  stroke: var(--app-border);
-  stroke-width: 2;
-}
-
-.swarm-connector-path.flowing {
-  stroke: var(--app-primary);
-  stroke-dasharray: 6 10;
-  animation: swarm-flow 1s linear infinite;
-}
-
-.swarm-connector-idle-line {
-  width: 100%;
-  height: 2px;
-  background: var(--app-border);
-  margin-top: 50%;
-}
-
-.swarm-node {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 110px;
-  padding: 12px 8px;
-  border-radius: var(--app-radius-md);
-  border: 2px solid var(--app-border);
-  background: var(--app-surface-blue);
-  cursor: pointer;
-  font-family: inherit;
-  transition: opacity 0.3s ease, transform 0.3s ease, border-color 0.2s ease;
-}
-
-/* [SWARM] issue #83: status vocabulary — idle/running are simulated from
-   replay timing, completed/failed are real (see AgentSwarmView.jsx's
-   stepStatus() docstring for why "waiting" is intentionally absent). */
-
-.swarm-node.status-idle {
-  opacity: 0.25;
-  cursor: default;
-  transform: scale(0.92);
-}
-
-.swarm-node.status-running {
-  opacity: 1;
-  transform: scale(1);
-  border-color: var(--app-primary);
-  animation: swarm-node-pulse 1s ease-in-out infinite;
-}
-
-.swarm-node.status-completed {
-  opacity: 1;
-  transform: scale(1);
-  border-color: var(--app-success-text);
-}
-
-.swarm-node.status-failed {
-  opacity: 1;
-  transform: scale(1);
-  border-color: var(--app-danger-text);
-}
-
-@keyframes swarm-node-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 var(--app-primary-soft); }
-  50% { box-shadow: 0 0 0 5px var(--app-primary-soft); }
-}
-
-.swarm-node.active {
-  border-color: var(--app-primary);
-  box-shadow: 0 0 0 3px var(--app-primary-soft);
-}
-
-.swarm-node-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--app-primary-soft);
-  color: var(--app-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.swarm-node-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--app-text-primary);
-  text-align: center;
-}
-
-.swarm-node-status {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.62rem;
-  color: var(--app-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.swarm-node-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.status-running .swarm-node-status-dot {
-  animation: ib-pulse-dot 1s ease-in-out infinite;
-}
-
-@keyframes ib-pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-.status-completed .swarm-node-status { color: var(--app-success-text); }
-.status-failed .swarm-node-status { color: var(--app-danger-text); }
-.status-running .swarm-node-status { color: var(--app-primary); }
-
-.swarm-node-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.swarm-node-duration {
-  font-size: 0.65rem;
-  color: var(--app-text-muted);
-}
-
-@keyframes swarm-flow {
-  to { stroke-dashoffset: -16; }
+  height: 480px;
 }
 
 .swarm-selected-card {
@@ -419,10 +244,4 @@
   background: var(--app-primary);
   color: white;
   border-color: var(--app-primary);
-}
-
-.swarm-node-pending-next {
-  opacity: 0.3;
-  cursor: default;
-  animation: ib-pulse 1.1s ease-in-out infinite;
 }
