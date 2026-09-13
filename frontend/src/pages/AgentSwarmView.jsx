@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchInvestigation, fetchInvestigations } from "../api/client";
 import AgentDetailCard from "../components/AgentDetailCard";
 import { AgentIcon, ConfidenceBadge, agentLabel } from "../components/agentMeta";
+import { subscribeLive } from "../liveInvestigation";
 import "./AgentSwarmView.css";
 
 // [SWARM] issue #81: Agent Swarm Network — a node/edge diagram of the
@@ -12,20 +13,22 @@ import "./AgentSwarmView.css";
 // convenient) rendering of the real topology — a direct-Planner
 // escalation is genuinely a 2-node graph, not a differently-shaped one.
 //
-// Same honest framing as InvestigationBoard.jsx's own "Honest architecture
-// note": /api/chat is fully synchronous, so this replays an already-
-// complete investigation with a staggered reveal rather than pretending
-// to subscribe to a truly live stream (see issue #79 for that follow-up).
+// [SWARM] issue #85: this page now has two real modes, not one replay
+// mode pretending to be live:
+//   - LIVE: an investigation actually in flight right now (started from
+//     Customer Chat, see liveInvestigation.js) — nodes appear as REAL SSE
+//     events arrive (issue #79), not a timer. There is no "idle" filler
+//     for future steps here because the total step count genuinely isn't
+//     known yet on this branch.
+//   - REPLAY: browsing an already-complete investigation from the list —
+//     still a staggered reveal (same honest framing as before), now with
+//     a speed control since it's explicitly a replay, not a pretense of
+//     being live.
 
-// [SWARM] issue #83: status vocabulary. `idle` (not yet reached in the
-// replay) and `running` (the one currently being revealed) are simulated
-// from replay timing, same honest standard as the rest of this page —
-// `completed`/`failed` are the two states the backend has ever actually
-// produced (the pipeline is synchronous; nothing is observed mid-flight
-// today). `waiting` is deliberately NOT used here: it would mean "blocked
-// behind a step that's genuinely still in flight," which has no honest
-// meaning until real streaming exists (see issue #79) — omitted rather
-// than faked, per that issue's own acceptance criteria.
+const LIVE_ID = "__live__";
+
+// [SWARM] issue #83: status vocabulary — see stepStatus()'s callers for
+// which parts are real vs. simulated in each mode.
 function stepStatus(index, revealedCount, total, node) {
   if (index >= revealedCount) return "idle";
   if (index === revealedCount - 1 && revealedCount < total) return "running";
@@ -59,27 +62,38 @@ function GraphNode({ node, status, active, onClick }) {
   );
 }
 
-function SwarmGraph({ graph, revealedCount, activeStep, onSelectStep }) {
+function SwarmGraph({ graph, revealedCount, activeStep, onSelectStep, liveGrowing }) {
   const nodes = graph.nodes;
   const total = nodes.length;
   return (
     <div className="swarm-graph">
       {nodes.map((node, i) => {
-        const status = stepStatus(i, revealedCount, total, node);
+        // [SWARM] issue #85 live mode: every arrived node is genuinely
+        // completed/failed (a real event) — "running"/"idle" don't apply
+        // the same way as in replay mode, since there's no known future
+        // step count to pre-render as idle.
+        const status = liveGrowing ? (node.status === "failed" ? "failed" : "completed") : stepStatus(i, revealedCount, total, node);
         return (
           <div className="swarm-graph-item" key={node.step_number}>
             <GraphNode node={node} status={status} active={activeStep === node.step_number} onClick={onSelectStep} />
             {i < nodes.length - 1 && (
-              <div className={`swarm-edge ${i < revealedCount - 1 ? "flowing" : "idle"}`}>
+              <div className={`swarm-edge ${liveGrowing || i < revealedCount - 1 ? "flowing" : "idle"}`}>
                 <svg viewBox="0 0 60 12" preserveAspectRatio="none">
                   <line x1="0" y1="6" x2="60" y2="6" className="swarm-edge-line" />
-                  {i < revealedCount - 1 && <line x1="0" y1="6" x2="60" y2="6" className="swarm-edge-pulse" />}
+                  {(liveGrowing || i < revealedCount - 1) && <line x1="0" y1="6" x2="60" y2="6" className="swarm-edge-pulse" />}
                 </svg>
               </div>
             )}
           </div>
         );
       })}
+      {liveGrowing && (
+        <div className="swarm-graph-item">
+          <div className="swarm-node status-idle swarm-node-pending-next">
+            <span className="swarm-node-label">…</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -91,14 +105,14 @@ function SwarmGraph({ graph, revealedCount, activeStep, onSelectStep }) {
 // and relative duration of execution" at a glance. Segment width is
 // proportional to each step's REAL duration_ms, not a fixed placeholder.
 // -------------------------------------------------------------------------
-function SwarmTimelineStrip({ timeline, revealedCount, activeStep, onSelectStep }) {
+function SwarmTimelineStrip({ timeline, revealedCount, activeStep, onSelectStep, liveGrowing }) {
   const total = timeline.length;
   const maxDuration = Math.max(1, ...timeline.map((s) => s.duration_ms));
   return (
     <div className="swarm-timeline-strip">
       {timeline.map((step, i) => {
-        if (i >= revealedCount) return null;
-        const status = stepStatus(i, revealedCount, total, step);
+        if (!liveGrowing && i >= revealedCount) return null;
+        const status = liveGrowing ? (step.status === "failed" ? "failed" : "completed") : stepStatus(i, revealedCount, total, step);
         const widthPct = Math.max(6, Math.round((step.duration_ms / maxDuration) * 100));
         return (
           <button
@@ -117,6 +131,13 @@ function SwarmTimelineStrip({ timeline, revealedCount, activeStep, onSelectStep 
   );
 }
 
+const SPEED_OPTIONS = [
+  { label: "0.5x", intervalMs: 900 },
+  { label: "1x", intervalMs: 500 },
+  { label: "2x", intervalMs: 250 },
+  { label: "Instant", intervalMs: 0 },
+];
+
 export default function AgentSwarmView() {
   const [investigations, setInvestigations] = useState([]);
   const [listLoading, setListLoading] = useState(true);
@@ -127,6 +148,12 @@ export default function AgentSwarmView() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [revealedCount, setRevealedCount] = useState(0);
   const [activeStep, setActiveStep] = useState(null);
+  const [speedIndex, setSpeedIndex] = useState(1); // default 1x
+
+  // [SWARM] issue #85: the one investigation currently streaming live, if any.
+  const [liveState, setLiveState] = useState(null);
+
+  useEffect(() => subscribeLive(setLiveState), []);
 
   const loadList = () => {
     setListLoading(true);
@@ -140,43 +167,106 @@ export default function AgentSwarmView() {
       .finally(() => setListLoading(false));
   };
 
-  useEffect(loadList, []);
+  useEffect(loadList, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A live stream is active (either just started, or already in progress
+  // when this component mounted — see subscribeLive's "push current value
+  // immediately" fix in liveInvestigation.js) — jump straight to it, the
+  // whole point of "live" mode is watching it happen.
+  useEffect(() => {
+    if (liveState && !liveState.done) {
+      setSelectedId(LIVE_ID);
+    }
+  }, [liveState?.streamKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The live investigation finished — fetch the real, now-persisted
+  // record and hand off from "live" to a normal (fully revealed, no
+  // re-stagger) detail view.
+  useEffect(() => {
+    if (!liveState?.done) return;
+    const { investigation_id } = liveState.done;
+    fetchInvestigation(investigation_id).then((full) => {
+      setDetail(full);
+      setRevealedCount(full.graph.nodes.length);
+      setSelectedId(full.id);
+      loadList();
+    });
+  }, [liveState?.done]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isLive = selectedId === LIVE_ID;
 
   useEffect(() => {
-    if (selectedId === null) return;
+    if (selectedId === null || isLive) return;
     setDetailLoading(true);
     setDetail(null);
     setActiveStep(null);
     fetchInvestigation(selectedId)
       .then(setDetail)
       .finally(() => setDetailLoading(false));
-  }, [selectedId]);
+  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Staggered reveal — same honest "replay, not truly live" framing as
-  // InvestigationBoard.jsx (see issue #79 for genuine live streaming).
+  // Staggered reveal for REPLAY mode only — real live mode (above) needs
+  // no timer at all, since revealedCount there is just "however many real
+  // SSE events have arrived."
   useEffect(() => {
-    if (!detail) return;
-    setRevealedCount(0);
+    if (!detail || isLive) return;
+    const intervalMs = SPEED_OPTIONS[speedIndex].intervalMs;
     const total = detail.graph.nodes.length;
+    if (intervalMs === 0) {
+      setRevealedCount(total);
+      return;
+    }
+    setRevealedCount(0);
     let i = 0;
     const interval = setInterval(() => {
       i += 1;
       setRevealedCount(i);
       if (i >= total) clearInterval(interval);
-    }, 500);
+    }, intervalMs);
     return () => clearInterval(interval);
-  }, [detail]);
+  }, [detail, speedIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Synthetic "graph"/"timeline" for live mode, built directly from real
+  // SSE step events — no fetch, no fake timing.
+  const liveGraph = useMemo(() => {
+    if (!liveState) return null;
+    const nodes = liveState.steps.map((s) => ({
+      step_number: s.step_number, agent_name: s.agent_name, status: s.status,
+      confidence: s.confidence, duration_ms: s.duration_ms,
+    }));
+    const edges = nodes.slice(1).map((n, i) => ({ from_step: nodes[i].step_number, to_step: n.step_number }));
+    return { nodes, edges };
+  }, [liveState]);
+
+  const liveTimeline = useMemo(() => {
+    if (!liveState) return [];
+    return liveState.steps.map((s) => ({
+      step_number: s.step_number, agent_name: s.agent_name, action: s.action, status: s.status,
+      confidence: s.confidence, duration_ms: s.duration_ms, reasoning: null, evidence: [], evidence_refs: [], used_tools: [],
+    }));
+  }, [liveState]);
 
   const activeStepData = useMemo(() => {
-    if (!detail || activeStep === null) return null;
-    return detail.timeline.find((s) => s.step_number === activeStep) || null;
-  }, [detail, activeStep]);
+    const timeline = isLive ? liveTimeline : detail?.timeline;
+    if (!timeline || activeStep === null) return null;
+    return timeline.find((s) => s.step_number === activeStep) || null;
+  }, [isLive, liveTimeline, detail, activeStep]);
+
+  const showingLiveEntry = liveState && !liveState.done;
 
   return (
     <div className="swarm-page">
       <div className="swarm-layout">
         <div className="swarm-list-panel">
           <div className="swarm-list-header">Recent Investigations</div>
+          {showingLiveEntry && (
+            <button className={`swarm-list-item swarm-list-item-live ${isLive ? "active" : ""}`} onClick={() => setSelectedId(LIVE_ID)}>
+              <span className="app-badge badge-live">
+                <span className="swarm-live-dot"></span> LIVE
+              </span>
+              <span className="swarm-list-item-cause">Investigation in progress — {liveState.steps.length} step(s) so far…</span>
+            </button>
+          )}
           {listLoading ? (
             <div className="swarm-list-loading">Loading…</div>
           ) : listError ? (
@@ -184,7 +274,7 @@ export default function AgentSwarmView() {
               <span>Unable to load investigations: {listError}</span>
               <button onClick={loadList}>Retry</button>
             </div>
-          ) : investigations.length === 0 ? (
+          ) : investigations.length === 0 && !showingLiveEntry ? (
             <div className="swarm-empty-note">No investigations yet — send a message in Customer Chat first.</div>
           ) : (
             <div className="swarm-list-items">
@@ -205,11 +295,50 @@ export default function AgentSwarmView() {
         </div>
 
         <div className="swarm-detail-panel">
-          {detailLoading || !detail ? (
+          {isLive ? (
+            <>
+              <div className="swarm-graph-card">
+                <div className="swarm-mode-banner swarm-mode-live">
+                  <span className="swarm-live-dot"></span> LIVE — watching this investigation happen in real time
+                </div>
+                <div className="swarm-section-title">Agent Network</div>
+                {liveGraph.nodes.length === 0 ? (
+                  <p className="swarm-hint">Waiting for the first agent to respond…</p>
+                ) : (
+                  <SwarmGraph graph={liveGraph} activeStep={activeStep} onSelectStep={setActiveStep} liveGrowing />
+                )}
+              </div>
+              {liveGraph.nodes.length > 0 && (
+                <div className="swarm-graph-card">
+                  <div className="swarm-section-title">Swarm Timeline</div>
+                  <SwarmTimelineStrip timeline={liveTimeline} activeStep={activeStep} onSelectStep={setActiveStep} liveGrowing />
+                </div>
+              )}
+              {activeStepData && (
+                <div className="swarm-selected-card">
+                  <AgentDetailCard step={activeStepData} defaultOpen />
+                </div>
+              )}
+            </>
+          ) : detailLoading || !detail ? (
             <div className="swarm-empty-note">{detailLoading ? "Loading investigation…" : "Select an investigation."}</div>
           ) : (
             <>
               <div className="swarm-graph-card">
+                <div className="swarm-mode-banner swarm-mode-replay">
+                  <span>REPLAY</span>
+                  <div className="swarm-speed-control">
+                    {SPEED_OPTIONS.map((opt, i) => (
+                      <button
+                        key={opt.label}
+                        className={`swarm-speed-btn ${speedIndex === i ? "active" : ""}`}
+                        onClick={() => setSpeedIndex(i)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="swarm-section-title">Agent Network</div>
                 <SwarmGraph
                   graph={detail.graph}

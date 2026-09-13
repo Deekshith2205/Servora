@@ -23,7 +23,7 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     # endpoint has no best-effort degrade path either (the reply IS the
     # response), so a clean HTTPException is the right shape here too.
     try:
-        result = handle_message(db, payload.customer_id, payload.message)
+        result = handle_message(db, payload.customer_id, payload.message, stream_key=payload.stream_key)
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 

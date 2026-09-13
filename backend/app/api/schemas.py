@@ -4,6 +4,12 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     customer_id: int
     message: str
+    # [SWARM] issue #79: optional, client-generated (a UUID) — when
+    # present, the frontend has already opened
+    # GET /api/investigations/stream/{stream_key} and wants real-time
+    # events published there as this pipeline run actually executes.
+    # None (the default) reproduces the exact previous behavior.
+    stream_key: str | None = None
 
 
 class TraceStepOut(BaseModel):
