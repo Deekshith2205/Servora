@@ -214,6 +214,16 @@ class InvestigationStep(Base):
         `evidence_json` — lets a frontend deep-link to the actual
         order/customer/ticket/KB-article row instead of just displaying
         a sentence.
+
+    Issue [SWARM] #78 adds:
+      - `depends_on_json`: JSON list of `step_number`s this step's
+        execution causally depended on. Explicit rather than assumed —
+        `investigations.py::_build_graph()` previously derived edges from
+        step order alone (correct today, since the pipeline never fans
+        out, but only an assumption). `orchestrator.py` now sets this
+        explicitly per branch, so a future fan-out/fan-in change would
+        only need to set different values here, not rewrite the graph
+        builder's assumptions.
     """
 
     __tablename__ = "investigation_steps"
@@ -231,6 +241,7 @@ class InvestigationStep(Base):
     evidence_refs_json: Mapped[str] = mapped_column(String, default="[]")
     used_tools_json: Mapped[str] = mapped_column(String, default="[]")
     alternatives_json: Mapped[str] = mapped_column(String, default="[]")
+    depends_on_json: Mapped[str] = mapped_column(String, default="[]")
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
 
@@ -251,6 +262,10 @@ class InvestigationStep(Base):
     @property
     def alternatives_considered(self) -> list[dict]:
         return json.loads(self.alternatives_json) if self.alternatives_json else []
+
+    @property
+    def depends_on(self) -> list[int]:
+        return json.loads(self.depends_on_json) if self.depends_on_json else []
 
 
 class Notification(Base):

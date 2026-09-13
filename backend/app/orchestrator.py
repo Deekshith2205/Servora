@@ -332,6 +332,14 @@ def _persist_investigation(
             evidence_refs_json=json.dumps(rec.get("evidence_refs", [])),
             used_tools_json=json.dumps(rec.get("used_tools", [])),
             alternatives_json=json.dumps(rec.get("alternatives", [])),
+            # [SWARM] issue #78: explicit dependency, not just an
+            # assumption the graph API makes from step order. Today's
+            # pipeline never fans out — every step causally depends on
+            # exactly the one immediately before it, for every branch
+            # (a direct-Planner escalation is a shorter chain, not a
+            # differently-shaped one) — so this is genuinely correct,
+            # not just convenient, per step_number alone.
+            depends_on_json=json.dumps([i - 1] if i > 1 else []),
             duration_ms=rec["duration_ms"],
             confidence=rec["confidence"],
         ))

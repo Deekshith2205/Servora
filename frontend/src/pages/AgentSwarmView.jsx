@@ -17,45 +17,102 @@ import "./AgentSwarmView.css";
 // complete investigation with a staggered reveal rather than pretending
 // to subscribe to a truly live stream (see issue #79 for that follow-up).
 
-function GraphNode({ node, revealed, active, onClick }) {
+// [SWARM] issue #83: status vocabulary. `idle` (not yet reached in the
+// replay) and `running` (the one currently being revealed) are simulated
+// from replay timing, same honest standard as the rest of this page —
+// `completed`/`failed` are the two states the backend has ever actually
+// produced (the pipeline is synchronous; nothing is observed mid-flight
+// today). `waiting` is deliberately NOT used here: it would mean "blocked
+// behind a step that's genuinely still in flight," which has no honest
+// meaning until real streaming exists (see issue #79) — omitted rather
+// than faked, per that issue's own acceptance criteria.
+function stepStatus(index, revealedCount, total, node) {
+  if (index >= revealedCount) return "idle";
+  if (index === revealedCount - 1 && revealedCount < total) return "running";
+  return node.status === "failed" ? "failed" : "completed";
+}
+
+const STATUS_LABEL = { idle: "Idle", running: "Running", completed: "Completed", failed: "Failed" };
+
+function GraphNode({ node, status, active, onClick }) {
   const label = agentLabel(node.agent_name);
-  const failed = node.status === "failed";
+  const clickable = status !== "idle";
   return (
     <button
-      className={`swarm-node ${revealed ? "revealed" : "pending"} ${failed ? "failed" : ""} ${active ? "active" : ""}`}
-      onClick={() => revealed && onClick(node.step_number)}
-      disabled={!revealed}
+      className={`swarm-node status-${status} ${active ? "active" : ""}`}
+      onClick={() => clickable && onClick(node.step_number)}
+      disabled={!clickable}
     >
       <span className="swarm-node-icon"><AgentIcon agentName={node.agent_name} /></span>
       <span className="swarm-node-label">{label}</span>
-      {revealed && <ConfidenceBadge value={node.confidence} />}
-      {revealed && <span className="swarm-node-duration">{node.duration_ms}ms</span>}
+      <span className="swarm-node-status">
+        <span className="swarm-node-status-dot"></span>
+        {STATUS_LABEL[status]}
+      </span>
+      {status !== "idle" && (
+        <span className="swarm-node-meta">
+          <ConfidenceBadge value={node.confidence} />
+          <span className="swarm-node-duration">{node.duration_ms}ms</span>
+        </span>
+      )}
     </button>
   );
 }
 
 function SwarmGraph({ graph, revealedCount, activeStep, onSelectStep }) {
   const nodes = graph.nodes;
+  const total = nodes.length;
   return (
     <div className="swarm-graph">
-      {nodes.map((node, i) => (
-        <div className="swarm-graph-item" key={node.step_number}>
-          <GraphNode
-            node={node}
-            revealed={i < revealedCount}
-            active={activeStep === node.step_number}
-            onClick={onSelectStep}
-          />
-          {i < nodes.length - 1 && (
-            <div className={`swarm-edge ${i < revealedCount - 1 ? "flowing" : "idle"}`}>
-              <svg viewBox="0 0 60 12" preserveAspectRatio="none">
-                <line x1="0" y1="6" x2="60" y2="6" className="swarm-edge-line" />
-                {i < revealedCount - 1 && <line x1="0" y1="6" x2="60" y2="6" className="swarm-edge-pulse" />}
-              </svg>
-            </div>
-          )}
-        </div>
-      ))}
+      {nodes.map((node, i) => {
+        const status = stepStatus(i, revealedCount, total, node);
+        return (
+          <div className="swarm-graph-item" key={node.step_number}>
+            <GraphNode node={node} status={status} active={activeStep === node.step_number} onClick={onSelectStep} />
+            {i < nodes.length - 1 && (
+              <div className={`swarm-edge ${i < revealedCount - 1 ? "flowing" : "idle"}`}>
+                <svg viewBox="0 0 60 12" preserveAspectRatio="none">
+                  <line x1="0" y1="6" x2="60" y2="6" className="swarm-edge-line" />
+                  {i < revealedCount - 1 && <line x1="0" y1="6" x2="60" y2="6" className="swarm-edge-pulse" />}
+                </svg>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// [SWARM] issue #84: Swarm Timeline — a horizontal, Gantt-style strip
+// distinct from the network graph above (topology) and the Investigation
+// Board's vertical checklist (detail-oriented): this one reads as "order
+// and relative duration of execution" at a glance. Segment width is
+// proportional to each step's REAL duration_ms, not a fixed placeholder.
+// -------------------------------------------------------------------------
+function SwarmTimelineStrip({ timeline, revealedCount, activeStep, onSelectStep }) {
+  const total = timeline.length;
+  const maxDuration = Math.max(1, ...timeline.map((s) => s.duration_ms));
+  return (
+    <div className="swarm-timeline-strip">
+      {timeline.map((step, i) => {
+        if (i >= revealedCount) return null;
+        const status = stepStatus(i, revealedCount, total, step);
+        const widthPct = Math.max(6, Math.round((step.duration_ms / maxDuration) * 100));
+        return (
+          <button
+            key={step.step_number}
+            className={`swarm-strip-segment status-${status} ${activeStep === step.step_number ? "active" : ""}`}
+            style={{ flexGrow: widthPct }}
+            onClick={() => onSelectStep(step.step_number)}
+            title={`${agentLabel(step.agent_name)} — ${step.duration_ms}ms`}
+          >
+            <AgentIcon agentName={step.agent_name} />
+            <span className="swarm-strip-label">{agentLabel(step.agent_name)}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -161,6 +218,17 @@ export default function AgentSwarmView() {
                   onSelectStep={setActiveStep}
                 />
                 <p className="swarm-hint">Click any agent above to inspect its reasoning, evidence, and tools.</p>
+              </div>
+
+              <div className="swarm-graph-card">
+                <div className="swarm-section-title">Swarm Timeline</div>
+                <SwarmTimelineStrip
+                  timeline={detail.timeline}
+                  revealedCount={revealedCount}
+                  activeStep={activeStep}
+                  onSelectStep={setActiveStep}
+                />
+                <p className="swarm-hint">Segment width reflects real execution duration.</p>
               </div>
 
               {activeStepData && (

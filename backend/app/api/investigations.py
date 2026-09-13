@@ -77,19 +77,24 @@ def _to_investigation_out(investigation: Investigation) -> InvestigationOut:
 
 
 def _build_graph(steps: list[InvestigationStep]) -> InvestigationGraphOut:
-    """[SWARM] issue #80. See GraphEdgeOut's docstring: today's pipeline
-    never fans out, so "step N depends on step N-1" is a correct (not
-    just convenient) edge set for every branch this app can currently
-    produce — a direct-Planner escalation is just a shorter chain, not a
-    different shape."""
+    """[SWARM] issues #80/#78. Edges now come from each step's explicit
+    `depends_on` (issue #78) rather than an assumption that step order
+    alone implies dependency — today the two always agree (the pipeline
+    never fans out), but the graph builder itself no longer needs to know
+    that; it just renders whatever `depends_on` says, so a future
+    fan-out/fan-in change only needs orchestrator.py to set different
+    values there."""
     nodes = [
         GraphNodeOut(step_number=s.step_number, agent_name=s.agent_name, status=s.status,
                      confidence=s.confidence, duration_ms=s.duration_ms)
         for s in steps
     ]
+    by_step_number = {s.step_number: s for s in steps}
     edges = [
-        GraphEdgeOut(from_step=steps[i].step_number, to_step=steps[i + 1].step_number)
-        for i in range(len(steps) - 1)
+        GraphEdgeOut(from_step=dep, to_step=s.step_number)
+        for s in steps
+        for dep in s.depends_on
+        if dep in by_step_number
     ]
     return InvestigationGraphOut(nodes=nodes, edges=edges)
 
