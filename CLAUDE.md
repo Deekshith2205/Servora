@@ -928,9 +928,71 @@ multi-specialist investigation — a real agent-architecture change, not a
 visualization task, filed as its own future consideration rather than
 quietly built or quietly dropped).
 
+### 2026-09-13 (continued) — #88 built too: genuine parallel multi-specialist investigation
+
+The user explicitly asked for #88 despite it having been flagged
+out-of-scope — confirmed first (full implementation, not a stub), then
+built as **PR #106** (`p2-parallel-multi-specialist`, base
+`p2-live-streaming-swarm` — merge #103 → #104 → #105 → #106 in order).
+
+- `planner.py`: `PlanDecision`/`_PlanSchema` gain `additional_agents` —
+  the LLM names OTHER specialists (besides `target_agent`) that should
+  ALSO investigate, only for a genuinely cross-cutting issue (empty in
+  the common case).
+- `orchestrator.py`: when `additional_agents` is non-empty, every named
+  specialist runs **concurrently** via `ThreadPoolExecutor` — each on its
+  **own** `SessionLocal()` (`_run_specialist_isolated()`), never the
+  request's shared `db` session, since SQLAlchemy `Session`s aren't safe
+  for concurrent cross-thread use. `database.py`'s SQLite `connect_args`
+  gained a `timeout` for the same reason (two threads could now
+  legitimately contend for SQLite's write lock at once — its default is
+  to fail immediately rather than wait). Each specialist gets its own
+  `InvestigationStep`, all depending on the SAME planner step (fan-out,
+  using #78's `depends_on` override mechanism — `_record()` gained a
+  `depends_on` param for exactly this). `_reconcile_specialist_responses()`
+  then deterministically combines their replies (clearly labeled per
+  specialist, no synthesis LLM call) into one response — confidence is
+  the **minimum** across specialists (conservative, matching
+  Verification's existing philosophy), evidence/tools are the union — and
+  records one more step, "reconciliation," depending on ALL the
+  specialist steps (fan-in). Verification/Escalation/Memory downstream
+  are completely unchanged — they just see one `SpecialistResponse`,
+  same as always.
+- Frontend: `AgentSwarmView.jsx`'s graph rendering was reworked from a
+  flat left-to-right row to a real **layered/columned layout**
+  (`computeLayers()`) — nodes at the same dependency depth render as a
+  vertical stack in one column (with a red "PARALLEL" badge when >1),
+  connected by curved SVG paths computed from the actual `depends_on`/
+  `graph.edges` data, not an index-to-index assumption. Live mode's SSE
+  step events now carry `depends_on` too (`orchestrator.py`'s stream
+  payload), so a live fan-out renders correctly in real time, not just on
+  replay.
+
+**Verified LIVE against a real Gemini call using the issue's own example
+message** ("Payment deducted but order not created"): the Planner
+genuinely set `target_agent=order` (or billing) with the other as an
+additional agent, both specialists ran and independently found/refunded
+real payment-fulfillment mismatches on two different orders, the
+Investigation timeline showed both specialist steps plus a
+"Reconciliation" step, and the Agent Swarm graph rendered exactly the
+intended shape: Classifier → Planner → **[Billing Agent, Order Agent]**
+(one column, PARALLEL badge, real curved fan-out/fan-in lines) →
+Reconciliation → Verification → Memory. Confidence correctly showed the
+lower of the two specialists' (60% vs. 90%). Clicking each parallel node
+showed its own independent reasoning/tools/evidence. No console errors.
+
+2 new tests (`tests/test_parallel_specialists.py`): the cross-cutting
+case (fan-out/fan-in dependencies, reconciled reply, min-confidence) and
+a regression test proving the single-specialist path is byte-for-byte
+unaffected. Full backend suite: **224 passed** (222 + 2 new). `npm run
+lint`/`build`: clean.
+
+**Every issue from both the [SWARM] and [EXPLAIN] batches is now
+implemented**, including the one originally flagged out-of-scope.
+
 ## Next up (in priority order)
 
-0. **Merge PR #103 → #104 → #105 in order** (`main` ← `p1-swarm-status-
+0. **Merge PR #103 → #104 → #105 → #106 in order** (`main` ← `p1-swarm-status-
    timeline-graph` ← `p1-evidence-explorer-decision-tree` ←
    `p2-live-streaming-swarm`) — each is stacked on the previous, not on
    `main` directly. See the entry directly above for what's in each. (PR

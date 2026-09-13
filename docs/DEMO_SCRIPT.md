@@ -102,6 +102,38 @@ just "sorry, a human will follow up."
      (or the honest "no suggestion" message if the model judges it a
      one-off — both are correct outcomes, not a bug).
 
+## Scenario 4 — Genuine parallel multi-agent investigation
+
+**What it shows:** this is the single clearest proof that Servora
+*coordinates* multiple agents rather than just running one agent per
+ticket — two specialists investigating two different systems at once,
+reconciled into one answer. Issue #88.
+
+1. In Customer Chat, type the issue's own original example:
+   > Payment deducted but order not created
+2. **Expected:** the Planner recognizes this spans two domains — a
+   payment fact (billing) and a fulfillment fact (order) — and sets
+   `additional_agents` alongside its primary `target_agent`. The
+   orchestrator then runs BOTH specialists **concurrently, each on its
+   own database session** (not sequentially), and reconciles their two
+   independent, grounded findings into one reply, clearly labeled
+   ("Billing specialist: ... Order specialist: ..."). This is genuinely
+   real: verified live against a real Gemini call, the Billing specialist
+   found and refunded a payment/fulfillment mismatch while the Order
+   specialist independently investigated the same order from the
+   fulfillment side — two real tool-calling investigations, not a
+   scripted split.
+3. Switch to the **Agent Swarm** tab. This is the payoff shot: the graph
+   shows **Billing Agent** and **Order Agent** side by side in a single
+   column with a red **PARALLEL** badge, both fed by the same Planner
+   step, both flowing into a shared **Reconciliation** node — a real
+   fan-out/fan-in shape, not the usual straight line. Click each
+   specialist node to show they ran fully independent investigations
+   (different tools, different evidence).
+4. Point out the Reconciliation step's confidence is the **lower** of the
+   two specialists' — deliberately conservative, so one weakly-grounded
+   finding can't be hidden behind the other's higher confidence.
+
 ## Optional bonus material (if time allows)
 
 These aren't part of the required 3-scenario script but are worth a
