@@ -16,6 +16,7 @@ across endpoints) rather than by convention.
 """
 import json
 from collections import defaultdict
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -23,12 +24,16 @@ from sqlalchemy.orm import Session
 from app.api.schemas import (
     ConfidenceBreakdownOut,
     ConfidenceOut,
+    EvidenceConfidenceBreakdownOut,
+    EvidenceDetailOut,
     EvidenceOut,
+    EvidenceRefOut,
     ExplanationOut,
     InvestigationAgentSummaryOut,
+    ToolExecutionOut,
 )
 from app.db.database import get_db
-from app.db.models import Investigation, Ticket
+from app.db.models import Investigation, InvestigationStep, Ticket
 
 router = APIRouter(prefix="/api/investigations", tags=["explanations"])
 
@@ -166,3 +171,153 @@ def get_investigation_evidence(investigation_id: int, db: Session = Depends(get_
 def get_investigation_confidence(investigation_id: int, db: Session = Depends(get_db)) -> ConfidenceOut:
     """Lightweight — for a widget that only needs the confidence gauge."""
     return _confidence_breakdown(_get_investigation(investigation_id, db))
+
+
+# --------------------------------------------------------------------- #
+# [Explainability #123]: evidence drill-down — the Investigation Board's
+# new Explainability Drawer's single data source.
+# --------------------------------------------------------------------- #
+
+# [Explainability #122]: source-reliability-by-type. A structured DB
+# record lookup (order/customer/ticket) is a direct, literal fact; a KB
+# article match is a policy/text match chosen by relevance, inherently a
+# notch less certain than a database row — the same "tool-only grounding"
+# philosophy _estimate_confidence() in specialists.py already applies to
+# whole specialist responses, applied here per evidence item instead.
+_SOURCE_RELIABILITY_BY_TYPE = {
+    "order": 0.97,
+    "customer": 0.97,
+    "ticket": 0.95,
+    "kb_article": 0.88,
+}
+
+
+def _find_step(investigation: Investigation, step_number: int) -> InvestigationStep | None:
+    return next((s for s in investigation.steps if s.step_number == step_number), None)
+
+
+def _parse_evidence_id(evidence_id: str) -> tuple[int, int]:
+    """"{step_number}:{index}" -> (step_number, index). Raises ValueError
+    on anything malformed, which the endpoint turns into a 400 — evidence
+    refs aren't individually-addressable DB rows today (see
+    EvidenceDetailOut's docstring), so this composite string key is the
+    whole addressing scheme; keep the parsing in one place."""
+    step_number_str, _, index_str = evidence_id.partition(":")
+    return int(step_number_str), int(index_str)
+
+
+def _evidence_reasoning(step: InvestigationStep) -> str:
+    """Real `reasoning_text` when the step recorded one. When it didn't
+    (some steps — e.g. escalation — don't always produce a reasoning
+    narrative distinct from their `action` label), a deterministic
+    fallback composed from what WAS recorded, never a fabricated
+    explanation: same "generate structured explanation from stored data"
+    approach this endpoint's spec asked for, and the same no-new-LLM-call
+    convention as _decision_rationale() above."""
+    if step.reasoning_text:
+        return step.reasoning_text
+    if step.used_tools:
+        tools = ", ".join(step.used_tools)
+        return f"{step.action} — gathered by calling {tools}."
+    return step.action
+
+
+def _evidence_tools(step: InvestigationStep) -> list[ToolExecutionOut]:
+    """See ToolExecutionOut's docstring for why duration/records-returned
+    are step-level values attributed to every tool the step used, not
+    independently tracked per tool call. `used_tools` can legitimately
+    repeat a name (e.g. search_kb called with several different queries
+    within one step, as `specialists.py`'s retry-with-a-different-query
+    logic does) — de-duplicated here, since listing the same tool 2-3
+    times with identical step-level stats would just be visual noise,
+    not real information (and would collide as a React list key on the
+    frontend)."""
+    records_returned = len(step.evidence_refs) or len(step.evidence)
+    seen = dict.fromkeys(step.used_tools)  # de-dupe, preserve first-seen order
+    return [
+        ToolExecutionOut(tool_name=name, duration_ms=step.duration_ms, records_returned=records_returned)
+        for name in seen
+    ]
+
+
+def _evidence_confidence_breakdown(
+    investigation: Investigation, step: InvestigationStep, evidence_ref: dict
+) -> EvidenceConfidenceBreakdownOut:
+    """Three deterministic sub-scores, each derived from a real, existing
+    signal — no random numbers, no new LLM call:
+
+    - Evidence Quality: the step's own confidence (0.6 as a neutral
+      floor for steps that never produce one, e.g. classifier/planner),
+      nudged up slightly for each additional structured evidence ref the
+      step produced — more corroborating evidence is genuinely better
+      evidence, capped so it can never read as a fabricated 100%.
+    - Data Freshness: every fact behind an evidence ref was queried live
+      from the DB at the moment the investigation ran (this project's
+      tool-only-grounding rule) — freshness is therefore a real function
+      of how long ago THAT was, not a constant. Decays gently, floored
+      at 0.5 rather than reading as "stale" just because an
+      investigation is old.
+    - Source Reliability: see _SOURCE_RELIABILITY_BY_TYPE above.
+    """
+    base_confidence = step.confidence if step.confidence is not None else 0.6
+    evidence_quality = min(0.99, base_confidence + 0.03 * len(step.evidence_refs))
+
+    age_hours = max(0.0, (datetime.utcnow() - investigation.started_at).total_seconds() / 3600)
+    data_freshness = max(0.5, 1.0 - min(age_hours, 500) / 1000)
+
+    source_reliability = _SOURCE_RELIABILITY_BY_TYPE.get(evidence_ref.get("type"), 0.85)
+
+    return EvidenceConfidenceBreakdownOut(
+        evidence_quality=round(evidence_quality, 2),
+        data_freshness=round(data_freshness, 2),
+        source_reliability=round(source_reliability, 2),
+    )
+
+
+def _evidence_impact(investigation: Investigation, step: InvestigationStep) -> str:
+    """One sentence on how this evidence item affected the investigation
+    — composed from fields already on the investigation/step, same
+    deterministic-composition convention as _decision_rationale()."""
+    if step.status == "failed":
+        return "This step's evidence gathering failed and did not contribute a usable finding."
+    if investigation.status == "escalated":
+        return "Contributed to the decision to escalate this case to a human agent."
+    if investigation.root_cause:
+        return f"Supports the investigation's root cause: {investigation.root_cause}"
+    if investigation.resolution:
+        return f"Supported the resolution: {investigation.resolution}"
+    return "Part of the evidence gathered during this investigation."
+
+
+@router.get("/{investigation_id}/evidence/{evidence_id}", response_model=EvidenceDetailOut)
+def get_evidence_detail(investigation_id: int, evidence_id: str, db: Session = Depends(get_db)) -> EvidenceDetailOut:
+    """The Explainability Drawer's single source of data for one evidence
+    item. See EvidenceDetailOut's docstring for the addressing scheme and
+    why the source record itself isn't re-embedded here."""
+    investigation = _get_investigation(investigation_id, db)
+
+    try:
+        step_number, index = _parse_evidence_id(evidence_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Malformed evidence id {evidence_id!r} — expected '<step_number>:<index>'")
+
+    step = _find_step(investigation, step_number)
+    if step is None or index < 0 or index >= len(step.evidence_refs):
+        raise HTTPException(status_code=404, detail=f"Evidence item {evidence_id!r} not found on investigation {investigation_id}")
+
+    evidence_ref = step.evidence_refs[index]
+
+    return EvidenceDetailOut(
+        investigation_id=investigation.id,
+        evidence_id=evidence_id,
+        step_number=step.step_number,
+        title=evidence_ref["label"],
+        agent_name=step.agent_name,
+        timestamp=step.timestamp.isoformat(),
+        confidence=step.confidence,
+        evidence_ref=EvidenceRefOut(**evidence_ref),
+        reasoning=_evidence_reasoning(step),
+        tools=_evidence_tools(step),
+        confidence_breakdown=_evidence_confidence_breakdown(investigation, step, evidence_ref),
+        impact=_evidence_impact(investigation, step),
+    )

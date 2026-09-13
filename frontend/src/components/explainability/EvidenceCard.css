@@ -1,0 +1,102 @@
+/* [Explainability #118] */
+
+.evc-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--app-surface-blue);
+  border: 1px solid transparent;
+  border-radius: var(--app-radius-md);
+  font-family: inherit;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.evc-clickable {
+  cursor: pointer;
+}
+
+.evc-clickable:hover {
+  border-color: var(--app-primary);
+  box-shadow: var(--app-shadow-soft);
+  transform: translateY(-1px);
+}
+
+.evc-clickable:active {
+  transform: translateY(0);
+}
+
+.evc-active {
+  border-color: var(--app-primary);
+  background: var(--app-primary-soft);
+}
+
+.evc-icon {
+  color: var(--app-primary);
+  flex-shrink: 0;
+  display: flex;
+}
+
+.evc-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.evc-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--app-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evc-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--app-text-muted);
+}
+
+.evc-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.evc-tool-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--app-text-secondary);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.evc-chevron {
+  color: var(--app-text-muted);
+  flex-shrink: 0;
+}
+
+.evc-static {
+  opacity: 0.85;
+}
+
+.evc-static .evc-title {
+  font-style: italic;
+}
+
+@media (max-width: 480px) {
+  .evc-tool-badge {
+    display: none;
+  }
+}

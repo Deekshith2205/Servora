@@ -380,28 +380,20 @@
 }
 
 /* ---- D. Evidence panel ---- */
+/* [Explainability #118/#124]: cards themselves are now
+   components/explainability/EvidenceCard.jsx + its own CSS — this grid
+   just lays them out. */
 
 .ib-evidence-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 10px;
 }
 
-.ib-evidence-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  background: var(--app-surface-blue);
-  border-radius: var(--app-radius-md);
-  padding: 10px;
+.ib-hint {
+  margin: 10px 0 0;
   font-size: 0.78rem;
-  color: var(--app-text-primary);
-  line-height: 1.4;
-}
-.ib-evidence-card svg {
-  color: var(--app-primary);
-  flex-shrink: 0;
-  margin-top: 2px;
+  color: var(--app-text-muted);
 }
 
 /* ---- E. Root cause card ---- */
