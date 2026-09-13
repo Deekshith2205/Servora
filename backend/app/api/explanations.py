@@ -89,6 +89,32 @@ def _alternatives(investigation: Investigation) -> list[dict]:
     return []
 
 
+def _chosen_action(investigation: Investigation) -> str | None:
+    """[EXPLAIN] issue #96: which of resolve/clarify/escalate was actually
+    chosen — needed so the frontend can show it visually distinct from
+    (never mixed into) the rejected alternatives above.
+
+    Not a stored column of its own — orchestrator.py's planner _record()
+    call always builds the step's `action` label deterministically as
+    exactly one of "Decided to resolve via the X specialist",
+    "Decided to clarify", or "Decided to escalate" (see
+    orchestrator.py's `plan_action` local). Parsing that fixed,
+    code-controlled string (never raw LLM prose) is simpler and safer
+    than adding a second column that would just duplicate what's already
+    unambiguously encoded in the planner step's action text.
+    """
+    for s in investigation.steps:
+        if s.agent_name != "planner":
+            continue
+        if s.action.startswith("Decided to resolve"):
+            return "resolve"
+        if "clarify" in s.action:
+            return "clarify"
+        if "escalate" in s.action:
+            return "escalate"
+    return None
+
+
 def _decision_rationale(investigation: Investigation, db: Session) -> str:
     """Deterministic composition, no new LLM call (issue #92's explicit
     design choice). Resolved: root_cause + resolution, both already
@@ -122,6 +148,7 @@ def get_explanation(investigation_id: int, db: Session = Depends(get_db)) -> Exp
         evidence=evidence.evidence,
         evidence_refs=evidence.evidence_refs,
         policy_references=evidence.policy_references,
+        chosen_action=_chosen_action(investigation),
         alternatives_considered=_alternatives(investigation),
         agents_consulted=_agents_consulted(investigation),
         decision_rationale=_decision_rationale(investigation, db),

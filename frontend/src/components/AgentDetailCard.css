@@ -1,0 +1,137 @@
+/* [SWARM] issue #82 */
+
+.adc-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  overflow: hidden;
+}
+
+.adc-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.adc-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--app-primary-soft);
+  color: var(--app-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.adc-icon-failed {
+  background: var(--app-danger-bg);
+  color: var(--app-danger-text);
+}
+
+.adc-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.adc-agent {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--app-text-primary);
+}
+
+.adc-action {
+  font-size: 0.78rem;
+  color: var(--app-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adc-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.adc-duration {
+  font-size: 0.7rem;
+  color: var(--app-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.adc-chevron {
+  transition: transform 0.15s ease;
+  color: var(--app-text-muted);
+}
+.adc-chevron.open {
+  transform: rotate(180deg);
+}
+
+.adc-body {
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--app-border);
+}
+
+.adc-section {
+  margin-top: 10px;
+}
+
+.adc-section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-text-muted);
+  margin-bottom: 4px;
+}
+
+.adc-reasoning {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--app-text-primary);
+  line-height: 1.5;
+}
+
+.adc-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adc-chip {
+  background: var(--app-surface-blue);
+  color: var(--app-primary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+.adc-evidence-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+  color: var(--app-text-secondary);
+}
+.adc-evidence-list li {
+  margin-bottom: 4px;
+}
+
+.adc-empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--app-text-muted);
+  font-style: italic;
+}

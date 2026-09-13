@@ -1,0 +1,93 @@
+/* [EXPLAIN] issue #94 — reuses the app's success/warning/danger tokens
+   (same ones confidence-badge already uses in InvestigationBoard.css) so
+   the gauge's color language never disagrees with the small badges. */
+
+.confidence-gauge {
+  position: relative;
+  margin: 0 auto;
+}
+
+.confidence-gauge-track {
+  fill: none;
+  stroke: var(--app-border);
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+.confidence-gauge-fill {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.6s ease;
+}
+
+.confidence-gauge-fill.tier-high { stroke: var(--app-success-text); }
+.confidence-gauge-fill.tier-medium { stroke: var(--app-warning-text); }
+.confidence-gauge-fill.tier-low { stroke: var(--app-danger-text); }
+
+.confidence-gauge-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.confidence-gauge-value {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--app-text-primary);
+  line-height: 1;
+}
+
+.confidence-gauge-caption {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--app-text-muted);
+}
+
+.confidence-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.confidence-breakdown-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 40px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+}
+
+.confidence-breakdown-label {
+  color: var(--app-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confidence-breakdown-track {
+  height: 6px;
+  background: var(--app-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.confidence-breakdown-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.confidence-breakdown-fill.tier-high { background: var(--app-success-text); }
+.confidence-breakdown-fill.tier-medium { background: var(--app-warning-text); }
+.confidence-breakdown-fill.tier-low { background: var(--app-danger-text); }
+
+.confidence-breakdown-value {
+  text-align: right;
+  color: var(--app-text-muted);
+  font-variant-numeric: tabular-nums;
+}

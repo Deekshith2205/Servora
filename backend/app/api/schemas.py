@@ -392,6 +392,12 @@ class ExplanationOut(BaseModel):
     evidence: list[str] = []
     evidence_refs: list[EvidenceRefOut] = []
     policy_references: list[EvidenceRefOut] = []
+    # [EXPLAIN] issue #96: which action was actually taken — None only if
+    # somehow no planner step was recorded at all. Kept separate from
+    # `alternatives_considered` (which never includes this value) so a
+    # frontend can render the two visually distinct, per that issue's own
+    # acceptance criteria.
+    chosen_action: str | None = None
     alternatives_considered: list[AlternativeOut] = []
     agents_consulted: list[InvestigationAgentSummaryOut] = []
     decision_rationale: str

@@ -116,3 +116,28 @@ mention if the demo is going well:
   in the Staff Dashboard's Bookings section (#20) — editing it there
   sends the (mocked, see `app/services/notifications.py`) customer
   notification from issue #21.
+- **Agent Swarm tab + "Why did Servora recommend this?"** (the [SWARM]/
+  [EXPLAIN] P0 batch, #77-#98): reuses Scenario 2's exact duplicate-charge
+  message — after it resolves, this is the moment to switch to it.
+  1. Type Scenario 2's message again (or reuse the same conversation) and
+     switch to the **Agent Swarm** tab. Point out the node/edge graph is
+     the SAME real investigation just created — not a separate diagram —
+     rendered left-to-right in real execution order (Classifier → Planner
+     → Billing → Verification → Memory), each node showing its real
+     confidence and duration. Click the **Billing Agent** node to expand
+     its card: real reasoning, the exact tools it called
+     (`get_customer_orders`, `check_payment_issue`, `issue_refund`), and
+     the evidence each one produced.
+  2. Back in **Customer Chat**, click **"Why did Servora recommend
+     this?"** under the reply. Point out, in order: the large confidence
+     gauge (90%) with a per-agent breakdown underneath (not just one
+     number); the Decision Rationale paragraph; **Alternative Actions
+     Considered** — the "Chosen" badge next to the real action taken
+     (`resolve`), with the OTHER two actions (`clarify`, `escalate`) shown
+     struck through alongside the specific reason each was rejected —
+     this is the Planner's actual deliberation, not a fabricated list of
+     options.
+  3. The same panel, in full-page form, is also in the **Staff
+     Dashboard**'s escalation drawer for any escalated ticket (Scenario
+     3) — worth showing once to make clear it's one shared component, not
+     a customer-only feature.
