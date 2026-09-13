@@ -1111,11 +1111,55 @@ for "merged into a dead-end branch." The only way to know for certain
 `origin/main`, not the PR's own merged/closed state. Do this check after
 *every* stacked-PR merge from now on, not just when something seems off.
 
+**Update**: PR #115 has since merged — confirmed via
+`git log origin/main..origin/p2-parallel-multi-specialist` (empty) and
+`git branch -r --contains <tip commit>` showing `origin/main`. The
+Critic Agent (#108-#113) is genuinely on `main` now; "Next up" item 0
+below is done.
+
+### 2026-09-13 (continued) — Agent Collaboration Graph: the static Agent
+Swarm view is now a real React Flow graph
+
+Implemented the user's "Agent Collaboration Graph" task in full — see
+PR #116: https://github.com/Deekshith2205/Servora/pull/116 (base
+`main`, branched from the confirmed post-#115 tip, CI green on both
+checks). Replaced `AgentSwarmView.jsx`'s hand-drawn SVG graph
+(`GraphNode`/`computeLayers`/`ConnectorSVG`/`SwarmGraph`) with
+React Flow (`@xyflow/react`), reusing the exact same depth/column
+algorithm and every existing data field (`graph`/`timeline`,
+`depends_on`, `confidence`, `duration_ms`, `evidence`) — no backend or
+schema change at all.
+
+Three new files carry all the new logic:
+`frontend/src/utils/investigationToFlow.js` (mapping layer — investigation
+records → React Flow nodes/edges, adds an `agentType()` classifier and
+a new **"escalated"** status the old vocabulary didn't have),
+`frontend/src/components/AgentNode.jsx` (custom node — icon/name/type/
+status/confidence/duration/evidence count), and
+`frontend/src/components/AgentCollaborationGraph.jsx` (the React Flow
+wrapper — zoom/pan/fit-to-view, animated edges, loading/empty states).
+`AgentSwarmView.jsx` itself needed only its graph-rendering code
+removed and one component swapped in; all state, live-SSE growth,
+replay speed control, and the Swarm Timeline strip are untouched.
+
+Two real bugs found via live verification against the real Gemini key
+(not just build/lint): (1) `liveGraph` can briefly go `null` while
+`isLive` is still true, because `CustomerChat.jsx`'s `clearLive()` can
+fire before `AgentSwarmView`'s own "investigation finished" effect
+switches away from LIVE mode — fixed with a null guard; (2) a genuine
+CSS Grid overflow bug: `.swarm-detail-panel` (a grid item) had the
+browser-default `min-width: auto`, so the graph's own content forced
+the grid track wider than the viewport at narrow widths, rendering the
+whole graph visually blank/off-screen on mobile — fixed with the
+standard `min-width: 0`. Verified live: the full 8-step parallel
+fan-out/fan-in shape (with a real Critic node) and a separate 3-step
+escalation-only chain (no critic step, "Escalated" status showing
+correctly) both render correctly; node click still opens
+`AgentDetailCard`; mobile width (375px) reflows correctly after the
+CSS fix.
+
 ## Next up (in priority order)
 
-0. **Merge PR #115** (`p2-parallel-multi-specialist` → `main`) — the two
-   remaining commits (the Critic Agent, #108-#113) not yet on `main`.
-   Everything else through PR #107 is already merged.
 1. **Still the single highest-priority loose thread, now spanning the
    ENTIRE backlog.** Nobody has confirmed `call_llm()` against a real
    Anthropic API key. Real bugs have repeatedly been found without one —
@@ -1125,9 +1169,10 @@ for "merged into a dead-end branch." The only way to know for certain
    which nothing here can substitute for). Also the only way to actually
    run `docs/DEMO_SCRIPT.md`'s 3 scenarios for real.
 2. ~~New [P6] backlog (#57-#63)~~ — done. ~~[SWARM] batch (#77-#88)~~ /
-   ~~[EXPLAIN] batch (#89-#99)~~ — **fully done as of PR #103/#104/#105
-   (pending merge, see Next up #0)**, except #88 (explicitly out of
-   scope). This item's original detailed sequencing plan is left out of
+   ~~[EXPLAIN] batch (#89-#99)~~ — **fully done and merged to `main`**
+   (PR #103/#104/#105, plus #88 via #107, the Critic Agent via #115, and
+   the Agent Collaboration Graph via #116). This item's original detailed
+   sequencing plan is left out of
    this entry now that it's obsolete — see the 2026-09-13 progress-log
    entries above (the P6 one, and the two [SWARM]/[EXPLAIN] ones) for the
    real implementation history if needed.
