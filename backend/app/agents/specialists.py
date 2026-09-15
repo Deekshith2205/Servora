@@ -30,7 +30,14 @@ from app.tools.tool_registry import build_filtered_tool_registry
 # Tools that only *ground an answer* (look something up) rather than take an
 # irreversible action. Used by _estimate_confidence — see its docstring.
 _ACTION_TOOLS = {"issue_refund"}
-_GROUNDING_TOOLS = {"get_customer", "get_customer_orders", "get_customer_tickets", "search_kb", "check_payment_issue", "check_order_issue"}
+_GROUNDING_TOOLS = {
+    "get_customer", "get_customer_orders", "get_customer_tickets", "search_kb",
+    "check_payment_issue", "check_order_issue",
+    # Shopify integration: a real external lookup grounds an answer at
+    # least as well as this app's own mocked tables do — same 0.6 tier,
+    # not a separate one.
+    "lookup_shopify_order", "lookup_shopify_customer", "lookup_shopify_fulfillment",
+}
 
 
 @dataclass
@@ -120,6 +127,33 @@ def _describe_evidence(tool_name: str, args: dict, result) -> str:
         error = result.get("error") if isinstance(result, dict) else "unknown error"
         return f"Refund attempt for order #{args.get('order_id')} failed: {error}."
 
+    if tool_name == "lookup_shopify_order":
+        if isinstance(result, dict) and result.get("error"):
+            return f"Shopify order lookup for #{args.get('order_id')} — {result['error']}"
+        if not isinstance(result, dict) or result.get("id") is None:
+            return f"Looked up Shopify order #{args.get('order_id')} — not found."
+        return (
+            f"Retrieved real Shopify order {result.get('name', result['id'])}: "
+            f"{result.get('financial_status')}/{result.get('fulfillment_status') or 'unfulfilled'}."
+        )
+
+    if tool_name == "lookup_shopify_customer":
+        if isinstance(result, dict) and result.get("error"):
+            return f"Shopify customer lookup — {result['error']}"
+        if isinstance(result, dict) and "orders" in result:
+            return f"Retrieved {len(result['orders'])} real Shopify order(s) for {result.get('email')}."
+        if not isinstance(result, dict) or result.get("id") is None:
+            return "Looked up Shopify customer — not found."
+        return f"Retrieved real Shopify customer profile: {result.get('first_name', '')} {result.get('last_name', '')}".strip() + "."
+
+    if tool_name == "lookup_shopify_fulfillment":
+        if isinstance(result, dict) and result.get("error"):
+            return f"Shopify fulfillment lookup for order #{args.get('order_id')} — {result['error']}"
+        if not isinstance(result, dict) or result.get("order_id") is None:
+            return f"Looked up Shopify fulfillment for order #{args.get('order_id')} — not found."
+        status = result.get("fulfillment_status") or "unfulfilled"
+        return f"Retrieved real Shopify fulfillment status for order {result.get('order_number', result['order_id'])}: {status}."
+
     return f"Called {tool_name} with {args}."
 
 
@@ -153,6 +187,36 @@ def _describe_evidence_refs(tool_name: str, args: dict, result) -> list[dict]:
     if tool_name in ("check_payment_issue", "check_order_issue"):
         if isinstance(result, dict) and result.get("order_id") is not None:
             return [{"type": "order", "ref_id": result["order_id"], "label": f"Order #{result['order_id']}"}]
+        return []
+
+    if tool_name == "lookup_shopify_order":
+        # Only a genuine, found Shopify order produces a ref — a "not
+        # connected"/error dict (see _call_shopify in tool_registry.py)
+        # or a real 404 has no real record to deep-link to.
+        if isinstance(result, dict) and not result.get("error") and result.get("id") is not None:
+            label = result.get("name") or f"Order #{result['id']}"
+            return [{"type": "shopify_order", "ref_id": result["id"], "label": f"Shopify {label}"}]
+        return []
+
+    if tool_name == "lookup_shopify_customer":
+        if isinstance(result, dict) and not result.get("error"):
+            if result.get("id") is not None:
+                name = f"{result.get('first_name', '')} {result.get('last_name', '')}".strip() or result.get("email", "Customer")
+                return [{"type": "shopify_customer", "ref_id": result["id"], "label": f"Shopify: {name}"}]
+            # Looked up by email -> zero or more real orders, no single customer id.
+            refs = []
+            for o in (result.get("orders") or []):
+                if o.get("id") is None:
+                    continue
+                order_label = o.get("name") or f"Order #{o['id']}"
+                refs.append({"type": "shopify_order", "ref_id": o["id"], "label": f"Shopify {order_label}"})
+            return refs
+        return []
+
+    if tool_name == "lookup_shopify_fulfillment":
+        if isinstance(result, dict) and not result.get("error") and result.get("order_id") is not None:
+            label = result.get("order_number") or f"Order #{result['order_id']}"
+            return [{"type": "shopify_order", "ref_id": result["order_id"], "label": f"Shopify {label}"}]
         return []
 
     if tool_name == "issue_refund":
@@ -305,6 +369,15 @@ order, or without first identifying the specific order.
 7. Reply in plain, friendly language stating what you found and what \
 action you took (or could not take, and why) — cite the specific order \
 and policy, don't just say "I checked and it's fine."
+
+If a connected Shopify store is relevant (the customer mentions an order \
+number or context that sounds like it's from the connected Shopify \
+storefront rather than this system's own records), you may also call \
+lookup_shopify_order or lookup_shopify_customer to ground your answer in \
+the real Shopify order. If no store is connected, that tool will tell you \
+so plainly — don't treat that as the order not existing, just fall back \
+to this system's own order lookup instead. You do not have a Shopify \
+refund tool — issue_refund only ever affects this system's own records.
 """
 
 
@@ -364,6 +437,14 @@ to find the exact policy for delayed orders, and if eligible, you may offer \
 a courtesy discount (but do not issue a refund).
 7. Reply in plain, friendly language explaining the exact status and \
 what policy applies. Do not reveal hidden tool data.
+
+If a connected Shopify store is relevant (the customer's order sounds \
+like it's from the connected Shopify storefront rather than this \
+system's own records), call lookup_shopify_order or \
+lookup_shopify_fulfillment to ground your answer in the real Shopify \
+order and its real shipping/tracking status. If no store is connected, \
+that tool will tell you so plainly — fall back to this system's own \
+order lookup instead of treating it as the order not existing.
 """
 
 

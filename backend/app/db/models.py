@@ -300,3 +300,49 @@ class Notification(Base):
     subject: Mapped[str] = mapped_column(String)
     body: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ShopifyIntegration(Base):
+    """Real Shopify store connection — Settings -> Integrations. See
+    app/services/shopify_service.py for what actually talks to Shopify's
+    Admin REST API using this row's credentials, and
+    app/api/integrations.py for the connect/disconnect/status endpoints
+    that write/read it.
+
+    Single-row by convention, not by schema constraint: this is a
+    single-tenant demo app (one store, like every other external
+    dependency here — see mock_tools.py's fixed seeded data), so nothing
+    enforces "only one row" at the DB level, but every reader/writer in
+    this codebase treats "the most recently created row" as THE
+    connection, same spirit as CustomerMemory being "one row per
+    customer" by convention rather than a composite key.
+
+    `access_token` is stored in plain text. This is the same trust
+    boundary every other credential in this codebase already lives at
+    (see app/config.py's own header: "reads from environment variables
+    ... nothing here should ever hold a REAL secret value" — this table
+    is the one deliberate exception, since a real Shopify token has to
+    live somewhere to make real API calls). A production deployment
+    would encrypt this column or use a secrets manager; flagged here
+    explicitly rather than silently assumed safe, matching this
+    project's convention of naming a scope limit instead of quietly
+    living with it (e.g. issue #91's KB section-granularity note).
+    `GET /api/integrations/shopify/status` never returns this value —
+    see that endpoint's own docstring.
+    """
+
+    __tablename__ = "shopify_integrations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    store_url: Mapped[str] = mapped_column(String)
+    access_token: Mapped[str] = mapped_column(String)
+    # connected | disconnected | error — "error" means the stored
+    # credentials were once valid enough to save but a later call failed
+    # (e.g. token revoked on Shopify's side); status/status endpoints
+    # distinguish this from "never connected" so staff know to reconnect
+    # rather than assume the integration was never set up.
+    status: Mapped[str] = mapped_column(String, default="disconnected")
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -6,7 +6,7 @@
 // new minimal `app/api/records.py` lookups (#95) for order/customer/
 // ticket previews.
 import { useState } from "react";
-import { fetchCustomerRecord, fetchKBArticle, fetchOrderRecord, fetchTicketRecord } from "../api/client";
+import { fetchCustomerRecord, fetchKBArticle, fetchOrderRecord, fetchShopifyCustomerRecord, fetchShopifyOrderRecord, fetchTicketRecord } from "../api/client";
 import "./EvidenceExplorer.css";
 
 const TYPE_ICON = {
@@ -30,6 +30,17 @@ const TYPE_ICON = {
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
     </svg>
   ),
+  // Shopify integration — a real external store lookup.
+  shopify_order: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><path d="M3 6h18"></path><path d="M16 10a4 4 0 0 1-8 0"></path>
+    </svg>
+  ),
+  shopify_customer: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><path d="M3 6h18"></path><path d="M16 10a4 4 0 0 1-8 0"></path>
+    </svg>
+  ),
 };
 
 const FETCHERS = {
@@ -37,6 +48,8 @@ const FETCHERS = {
   customer: fetchCustomerRecord,
   ticket: fetchTicketRecord,
   kb_article: fetchKBArticle,
+  shopify_order: fetchShopifyOrderRecord,
+  shopify_customer: fetchShopifyCustomerRecord,
 };
 
 function RecordPreview({ type, record }) {
@@ -67,6 +80,25 @@ function RecordPreview({ type, record }) {
         <dt>Category</dt><dd>{record.category}</dd>
         <dt>Status</dt><dd>{record.status}</dd>
         <dt>Urgency</dt><dd>{record.urgency}/10</dd>
+      </dl>
+    );
+  }
+  if (type === "shopify_order") {
+    return (
+      <dl className="ee-preview-fields">
+        <dt>Order</dt><dd>{record.order_number}</dd>
+        <dt>Total</dt><dd>${record.total_price}</dd>
+        <dt>Payment</dt><dd>{record.financial_status}</dd>
+        <dt>Fulfillment</dt><dd>{record.fulfillment_status || "unfulfilled"}</dd>
+      </dl>
+    );
+  }
+  if (type === "shopify_customer") {
+    return (
+      <dl className="ee-preview-fields">
+        <dt>Name</dt><dd>{record.first_name} {record.last_name}</dd>
+        <dt>Email</dt><dd>{record.email}</dd>
+        <dt>Orders</dt><dd>{record.orders_count}</dd>
       </dl>
     );
   }
@@ -117,8 +149,30 @@ function EvidenceCard({ item: evidenceRef }) {
   );
 }
 
+// Real duplicates happen: a genuinely cross-cutting issue (#88's
+// parallel fan-out) can have TWO specialists independently look up the
+// SAME real record (e.g. both Billing and Order calling
+// lookup_shopify_order on the same Shopify order) — found live wiring
+// up the Shopify integration, when both specialists produced the exact
+// same {type: "shopify_order", ref_id: 5001} ref and React warned about
+// a duplicate key. Collapses to one card per real (type, ref_id) pair —
+// same fix already applied in utils/investigationEvidence.js's
+// dedupeEvidence() for the newer Explainability drawer, just adapted
+// here for this component's plain {type, ref_id, label} shape.
+function dedupeRefs(refs) {
+  const seen = new Set();
+  const result = [];
+  for (const r of refs) {
+    const key = `${r.type}:${r.ref_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(r);
+  }
+  return result;
+}
+
 export function EvidenceExplorer({ evidenceRefs }) {
-  const general = (evidenceRefs || []).filter((r) => r.type !== "kb_article");
+  const general = dedupeRefs((evidenceRefs || []).filter((r) => r.type !== "kb_article"));
   return (
     <div className="eap-section">
       <div className="eap-section-label">Evidence Explorer</div>
@@ -134,12 +188,13 @@ export function EvidenceExplorer({ evidenceRefs }) {
 }
 
 export function PolicyReferenceExplorer({ policyReferences }) {
-  if (!policyReferences || policyReferences.length === 0) return null;
+  const deduped = dedupeRefs(policyReferences || []);
+  if (deduped.length === 0) return null;
   return (
     <div className="eap-section">
       <div className="eap-section-label">Policy References</div>
       <div className="ee-card-list">
-        {policyReferences.map((r) => <EvidenceCard key={`${r.type}-${r.ref_id}`} item={r} />)}
+        {deduped.map((r) => <EvidenceCard key={`${r.type}-${r.ref_id}`} item={r} />)}
       </div>
     </div>
   );

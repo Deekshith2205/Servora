@@ -50,6 +50,8 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from app.db.models import Customer, KBArticle, Order, Room, Ticket
+from app.services import shopify_service
+from app.services.shopify_service import ShopifyAPIError, ShopifyNotConnectedError
 from app.tools import mock_tools
 
 # ---------------------------------------------------------------------------
@@ -117,6 +119,29 @@ def _serialize(obj: Any) -> Any:
 def serialize_tool_result(result: Any) -> str:
     """Return a JSON string suitable for embedding in a tool_result message."""
     return json.dumps(_serialize(result), default=str)
+
+
+def _call_shopify(fn: Callable[[], Any]) -> Any:
+    """Every Shopify-backed tool handler goes through this: turns "not
+    connected" / "a real API call failed" into a plain, honest result
+    dict instead of letting either propagate as a raw exception into
+    call_llm()'s tool-calling loop. Matches this codebase's existing
+    convention (mock_tools.check_payment_issue returns
+    `{"detected": False, "error": "Order not found"}` rather than
+    raising) — the model gets something it can reason about and explain
+    to the customer ("Shopify isn't connected yet") instead of the whole
+    turn crashing on an unhandled exception.
+
+    Deliberately does NOT catch other exception types — a genuine
+    programming bug here should still surface loudly, the same way an
+    unrelated bug in mock_tools.py would.
+    """
+    try:
+        return fn()
+    except ShopifyNotConnectedError as exc:
+        return {"connected": False, "error": str(exc)}
+    except ShopifyAPIError as exc:
+        return {"connected": True, "error": str(exc), "status_code": exc.status_code}
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +293,69 @@ TOOL_SCHEMAS: list[dict] = [
             "required": ["room_type"],
         },
     },
+    {
+        "name": "lookup_shopify_order",
+        "description": (
+            "Look up a REAL order from the connected Shopify store by its "
+            "numeric Shopify order ID — use this when the customer's order "
+            "is from the connected Shopify storefront rather than this "
+            "system's own seeded order records. Returns real order status, "
+            "payment status, fulfillment status, and line items. If no "
+            "Shopify store is connected, returns a result saying so — "
+            "don't treat that as the order not existing."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {
+                    "type": "integer",
+                    "description": "The numeric Shopify order ID.",
+                }
+            },
+            "required": ["order_id"],
+        },
+    },
+    {
+        "name": "lookup_shopify_customer",
+        "description": (
+            "Look up a REAL customer profile from the connected Shopify "
+            "store by their numeric Shopify customer ID, OR find their "
+            "orders by email if you only have their email address. Returns "
+            "real name, email, order count, and total spend."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "integer",
+                    "description": "The numeric Shopify customer ID, if known.",
+                },
+                "email": {
+                    "type": "string",
+                    "description": "The customer's email address, if the numeric ID isn't known.",
+                },
+            },
+        },
+    },
+    {
+        "name": "lookup_shopify_fulfillment",
+        "description": (
+            "Get the REAL fulfillment/shipping status for a Shopify order — "
+            "whether it has shipped, tracking number, and carrier. Call this "
+            "instead of lookup_shopify_order specifically when the customer "
+            "is asking about shipping/delivery, not billing."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {
+                    "type": "integer",
+                    "description": "The numeric Shopify order ID.",
+                }
+            },
+            "required": ["order_id"],
+        },
+    },
 ]
 
 #: Stable set of all exposed tool names, for fast membership testing.
@@ -330,11 +418,38 @@ def build_tool_registry(
             schema=TOOL_SCHEMAS[7],  # check_room_availability
             handler=lambda args: mock_tools.check_room_availability(db, args["room_type"]),
         ),
+        _BoundTool(
+            schema=TOOL_SCHEMAS[8],  # lookup_shopify_order
+            handler=lambda args: _call_shopify(lambda: shopify_service.get_order(db, args["order_id"])),
+        ),
+        _BoundTool(
+            schema=TOOL_SCHEMAS[9],  # lookup_shopify_customer
+            handler=lambda args: _call_shopify(lambda: _lookup_shopify_customer(db, args)),
+        ),
+        _BoundTool(
+            schema=TOOL_SCHEMAS[10],  # lookup_shopify_fulfillment
+            handler=lambda args: _call_shopify(lambda: shopify_service.get_fulfillment_status(db, args["order_id"])),
+        ),
     ]
 
     schemas = [b.schema for b in bound]
     handlers = {b.schema["name"]: b.handler for b in bound}
     return schemas, handlers
+
+
+def _lookup_shopify_customer(db: Session, args: dict) -> Any:
+    """lookup_shopify_customer's schema deliberately allows EITHER
+    customer_id OR email (not both required) — this dispatches to
+    whichever the model actually supplied, matching
+    get_orders_by_email()'s own purpose (finding a customer by the
+    identifier a support conversation is more likely to actually have:
+    an email address, not an internal numeric ID)."""
+    if args.get("customer_id") is not None:
+        return shopify_service.get_customer(db, args["customer_id"])
+    if args.get("email"):
+        orders = shopify_service.get_orders_by_email(db, args["email"])
+        return {"email": args["email"], "orders": orders}
+    return {"error": "Provide either customer_id or email."}
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +501,14 @@ SPECIALIST_TOOL_PERMISSIONS: dict[str, frozenset[str]] = {
         "check_payment_issue",
         "search_kb",
         "issue_refund",
+        # Shopify integration: Billing may look up a real Shopify order's
+        # payment/financial status, but — same "no direct write access"
+        # posture as issue_refund's own scope — nothing here lets it
+        # issue a REAL Shopify refund; that would be a separate, much
+        # larger trust boundary (a live write against a real store) not
+        # in scope for this integration.
+        "lookup_shopify_order",
+        "lookup_shopify_customer",
     }),
     "technical": frozenset({
         "get_customer",
@@ -397,6 +520,13 @@ SPECIALIST_TOOL_PERMISSIONS: dict[str, frozenset[str]] = {
         "get_customer_orders",
         "check_order_issue",
         "search_kb",
+        # Shopify integration: Order is the specialist customers actually
+        # ask "where is my order?" — it gets all three Shopify tools,
+        # including the fulfillment/shipping-specific one Billing has no
+        # use for.
+        "lookup_shopify_order",
+        "lookup_shopify_customer",
+        "lookup_shopify_fulfillment",
     }),
     "account": frozenset({
         "get_customer",

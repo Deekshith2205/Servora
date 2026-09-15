@@ -169,3 +169,30 @@ export function fetchKBArticle(articleId) {
 export function fetchEvidenceDetail(investigationId, evidenceId) {
   return request(`/api/investigations/${investigationId}/evidence/${evidenceId}`);
 }
+
+// Shopify integration — Settings -> Integrations.
+export function fetchShopifyStatus() {
+  return request("/api/integrations/shopify/status");
+}
+
+export function connectShopify(storeUrl, accessToken) {
+  return request("/api/integrations/shopify/connect", {
+    method: "POST",
+    body: JSON.stringify({ store_url: storeUrl, access_token: accessToken }),
+  });
+}
+
+export function disconnectShopify() {
+  return request("/api/integrations/shopify/disconnect", { method: "POST" });
+}
+
+// Shopify evidence inline-preview lookups — same role as
+// fetchOrderRecord/fetchCustomerRecord above, backed by a live Shopify
+// API call instead of Servora's own DB.
+export function fetchShopifyOrderRecord(orderId) {
+  return request(`/api/records/shopify-orders/${orderId}`);
+}
+
+export function fetchShopifyCustomerRecord(customerId) {
+  return request(`/api/records/shopify-customers/${customerId}`);
+}

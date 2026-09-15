@@ -1,0 +1,221 @@
+/* Settings -> Integrations. Reuses the app's existing --app-* design
+   tokens (App.css) for visual consistency with the rest of Servora —
+   same card/shadow/badge language as InvestigationBoard.css's .ib-*
+   rules, just its own scoped prefix. */
+
+.ig-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+}
+
+.ig-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-text-secondary);
+}
+
+.ig-app-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-soft);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ig-app-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ig-app-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--app-radius-md);
+  background: var(--app-primary-soft);
+  color: var(--app-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ig-app-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.ig-app-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--app-text-primary);
+}
+
+.ig-app-desc {
+  font-size: 0.8rem;
+  color: var(--app-text-muted);
+  margin-top: 2px;
+}
+
+.ig-loading {
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+}
+
+/* ---- Connected state ---- */
+
+.ig-connected-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ig-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  background: var(--app-bg);
+  border-radius: var(--app-radius-md);
+  padding: 14px;
+}
+
+.ig-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ig-field-label {
+  font-size: 0.68rem;
+  color: var(--app-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ig-field-value {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--app-text-primary);
+  overflow-wrap: break-word;
+}
+
+.ig-last-error {
+  font-size: 0.8rem;
+  color: var(--app-danger-text);
+  background: var(--app-danger-bg);
+  border-radius: var(--app-radius-sm);
+  padding: 8px 12px;
+}
+
+/* ---- Connect form ---- */
+
+.ig-connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ig-connect-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--app-text-secondary);
+  line-height: 1.5;
+}
+
+.ig-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ig-form-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--app-text-secondary);
+}
+
+.ig-input {
+  padding: 9px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  font-size: 0.88rem;
+  font-family: inherit;
+  color: var(--app-text-primary);
+  background: var(--app-surface);
+}
+
+.ig-input:focus {
+  outline: none;
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 3px var(--app-primary-soft);
+}
+
+.ig-connect-error {
+  font-size: 0.8rem;
+  color: var(--app-danger-text);
+  background: var(--app-danger-bg);
+  border-radius: var(--app-radius-sm);
+  padding: 8px 12px;
+}
+
+.ig-btn-primary, .ig-btn-secondary {
+  padding: 9px 16px;
+  border-radius: var(--app-radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  align-self: flex-start;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.ig-btn-primary {
+  background: var(--app-primary);
+  color: white;
+}
+
+.ig-btn-primary:hover {
+  background: var(--app-primary-hover, var(--app-primary));
+  opacity: 0.9;
+}
+
+.ig-btn-primary:disabled, .ig-btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ig-btn-secondary {
+  background: var(--app-surface-hover);
+  color: var(--app-text-primary);
+  border: 1px solid var(--app-border);
+}
+
+.ig-btn-secondary:hover {
+  background: var(--app-danger-bg);
+  color: var(--app-danger-text);
+}
+
+.ig-footnote {
+  font-size: 0.78rem;
+  color: var(--app-text-muted);
+  line-height: 1.5;
+  max-width: 560px;
+}
+
+@media (max-width: 640px) {
+  .ig-page {
+    max-width: 100%;
+  }
+  .ig-field-grid {
+    grid-template-columns: 1fr;
+  }
+}

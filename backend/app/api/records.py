@@ -9,9 +9,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.analytics import CHURN_HIGH_THRESHOLD, CHURN_MEDIUM_THRESHOLD
-from app.api.schemas import CustomerProfileOut, OrderRecordOut, TicketRecordOut
+from app.api.schemas import (
+    CustomerProfileOut,
+    OrderRecordOut,
+    ShopifyCustomerRecordOut,
+    ShopifyOrderRecordOut,
+    TicketRecordOut,
+)
 from app.db.database import get_db
 from app.db.models import Customer, Order, Ticket
+from app.services import shopify_service
+from app.services.shopify_service import ShopifyAPIError, ShopifyNotConnectedError
 
 router = APIRouter(prefix="/api/records", tags=["records"])
 
@@ -79,4 +87,57 @@ def get_ticket(ticket_id: int, db: Session = Depends(get_db)) -> TicketRecordOut
         sentiment=ticket.sentiment,
         urgency=ticket.urgency,
         created_at=ticket.created_at.isoformat(),
+    )
+
+
+# --------------------------------------------------------------------- #
+# Shopify integration: backs a `shopify_order`/`shopify_customer`
+# evidence reference's inline preview — same role as the lookups above,
+# just re-querying a live Shopify store instead of Servora's own DB (see
+# app/services/shopify_service.py). Deliberately re-fetches live rather
+# than caching the tool call's original result: by the time a user opens
+# this preview, the order may have genuinely changed (e.g. fulfillment
+# status), and this endpoint's whole point is showing the CURRENT real
+# record, not a stale snapshot.
+# --------------------------------------------------------------------- #
+
+
+@router.get("/shopify-orders/{order_id}", response_model=ShopifyOrderRecordOut)
+def get_shopify_order(order_id: int, db: Session = Depends(get_db)) -> ShopifyOrderRecordOut:
+    try:
+        order = shopify_service.get_order(db, order_id)
+    except ShopifyNotConnectedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ShopifyAPIError as exc:
+        raise HTTPException(status_code=502, detail=f"Shopify lookup failed: {exc}") from exc
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Shopify order {order_id} not found")
+    return ShopifyOrderRecordOut(
+        id=order["id"],
+        order_number=order.get("name"),
+        email=order.get("email"),
+        total_price=order.get("total_price"),
+        financial_status=order.get("financial_status"),
+        fulfillment_status=order.get("fulfillment_status"),
+        created_at=order.get("created_at"),
+    )
+
+
+@router.get("/shopify-customers/{customer_id}", response_model=ShopifyCustomerRecordOut)
+def get_shopify_customer(customer_id: int, db: Session = Depends(get_db)) -> ShopifyCustomerRecordOut:
+    try:
+        customer = shopify_service.get_customer(db, customer_id)
+    except ShopifyNotConnectedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ShopifyAPIError as exc:
+        raise HTTPException(status_code=502, detail=f"Shopify lookup failed: {exc}") from exc
+    if customer is None:
+        raise HTTPException(status_code=404, detail=f"Shopify customer {customer_id} not found")
+    return ShopifyCustomerRecordOut(
+        id=customer["id"],
+        first_name=customer.get("first_name"),
+        last_name=customer.get("last_name"),
+        email=customer.get("email"),
+        orders_count=customer.get("orders_count"),
+        total_spent=customer.get("total_spent"),
     )

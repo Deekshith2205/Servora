@@ -104,6 +104,10 @@ EXPECTED_TOOL_NAMES = {
     "check_payment_issue",
     "issue_refund",
     "check_room_availability",
+    # Shopify integration (Phase 3): real-store lookups, billing/order only.
+    "lookup_shopify_order",
+    "lookup_shopify_customer",
+    "lookup_shopify_fulfillment",
 }
 
 
