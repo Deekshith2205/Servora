@@ -49,6 +49,7 @@ def _to_investigation_out(investigation: Investigation) -> InvestigationOut:
         root_cause=investigation.root_cause,
         resolution=investigation.resolution,
         status=investigation.status,
+        channel_metadata=investigation.channel_metadata,
         timeline=[
             InvestigationStepOut(
                 step_number=s.step_number,

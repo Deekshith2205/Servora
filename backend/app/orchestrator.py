@@ -79,7 +79,12 @@ class ChatResult:
 
 
 def handle_message(
-    db: Session, customer_id: int, message: str, stream_key: str | None = None, channel: str = "live_chat"
+    db: Session,
+    customer_id: int,
+    message: str,
+    stream_key: str | None = None,
+    channel: str = "live_chat",
+    channel_metadata: dict | None = None,
 ) -> ChatResult:
     """`stream_key` — [SWARM] issue #79, additive/optional: when the
     caller (see app/api/chat.py) supplies one, every `_record()` call
@@ -95,6 +100,13 @@ def handle_message(
     (`_create_ticket()`/`_persist_investigation()`) — this function itself
     makes no decisions based on it. Defaults to "live_chat", reproducing
     the exact previous behavior for every existing caller.
+
+    `channel_metadata` — [Omnichannel] issue #134, additive/optional: a
+    small dict of channel-specific detail beyond `channel` itself (e.g. a
+    WhatsApp `external_conversation_id`) — threaded to
+    `_persist_investigation()` only (Ticket has no equivalent column; see
+    that model's docstring). `None` (the default) reproduces the exact
+    previous behavior for every existing caller.
     """
     trace: list[TraceStep] = []
     # [FEATURE] Investigation Board: one dict per trace step, timed and
@@ -225,7 +237,7 @@ def handle_message(
                 db, ticket_id, customer_id, investigation_started_at, step_records,
                 status="escalated", root_cause=packet.root_cause_hypothesis,
                 resolution=packet.recommended_action, confidence=classification.confidence,
-                channel=channel,
+                channel=channel, channel_metadata=channel_metadata,
             )
             _finish(ticket_id, investigation_id)
             return ChatResult(
@@ -363,7 +375,7 @@ def handle_message(
                 db, ticket_id, customer_id, investigation_started_at, step_records,
                 status="escalated", root_cause=packet.root_cause_hypothesis,
                 resolution=packet.recommended_action, confidence=response.confidence,
-                channel=channel,
+                channel=channel, channel_metadata=channel_metadata,
             )
             _finish(ticket_id, investigation_id)
             return ChatResult(
@@ -400,7 +412,7 @@ def handle_message(
         investigation_id = _persist_investigation(
             db, ticket_id, customer_id, investigation_started_at, step_records,
             status="resolved", root_cause=root_cause, resolution=resolution or response.reply,
-            confidence=response.confidence, channel=channel,
+            confidence=response.confidence, channel=channel, channel_metadata=channel_metadata,
         )
         _finish(ticket_id, investigation_id)
         return ChatResult(reply=response.reply, status="resolved", trace=trace, ticket_id=ticket_id)
@@ -531,6 +543,7 @@ def _persist_investigation(
     resolution: str | None,
     confidence: float | None,
     channel: str = "live_chat",
+    channel_metadata: dict | None = None,
 ) -> int:
     """[FEATURE] Investigation Board: persists the normalized
     Investigation + InvestigationStep rows for this pipeline run,
@@ -547,6 +560,10 @@ def _persist_investigation(
     given for the same pipeline run, so a Ticket and its Investigation
     always agree on channel_key.
 
+    `channel_metadata` — [Omnichannel] issue #134: written as-is (JSON
+    encoded, `None` stays `None` rather than becoming the literal string
+    `"null"` — same convention `critic_review_json` already uses).
+
     Returns the new Investigation's id — [SWARM] issue #79 threads this
     into the stream's final "done" event so a live-mode frontend can hand
     off to fetching the completed record normally, without a second
@@ -562,6 +579,7 @@ def _persist_investigation(
         resolution=resolution,
         status=status,
         channel_key=channel,
+        channel_metadata_json=json.dumps(channel_metadata) if channel_metadata is not None else None,
     )
     db.add(investigation)
     db.flush()  # assigns investigation.id without a second round-trip commit
