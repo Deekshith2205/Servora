@@ -365,6 +365,12 @@ class InvestigationOut(BaseModel):
     evidence: list[str]
     # [SWARM] issue #80 — additive.
     graph: InvestigationGraphOut
+    # [Omnichannel] issue #134 — additive. `None` for every Live Chat
+    # investigation (the common case today) and every row written before
+    # this column existed; a real dict (e.g. a WhatsApp
+    # `external_conversation_id`) once a channel adapter (issue #142)
+    # supplies one.
+    channel_metadata: dict | None = None
 
 
 class InvestigationListItemOut(BaseModel):
@@ -568,6 +574,22 @@ class InboxDetailOut(BaseModel):
     updated_at: str
     investigation_id: int | None = None
 
+# [Omnichannel] Channel Foundation — issue #135
+# --------------------------------------------------------------------- #
+
+
+class ChannelOut(BaseModel):
+    """One row from app.db.models.Channel — see that model's docstring."""
+
+    id: int
+    key: str
+    display_name: str
+    status: str  # active | inactive | not_configured
+    config: dict = {}
+
+
+class UpdateChannelStatusRequest(BaseModel):
+    status: str  # active | inactive | not_configured
 # --------------------------------------------------------------------- #
 # Shopify integration — Settings -> Integrations
 # --------------------------------------------------------------------- #

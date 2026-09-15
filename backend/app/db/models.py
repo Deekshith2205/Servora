@@ -195,9 +195,23 @@ class Investigation(Base):
     # Live Chat history, not a fabricated value.
     channel_key: Mapped[str] = mapped_column(String, default="live_chat")
 
+    # [Omnichannel] issue #134: small JSON object of channel-specific
+    # detail beyond the channel key itself — e.g. a WhatsApp/Instagram/
+    # Messenger `external_conversation_id`/`external_contact`, or an
+    # email's `subject`. Nullable (not a default-empty-object) precisely
+    # because most investigations (every Live Chat one, today) genuinely
+    # have nothing here — see the `channel_metadata` property below,
+    # same "None over a fabricated empty value" convention this column's
+    # sibling `critic_review_json` already established.
+    channel_metadata_json: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+
     steps: Mapped[list["InvestigationStep"]] = relationship(
         back_populates="investigation", order_by="InvestigationStep.step_number"
     )
+
+    @property
+    def channel_metadata(self) -> dict | None:
+        return json.loads(self.channel_metadata_json) if self.channel_metadata_json else None
 
 
 class InvestigationStep(Base):
