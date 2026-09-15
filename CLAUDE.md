@@ -1276,6 +1276,78 @@ design, so a real server still logs it), which needs
 that intentionally trigger this path. Full suite: 246 passed (240 + 6
 new), 1 skipped. Backend-only change — no frontend files touched.
 
+**Update**: PR #129 has since merged directly to `main` (confirmed via
+`git log origin/main -1`) — the general CORS/opaque-error gap is fully
+closed, on `main`, not just in a branch.
+
+### 2026-09-15 — Real Shopify integration: Order/Billing agents can
+investigate a connected real store
+
+New backlog item, implemented directly (not issue-tracked — see
+PR #130: https://github.com/Deekshith2205/Servora/pull/130, base
+`main`, CI green, not yet merged). Servora can now investigate real
+customer orders from a connected Shopify store, alongside (never
+replacing) the existing mock data — the architecture (Classifier ->
+Planner -> Specialists -> Critic -> Verification -> Escalation/Memory)
+is completely unchanged; this only adds a new integration settings
+surface, a new service layer, and 3 new permission-gated tools.
+
+New `ShopifyIntegration` table + Settings -> Integrations page +
+`GET/POST /api/integrations/shopify/status|connect|disconnect` —
+`connect` verifies real credentials against Shopify's own `/shop.json`
+before ever persisting as "connected"; the access token is never
+returned by any read endpoint, and `disconnect` clears it entirely
+(not just a status flag). New `app/services/shopify_service.py` — real
+Admin **REST** API calls (deliberately not GraphQL: REST's integer
+`id`s fit the existing `EvidenceRefOut.ref_id: int` with zero schema
+changes), real retries (429 honoring `Retry-After`, 5xx, network
+errors), real auth/timeouts. `search_orders()` is honest about a real
+REST limitation (no generic full-text query param exists) rather than
+inventing one that doesn't. 3 new tools
+(`lookup_shopify_order`/`_customer`/`_fulfillment`), permission-gated
+to Billing + Order only via the existing `SPECIALIST_TOOL_PERMISSIONS`
+mechanism — no Shopify write tool exists at all. A real evidence_ref
+type (`shopify_order`/`shopify_customer`) rides through the exact same
+`evidence_refs` pipeline every other tool already writes to — appears
+automatically in the Investigation Board, Evidence Explorer, and
+Explainable AI Panel with zero new evidence-system code.
+
+**Verified live, not just unit-tested**: stood up a throwaway local
+mock Shopify server + one temporary, clearly-marked line pointing the
+real HTTP client at it, fully reverted before committing (confirmed via
+`git diff`). Connected a real-shaped store through the actual
+Integrations page (real credential round-trip), then asked Customer
+Chat about a Shopify order — Billing AND Order specialists ran in
+parallel (the existing #88 fan-out), BOTH independently called the real
+Shopify tools and cited the real returned data in their replies. Traced
+the resulting evidence through the Evidence Explorer (real live-fetched
+inline preview), the Investigation Board's evidence grid, the
+Explainability drill-down drawer, and the Agent Collaboration Graph
+(full real 8-node fan-out/fan-in render).
+
+**A real bug found live**: two specialists independently producing the
+identical `shopify_order` evidence ref (a correct outcome of the
+parallel architecture, not a bug in the pipeline itself) caused a React
+duplicate-key warning in `EvidenceExplorer.jsx` — that component had no
+dedup step, unlike the newer Explainability drawer's already-correct
+`dedupeEvidence()`. Fixed by porting the same logic in.
+
+**Also spotted live, NOT part of this PR, flagged for later**: the
+Agent Swarm view's "Agent Performance Metrics" panel showed an agent
+literally labeled **"None Agent"** — `agent_name` rendering as a null
+value somewhere, most likely in the parallel-specialist reconciliation
+path. A real, visible bug (also independently caught reviewing a
+pitch-deck screenshot earlier — see that conversation), not yet
+root-caused or fixed.
+
+30 new tests (14 in `test_shopify_service.py` using real
+`httpx.MockTransport` against the actual retry/auth/error logic; 7 in
+`test_integrations_api.py`; 9 in `test_shopify_records_and_evidence.py`
+covering the real specialist -> evidence_refs path end-to-end and the
+tool-permission boundary). 5 pre-existing tests updated for the
+intentional tool-set expansion. Full backend suite: 276 passed (246 +
+30 new), 1 skipped. `npm run lint`/`build`: clean.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the
@@ -1294,16 +1366,22 @@ new), 1 skipped. Backend-only change — no frontend files touched.
    plan is left out of this entry now that it's obsolete — see the
    2026-09-13 progress-log entries above for the real implementation
    history if needed.
-3. **Merge PR #129** (general FastAPI exception handler, CI green) —
-   the general CORS/opaque-error gap is otherwise already fixed in
-   code, just not yet on `main`. One small fix still genuinely not
-   started: a `CONTRIBUTING.md` note about deleting `servora.db` after a
+3. ~~Merge PR #129~~ — done, merged directly to `main`. The general
+   CORS/opaque-error gap is fully closed.
+4. **Merge PR #130** (real Shopify integration, CI green) — code-complete
+   and live-verified, just not yet on `main`.
+5. **Fix the "None Agent" bug** found live while verifying #130 — Agent
+   Performance Metrics shows an agent literally labeled "None Agent"
+   (an `agent_name` rendering as null, most likely somewhere in the
+   parallel-specialist reconciliation path). Not yet root-caused.
+6. Two small, well-scoped fixes identified previously, still not done:
+   (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite
-   tables — hit repeatedly this session, once per new migration-
-   touching PR).
-4. Optional, not blocking a demo: wire up a real Gmail/SMS provider
-   behind `app/services/notifications.py` (see #21's entry above for
-   why it's mocked today) — self-contained, doesn't change any caller.
+   tables — hit repeatedly across sessions, once per new migration-
+   touching PR), (b) wire up a real Gmail/SMS provider behind
+   `app/services/notifications.py` (see #21's entry above for why it's
+   mocked today) — self-contained, doesn't change any caller, not
+   blocking a demo.
 
 ## Open questions / blockers
 
@@ -1324,12 +1402,14 @@ new), 1 skipped. Backend-only change — no frontend files touched.
   add a branch protection rule on `main` → require the CI status checks
   before merging. Nobody in any session so far has had admin rights to
   do it directly.
-- **General unhandled-exception → CORS gap — fixed in code, PR #129,
-  not yet merged to `main`.** See the 2026-09-13 progress-log entry and
-  Next up #3.
 - **`servora.db` schema drift after `create_all()` still requires a
-  manual delete** — see Next up #3.
+  manual delete** — see Next up #6(a).
 - **No staff-identity/auth system exists at all** — flagged concretely
   while scoping #63 (reassign needs *someone* to reassign to). Worth a
   real decision (even a fake/demo login) before #63 is picked up, rather
   than each future issue re-discovering the same gap.
+- **The "None Agent" display bug** (see the 2026-09-15 Shopify
+  integration progress-log entry) — a real agent_name rendering as
+  null somewhere, not yet root-caused. See Next up #5.
+- **PR #130 (Shopify integration) not yet merged to `main`** — see
+  Next up #4.

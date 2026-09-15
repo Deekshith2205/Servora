@@ -91,7 +91,10 @@ def _response(content: list, stop_reason: str):
 
 
 def test_billing_receives_all_and_only_its_allowed_tools(db_session):
-    expected = {"get_customer", "get_customer_orders", "check_payment_issue", "search_kb", "issue_refund"}
+    expected = {
+        "get_customer", "get_customer_orders", "check_payment_issue", "search_kb", "issue_refund",
+        "lookup_shopify_order", "lookup_shopify_customer",  # Shopify integration
+    }
     schemas, handlers = build_filtered_tool_registry(db_session, "billing")
 
     assert {s["name"] for s in schemas} == expected
@@ -126,7 +129,10 @@ def test_order_does_not_receive_issue_refund(db_session):
     names = {s["name"] for s in schemas}
     assert "issue_refund" not in names
     assert "issue_refund" not in handlers
-    assert names == {"get_customer", "get_customer_orders", "check_order_issue", "search_kb"}
+    assert names == {
+        "get_customer", "get_customer_orders", "check_order_issue", "search_kb",
+        "lookup_shopify_order", "lookup_shopify_customer", "lookup_shopify_fulfillment",  # Shopify integration
+    }
     assert set(handlers.keys()) == names
 
 
@@ -236,7 +242,10 @@ def test_order_llm_call_never_receives_issue_refund_schema(db_session):
     first_call_kwargs = mock_client.messages.create.call_args_list[0][1]
     sent_tool_names = {t["name"] for t in first_call_kwargs["tools"]}
     assert "issue_refund" not in sent_tool_names
-    assert sent_tool_names == {"get_customer", "get_customer_orders", "check_order_issue", "search_kb"}
+    assert sent_tool_names == {
+        "get_customer", "get_customer_orders", "check_order_issue", "search_kb",
+        "lookup_shopify_order", "lookup_shopify_customer", "lookup_shopify_fulfillment",  # Shopify integration
+    }
 
 
 @patch("app.llm._client", None)

@@ -189,6 +189,11 @@ _SOURCE_RELIABILITY_BY_TYPE = {
     "customer": 0.97,
     "ticket": 0.95,
     "kb_article": 0.88,
+    # A real Shopify lookup is the actual system of record for that order
+    # — not a local copy that could have drifted — so it's rated even
+    # higher than this app's own mocked/seeded Order table, not lower.
+    "shopify_order": 0.99,
+    "shopify_customer": 0.99,
 }
 
 

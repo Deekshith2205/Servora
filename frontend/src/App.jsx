@@ -4,6 +4,7 @@ import Analytics from "./pages/Analytics";
 import AgentSwarmView from "./pages/AgentSwarmView";
 import BookingChat from "./pages/BookingChat";
 import CustomerChat from "./pages/CustomerChat";
+import Integrations from "./pages/Integrations";
 import InvestigationBoard from "./pages/InvestigationBoard";
 import StaffDashboard from "./pages/StaffDashboard";
 
@@ -79,6 +80,16 @@ const TABS = {
         <line x1="18" y1="20" x2="18" y2="10"></line>
         <line x1="12" y1="20" x2="12" y2="4"></line>
         <line x1="6" y1="20" x2="6" y2="14"></line>
+      </svg>
+    )
+  },
+  integrations: {
+    label: "Integrations",
+    description: "Connect real external systems for Servora to investigate",
+    component: Integrations,
+    icon: (
+      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 3v6m6-6v6M4 9h16l-1 10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"></path>
       </svg>
     )
   },

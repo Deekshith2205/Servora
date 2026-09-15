@@ -523,3 +523,54 @@ class EvidenceDetailOut(BaseModel):
     tools: list[ToolExecutionOut] = []
     confidence_breakdown: EvidenceConfidenceBreakdownOut
     impact: str
+
+
+# --------------------------------------------------------------------- #
+# Shopify integration — Settings -> Integrations
+# --------------------------------------------------------------------- #
+
+
+class ShopifyConnectRequest(BaseModel):
+    store_url: str
+    access_token: str
+
+
+class ShopifyStatusOut(BaseModel):
+    """GET /api/integrations/shopify/status. Deliberately never includes
+    `access_token` — this is the ONLY read path a frontend has into the
+    integration row, and the raw credential must never round-trip back
+    to the browser once saved (see ShopifyIntegration's own docstring on
+    why the token is stored in plain text server-side in the first
+    place). `store_url` alone is not a secret — it's a public storefront
+    hostname."""
+
+    connected: bool
+    store_url: str | None = None
+    status: str  # connected | disconnected | error | never_connected
+    last_sync_at: str | None = None
+    last_error: str | None = None
+    connected_orders_count: int | None = None
+
+
+class ShopifyOrderRecordOut(BaseModel):
+    """[Explainability]: the inline preview a `shopify_order` evidence
+    reference opens — mirrors OrderRecordOut's role for Servora's own
+    orders, just backed by a live Shopify API call instead of a local
+    DB row."""
+
+    id: int
+    order_number: str | None = None
+    email: str | None = None
+    total_price: str | None = None
+    financial_status: str | None = None
+    fulfillment_status: str | None = None
+    created_at: str | None = None
+
+
+class ShopifyCustomerRecordOut(BaseModel):
+    id: int
+    first_name: str | None = None
+    last_name: str | None = None
+    email: str | None = None
+    orders_count: int | None = None
+    total_spent: str | None = None

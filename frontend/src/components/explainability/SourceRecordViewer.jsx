@@ -7,13 +7,22 @@
 // second fetch path. See EvidenceDetailOut's backend docstring for why
 // the evidence-detail endpoint itself doesn't re-embed this data.
 import { useEffect, useState } from "react";
-import { fetchCustomerRecord, fetchKBArticle, fetchOrderRecord, fetchTicketRecord } from "../../api/client";
+import {
+  fetchCustomerRecord,
+  fetchKBArticle,
+  fetchOrderRecord,
+  fetchShopifyCustomerRecord,
+  fetchShopifyOrderRecord,
+  fetchTicketRecord,
+} from "../../api/client";
 
 const FETCHERS = {
   order: fetchOrderRecord,
   customer: fetchCustomerRecord,
   ticket: fetchTicketRecord,
   kb_article: fetchKBArticle,
+  shopify_order: fetchShopifyOrderRecord,
+  shopify_customer: fetchShopifyCustomerRecord,
 };
 
 const TYPE_LABEL = {
@@ -21,6 +30,8 @@ const TYPE_LABEL = {
   customer: "Customer Record",
   ticket: "Ticket Record",
   kb_article: "Knowledge Base Article",
+  shopify_order: "Shopify Order (Live)",
+  shopify_customer: "Shopify Customer (Live)",
 };
 
 function Field({ label, value }) {
@@ -94,7 +105,37 @@ function KBFields({ record }) {
   );
 }
 
-const FIELD_COMPONENTS = { order: OrderFields, customer: CustomerFields, ticket: TicketFields, kb_article: KBFields };
+function ShopifyOrderFields({ record }) {
+  return (
+    <>
+      <Field label="Order" value={record.order_number} />
+      <Field label="Total" value={record.total_price ? `$${record.total_price}` : null} />
+      <Field label="Payment" value={record.financial_status} />
+      <Field label="Fulfillment" value={record.fulfillment_status || "unfulfilled"} />
+      <Field label="Email" value={record.email} />
+    </>
+  );
+}
+
+function ShopifyCustomerFields({ record }) {
+  return (
+    <>
+      <Field label="Name" value={`${record.first_name || ""} ${record.last_name || ""}`.trim()} />
+      <Field label="Email" value={record.email} />
+      <Field label="Orders" value={record.orders_count} />
+      <Field label="Total Spent" value={record.total_spent ? `$${record.total_spent}` : null} />
+    </>
+  );
+}
+
+const FIELD_COMPONENTS = {
+  order: OrderFields,
+  customer: CustomerFields,
+  ticket: TicketFields,
+  kb_article: KBFields,
+  shopify_order: ShopifyOrderFields,
+  shopify_customer: ShopifyCustomerFields,
+};
 
 export default function SourceRecordViewer({ evidenceRef }) {
   const [record, setRecord] = useState(null);

@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import analytics, booking, bookings, chat, explanations, investigations, kb, notifications, records, stream, tickets
+from app.api import analytics, booking, bookings, chat, explanations, integrations, investigations, kb, notifications, records, stream, tickets
 from app.config import settings
 from app.db.database import Base, engine
 from app.db.seed import seed_if_empty
@@ -96,6 +96,7 @@ app.include_router(stream.router)
 app.include_router(investigations.router)
 app.include_router(explanations.router)
 app.include_router(records.router)
+app.include_router(integrations.router)
 
 
 @app.get("/health")
