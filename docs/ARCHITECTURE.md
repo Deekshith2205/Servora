@@ -137,6 +137,13 @@ The Staff Dashboard escalation drawer has been expanded into a complete support 
 `GET /api/tickets/resolved` remains explicitly for resolved history.
 `GET /api/escalations/{id}` returns the enriched detail (trace, packet, customer, history, assignment).
 
+### Unified Inbox (Phase 2, Issue #136)
+
+The Unified Inbox provides a conversation-level operational reading view over existing `Ticket` and `Investigation` data. Unlike the Investigation Board (which centers on agent swarms/traces) or the Staff Dashboard (which centers on open escalations), the Inbox lists all customer interactions regardless of status. 
+- It adds no new database tables (`Ticket` remains the core conversation record).
+- The `GET /api/inbox` list endpoint uses `contains_eager`/`joinedload` techniques to join `Customer` data in a single query and checks for `Investigation` existence via an outer join, preventing N+1 queries.
+- The `GET /api/inbox/{ticket_id}` detail endpoint provides a focused slice of real Ticket/Customer data tailored for inbox previewing, avoiding the heavy `TraceStep` serialization overhead required by `/api/escalations/{id}` or `/api/investigations/{id}`.
+
 **Real bug found while writing this issue's tests, fixed in the same
 PR**: `test_health.py`/`test_tickets_api.py` both instantiate a bare
 `TestClient(app)` at module level — this does **not** reliably trigger

@@ -64,6 +64,14 @@ export function fetchEscalations() {
   return request("/api/escalations");
 }
 
+export function fetchInbox() {
+  return request("/api/inbox");
+}
+
+export function fetchInboxDetail(ticketId) {
+  return request(`/api/inbox/${ticketId}`);
+}
+
 export function fetchResolvedHistory() {
   return request("/api/tickets/resolved");
 }
