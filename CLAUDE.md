@@ -1432,6 +1432,102 @@ PR):
   comment on the epic (#131) rather than closing it — only 2 of 34
   sub-issues are done, so the epic itself stays open.
 
+### 2026-09-15 (continued) — PR #166 (#132/#133) merged; Phase 1
+finished (#134, #135) and all of Phase 3 (#142-#145) implemented
+
+**PR #166 merged to `main`** — confirmed via `git log origin/main -1`
+before starting this batch, then branched fresh off the real `main`
+tip (`omnichannel-p1-p3-channel-flow`) rather than stacking on the old
+branch, avoiding the stacked-PR-merge-target gap this log has hit
+several times before.
+
+- **#134** (Message source metadata) — `Investigation` gained
+  `channel_metadata_json` (nullable, a single object — `None` for the
+  common case, same "no fabricated empty value" convention
+  `critic_review_json` already established) + a `channel_metadata`
+  property. `handle_message()` gained an optional
+  `channel_metadata: dict | None = None`, threaded to
+  `_persist_investigation()` at all 3 return points.
+  `InvestigationOut` gained `channel_metadata` (additive); exposed via
+  the existing `GET /api/investigations/{id}` — no new endpoint.
+- **#135** (Channel status management) — new `app/api/channels.py`:
+  `GET /api/channels` (list all 5 with real status),
+  `PATCH /api/channels/{id}` (toggle status — a real 400, not a silent
+  no-op, if something tries to activate a channel still
+  `not_configured`). New `ChannelOut`/`UpdateChannelStatusRequest`
+  schemas; router registered in `main.py`.
+- **#142** (Message normalization layer) — new
+  `app/services/channel_adapters.py`, the architectural core of the
+  whole epic: `normalize_whatsapp/instagram/messenger/email()` (one
+  function per channel, each documented against a realistic real
+  webhook payload shape for that channel — WhatsApp Cloud API,
+  Meta Messaging Platform, a generic inbound-email-parse shape) plus
+  `route_channel_message(db, channel_key, raw_payload, stream_key=None)`
+  — the ONE caller of `orchestrator.handle_message()` for every
+  non-Live-Chat channel, same function `POST /api/chat` already calls.
+  `_resolve_or_create_customer()` resolves by email (natural fit for
+  the email channel) or phone (WhatsApp) or, for Instagram/Messenger
+  (which provide no phone/email at all, only an opaque platform-scoped
+  sender ID), a synthesized `{channel}+{external_id}@channel.local`
+  placeholder — an honest, documented scope limit rather than
+  inventing a real identity `Customer` doesn't model today.
+- **#143** (Channel-specific message formatting) — same file:
+  `format_reply_for_channel(reply, channel_key)` — strips markdown via
+  plain regex substitution for WhatsApp/Instagram/Messenger (no
+  parser dependency needed for this codebase's own simple
+  bold/italic/code/link/bullet patterns), passes Live Chat and email
+  through byte-for-byte unchanged. **Deliberately NOT wired into the
+  real reply path yet** — proven correct in isolation only; wiring it
+  into `handle_message()`'s actual reply is a separate, later issue
+  (#151, "Response formatting by channel") per this backlog's own
+  dependency graph.
+- **#144** (Conversation synchronization) — the real mechanism is
+  `_resolve_or_create_customer()` above: reusing the SAME `Customer`
+  row across repeated messages on the same real contact is what makes
+  cross-turn context "just work" via the EXISTING `CustomerMemory`
+  merge (issue #11) — no second continuity mechanism was built, per
+  the issue's own explicit scope note. Added
+  `find_recent_conversation_on_channel(db, customer_id, channel_key,
+  external_conversation_id)` — a read-only lookup (Python-side scan of
+  a customer's last 20 investigations on that channel, not a JSON SQL
+  query — simple and correct at this scale) for a future Inbox
+  (#136+) to group messages into one conversation row. Does not change
+  `route_channel_message()`'s own per-call behavior.
+- **#145** (Source attribution) — a pure test file
+  (`tests/test_channel_source_attribution.py`), no new production
+  code: 12 parametrized assertions (4 channels × 3 pipeline branches —
+  direct-escalate, verification-fail-escalate, resolved), each
+  confirming `Investigation.channel_key`/`channel_metadata` are
+  correct at every branch. Same "test every branch explicitly, don't
+  assume" lesson issues #86/#98 already established for the [SWARM]/
+  [EXPLAIN] batches, applied here proactively.
+
+**Verified live, not just unit-tested**: deleted the dev `servora.db`
+again (the new `channel_metadata_json` column hit the same
+`create_all()`-doesn't-migrate gotcha, confirmed by first reproducing
+the real `OperationalError: no such column` before fixing it — not
+just assumed). Called `route_channel_message(db, "whatsapp", {...})`
+directly against the real dev DB with a real Gemini call: a genuinely
+new `Customer` was synthesized from just a phone number
+(`whatsapp+15555559876@channel.local`), the resulting `Ticket`/
+`Investigation` both carried `channel_key="whatsapp"`, and
+`GET /api/investigations/by-ticket/{id}` correctly returned the real
+`channel_metadata` (`external_conversation_id`/`external_contact`)
+over HTTP. Confirmed `GET /api/investigations` and
+`.../metrics/agents` (pre-existing, unmodified) still return clean
+200s.
+
+42 new tests across 5 new files: `test_channel_metadata.py` (5, #134),
+`test_channels_api.py` (6, #135), `test_channel_adapters.py` (13,
+#142/#144), `test_channel_formatting.py` (6, #143),
+`test_channel_source_attribution.py` (12, #145). Full backend suite:
+**331 passed** (289 + 42), 1 skipped.
+
+**Omnichannel epic status: 8 of 34 sub-issues done** (#132-#135,
+#142-#145 — all of Phase 1 and Phase 3). Phase 2 (Omnichannel Inbox,
+#136-#141) is next in dependency order, and is the first phase with
+real frontend work.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the
@@ -1458,12 +1554,14 @@ PR):
    Performance Metrics shows an agent literally labeled "None Agent"
    (an `agent_name` rendering as null, most likely somewhere in the
    parallel-specialist reconciliation path). Not yet root-caused.
-5a. **[Omnichannel] #132/#133 implemented, not yet on their own branch/PR**
-   (currently sitting on top of the Shopify work — see the 2026-09-15
-   progress-log entry). Continue with the rest of Phase 1 (#134, #135)
-   next — everything in Phase 2+ depends on Phase 1 being done first.
-   35 issues total (#131-#165); see that progress-log entry for the
-   full backlog shape.
+5a. **[Omnichannel]: 8 of 34 sub-issues done — #132-#135 (Phase 1,
+   merged via PR #166) and #142-#145 (Phase 3, implemented this
+   session, not yet PR'd — branch `omnichannel-p1-p3-channel-flow`).**
+   Next up: **Phase 2 (#136-#141, Omnichannel Inbox)** — the first
+   phase with real frontend work, needs Phase 1's `Channel`/
+   `channel_key` data (done) to render against. Phase 4-8 (#146-#165)
+   remain untouched. See the 2026-09-15 progress-log entries for the
+   full backlog shape and what each implemented issue actually does.
 6. Two small, well-scoped fixes identified previously, still not done:
    (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite
