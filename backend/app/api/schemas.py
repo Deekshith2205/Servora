@@ -10,6 +10,13 @@ class ChatRequest(BaseModel):
     # events published there as this pipeline run actually executes.
     # None (the default) reproduces the exact previous behavior.
     stream_key: str | None = None
+    # [Omnichannel] issue #133: which Channel.key this message came in
+    # on (see app/db/models.py::Channel). "live_chat" (the default)
+    # reproduces the exact previous behavior for every existing caller —
+    # this is the only channel that actually sends real traffic through
+    # this endpoint today; other channels route through it via a future
+    # normalization layer (issue #142), not directly from a browser.
+    channel: str = "live_chat"
 
 
 class TraceStepOut(BaseModel):

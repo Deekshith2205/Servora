@@ -1348,6 +1348,90 @@ tool-permission boundary). 5 pre-existing tests updated for the
 intentional tool-set expansion. Full backend suite: 276 passed (246 +
 30 new), 1 skipped. `npm run lint`/`build`: clean.
 
+### 2026-09-15 (continued) — [Omnichannel] Phase 1 started: #132/#133
+(Channel model + conversation source tracking)
+
+35 issues (#131 epic + 34 sub-issues, #132-#165) were opened for a full
+Omnichannel Customer Support backlog (Live Chat/Email/WhatsApp/
+Instagram/Messenger, all routed through the existing Classifier ->
+Planner -> Specialists -> Critic -> Verification -> Escalation pipeline,
+never a second investigation system). Implemented the first two,
+directly on top of the not-yet-merged Shopify branch's tip (not a new
+branch yet — see Open questions if this needs splitting out before a
+PR):
+
+- **#132** (Channel model) — new `Channel` table in
+  `app/db/models.py`: `key`/`display_name`/`status`
+  (active|inactive|not_configured)/`config_json`, seeded in
+  `app/db/seed.py::seed_if_empty()` with exactly the 5 channels — Live
+  Chat seeds `"active"` (it's the one channel with real, working
+  transport today), every other channel seeds `"not_configured"`
+  (honest, not fabricated as ready). `display_name` deliberately has a
+  `default=""` (unlike e.g. `ShopifyIntegration.store_url`, which has
+  none) specifically so a bare `Channel(key=...)` never errors —
+  matches this table's own acceptance criteria, unlike a required
+  credential field where erroring on a missing value is correct.
+- **#133** (Conversation source tracking) — `Ticket`/`Investigation`
+  both gained `channel_key: str` (default `"live_chat"`, NOT a real FK
+  to `Channel.id` — see both docstrings for why: attribution must
+  survive even if the Channel table were ever re-seeded).
+  `orchestrator.py::handle_message()` gained an optional
+  `channel: str = "live_chat"` parameter, threaded into
+  `_create_ticket()`/`_persist_investigation()` at all 3 of the
+  function's return points (direct-escalate, verification-fail-escalate,
+  resolved) — same additive-parameter pattern `stream_key` (issue #79)
+  already established. `ChatRequest`/`POST /api/chat` gained the same
+  optional `channel` field, passed straight through.
+
+  **No frontend or read-API changes in this pair** — deliberately out of
+  scope per how the issues were scoped: #146 (Phase 4) is what exposes
+  `channel` on `GET /api/investigations`, and #135/#136+ (rest of Phase
+  1/2) are what give Channel status and Ticket/Investigation channel
+  data anywhere to actually be read or seen. This pair is foundation
+  only.
+
+  10 new tests (`tests/test_channels.py`,
+  `tests/test_channel_tracking.py`) — including an explicit regression
+  test proving `handle_message()` called with no `channel` argument
+  (every pre-#133 caller) still produces a correct `"live_chat"` row,
+  and one covering each of the 3 pipeline branches individually (the
+  "codebase's track record shows multi-call-site changes reliably miss
+  one path" lesson from #86/#98, applied proactively here rather than
+  found live). Full backend suite: **286 passed** (276 + 10 new), 1
+  skipped.
+
+  **Verified live, not just unit-tested**: found and worked around the
+  documented `create_all()`-doesn't-migrate-SQLite gotcha (deleted the
+  stale local `servora.db`, let it reseed) before starting the server.
+  Confirmed the 5 real seeded channels via a direct DB query, sent a
+  real `POST /api/chat` with `"channel": "whatsapp"` through to a real
+  LLM call and confirmed the resulting Ticket AND Investigation rows
+  both persisted `channel_key="whatsapp"`, then sent a second real call
+  with no `channel` field at all and confirmed it correctly defaulted to
+  `"live_chat"` — proving the additive/optional contract holds against
+  the real running app, not just mocked tests. `GET /api/investigations`
+  and `GET /api/tickets/resolved` (pre-existing endpoints, unmodified)
+  both still returned real 200s afterward — no accidental regression
+  from the new columns.
+
+  **Follow-up in the same session**: 3 more test cases added to close
+  real coverage gaps rather than just padding the count —
+  `Channel.key` uniqueness (a real DB constraint, `unique=True`, that
+  had no test proving it's actually enforced — #135's future
+  channel-status API will look rows up by this key, so an unenforced
+  duplicate would be a real bug waiting to happen); the [SWARM] #88
+  parallel-specialist fan-out path threading `channel` correctly
+  through its own `_persist_investigation()` call (a genuinely
+  different code path from the 3 already covered — this repo's own
+  track record, #86/#98, is multi-branch changes missing exactly one
+  path on the first pass); and an explicit test locking in that an
+  arbitrary/unrecognized channel string is accepted without validation
+  (deliberate — validating against the seeded Channel table is a future
+  normalization-layer concern, issue #142, not this issue's job).
+  Backend suite: **289 passed** (286 + 3), 1 skipped. Posted a status
+  comment on the epic (#131) rather than closing it — only 2 of 34
+  sub-issues are done, so the epic itself stays open.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the
@@ -1374,6 +1458,12 @@ intentional tool-set expansion. Full backend suite: 276 passed (246 +
    Performance Metrics shows an agent literally labeled "None Agent"
    (an `agent_name` rendering as null, most likely somewhere in the
    parallel-specialist reconciliation path). Not yet root-caused.
+5a. **[Omnichannel] #132/#133 implemented, not yet on their own branch/PR**
+   (currently sitting on top of the Shopify work — see the 2026-09-15
+   progress-log entry). Continue with the rest of Phase 1 (#134, #135)
+   next — everything in Phase 2+ depends on Phase 1 being done first.
+   35 issues total (#131-#165); see that progress-log entry for the
+   full backlog shape.
 6. Two small, well-scoped fixes identified previously, still not done:
    (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite

@@ -78,7 +78,9 @@ class ChatResult:
     ticket_id: int | None = None
 
 
-def handle_message(db: Session, customer_id: int, message: str, stream_key: str | None = None) -> ChatResult:
+def handle_message(
+    db: Session, customer_id: int, message: str, stream_key: str | None = None, channel: str = "live_chat"
+) -> ChatResult:
     """`stream_key` — [SWARM] issue #79, additive/optional: when the
     caller (see app/api/chat.py) supplies one, every `_record()` call
     below ALSO publishes a real-time event to `stream_bus`, keyed by that
@@ -86,6 +88,13 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
     fact. `None` (the default) reproduces the exact previous behavior for
     every existing caller (tests included): nothing is published, nothing
     changes.
+
+    `channel` — [Omnichannel] issue #133, additive/optional: which
+    `Channel.key` this message arrived on (see app/db/models.py). Threaded
+    straight through to the Ticket/Investigation rows this call persists
+    (`_create_ticket()`/`_persist_investigation()`) — this function itself
+    makes no decisions based on it. Defaults to "live_chat", reproducing
+    the exact previous behavior for every existing caller.
     """
     trace: list[TraceStep] = []
     # [FEATURE] Investigation Board: one dict per trace step, timed and
@@ -211,11 +220,12 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
                 evidence=[packet.situation, packet.root_cause_hypothesis],
                 duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
             )
-            ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
+            ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet, channel=channel)
             investigation_id = _persist_investigation(
                 db, ticket_id, customer_id, investigation_started_at, step_records,
                 status="escalated", root_cause=packet.root_cause_hypothesis,
                 resolution=packet.recommended_action, confidence=classification.confidence,
+                channel=channel,
             )
             _finish(ticket_id, investigation_id)
             return ChatResult(
@@ -348,11 +358,12 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
                 evidence=[packet.situation, packet.root_cause_hypothesis],
                 duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
             )
-            ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet)
+            ticket_id = _create_ticket(db, customer_id, message, classification, trace, "escalated", packet, channel=channel)
             investigation_id = _persist_investigation(
                 db, ticket_id, customer_id, investigation_started_at, step_records,
                 status="escalated", root_cause=packet.root_cause_hypothesis,
                 resolution=packet.recommended_action, confidence=response.confidence,
+                channel=channel,
             )
             _finish(ticket_id, investigation_id)
             return ChatResult(
@@ -385,11 +396,11 @@ def handle_message(db: Session, customer_id: int, message: str, stream_key: str 
                 "action": memory_step.output, "status": "completed", "confidence": None, "duration_ms": step_records[-1]["duration_ms"],
             })
 
-        ticket_id = _create_ticket(db, customer_id, message, classification, trace, "resolved")
+        ticket_id = _create_ticket(db, customer_id, message, classification, trace, "resolved", channel=channel)
         investigation_id = _persist_investigation(
             db, ticket_id, customer_id, investigation_started_at, step_records,
             status="resolved", root_cause=root_cause, resolution=resolution or response.reply,
-            confidence=response.confidence,
+            confidence=response.confidence, channel=channel,
         )
         _finish(ticket_id, investigation_id)
         return ChatResult(reply=response.reply, status="resolved", trace=trace, ticket_id=ticket_id)
@@ -478,10 +489,15 @@ def _create_ticket(
     trace: list[TraceStep],
     status: str,
     packet: HandoffPacket | None = None,
+    channel: str = "live_chat",
 ) -> int:
     """Persists a Ticket row so this escalation shows up in the Staff
     Dashboard's queue (GET /api/escalations) with its full trace and
-    handoff packet attached (GET /api/escalations/{id})."""
+    handoff packet attached (GET /api/escalations/{id}).
+
+    `channel` — [Omnichannel] issue #133: which Channel.key this
+    conversation came in on, straight from handle_message()'s own
+    `channel` param."""
     subject = message if len(message) <= _SUBJECT_MAX_LEN else message[: _SUBJECT_MAX_LEN - 1] + "…"
 
     ticket = Ticket(
@@ -495,6 +511,7 @@ def _create_ticket(
         confidence=classification.confidence,
         trace_json=json.dumps([asdict(step) for step in trace]),
         handoff_packet_json=json.dumps(asdict(packet)) if packet else None,
+        channel_key=channel,
     )
     db.add(ticket)
     db.commit()
@@ -513,6 +530,7 @@ def _persist_investigation(
     root_cause: str | None,
     resolution: str | None,
     confidence: float | None,
+    channel: str = "live_chat",
 ) -> int:
     """[FEATURE] Investigation Board: persists the normalized
     Investigation + InvestigationStep rows for this pipeline run,
@@ -524,6 +542,10 @@ def _persist_investigation(
     paths and the resolved path) — mirrors _create_ticket()'s call sites
     exactly, since an Investigation always maps 1:1 to the Ticket just
     created.
+
+    `channel` — [Omnichannel] issue #133: same value _create_ticket() was
+    given for the same pipeline run, so a Ticket and its Investigation
+    always agree on channel_key.
 
     Returns the new Investigation's id — [SWARM] issue #79 threads this
     into the stream's final "done" event so a live-mode frontend can hand
@@ -539,6 +561,7 @@ def _persist_investigation(
         root_cause=root_cause,
         resolution=resolution,
         status=status,
+        channel_key=channel,
     )
     db.add(investigation)
     db.flush()  # assigns investigation.id without a second round-trip commit
