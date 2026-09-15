@@ -4,7 +4,7 @@ something real to look up instead of hallucinating an answer.
 Run automatically on startup (see app/main.py) if the DB is empty.
 """
 from app.db.database import SessionLocal
-from app.db.models import Customer, KBArticle, Order, Room, Ticket
+from app.db.models import Channel, Customer, KBArticle, Order, Room, Ticket
 
 
 def seed_if_empty() -> None:
@@ -174,6 +174,22 @@ def seed_if_empty() -> None:
                 Room(room_type="standard", price_per_night=89.0, total_count=10),
                 Room(room_type="deluxe", price_per_night=139.0, total_count=6),
                 Room(room_type="suite", price_per_night=229.0, total_count=2),
+            ]
+        )
+
+        # [Omnichannel] issue #132: the 5 supported channels. Live Chat is
+        # the one channel that genuinely works today (it's the existing
+        # /api/chat path), so it seeds "active"; the other 4 seed
+        # "not_configured" — an honest starting state, not a claim that
+        # they're wired up yet (later Omnichannel phases build the actual
+        # adapters).
+        db.add_all(
+            [
+                Channel(key="live_chat", display_name="Live Chat", status="active"),
+                Channel(key="email", display_name="Email", status="not_configured"),
+                Channel(key="whatsapp", display_name="WhatsApp", status="not_configured"),
+                Channel(key="instagram", display_name="Instagram", status="not_configured"),
+                Channel(key="messenger", display_name="Facebook Messenger", status="not_configured"),
             ]
         )
 

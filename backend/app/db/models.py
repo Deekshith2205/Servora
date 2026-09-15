@@ -63,6 +63,13 @@ class Ticket(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # [Omnichannel] issue #133: which Channel.key this conversation came in
+    # on. Not a real FK (see Channel's own docstring for why) — nullable-
+    # safe default of "live_chat" means every existing row created before
+    # this column existed reads as a real, honest Live Chat conversation,
+    # never a fabricated/blank value.
+    channel_key: Mapped[str] = mapped_column(String, default="live_chat")
+
     # Issue #14: JSON-encoded snapshots of the reasoning trace and handoff
     # packet from the /api/chat call that created this ticket (only set on
     # tickets created by a real escalation — nullable so the seeded demo
@@ -181,6 +188,12 @@ class Investigation(Base):
     resolution: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     # investigating | root_cause_found | escalated | resolved
     status: Mapped[str] = mapped_column(String, default="investigating")
+
+    # [Omnichannel] issue #133: same convention as Ticket.channel_key —
+    # additive, defaults to "live_chat" so every pre-existing row (every
+    # Investigation created before this column existed) reads as real
+    # Live Chat history, not a fabricated value.
+    channel_key: Mapped[str] = mapped_column(String, default="live_chat")
 
     steps: Mapped[list["InvestigationStep"]] = relationship(
         back_populates="investigation", order_by="InvestigationStep.step_number"
@@ -346,3 +359,46 @@ class ShopifyIntegration(Base):
     last_error: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Channel(Base):
+    """[Omnichannel] issue #132 — the authoritative list of channels
+    Servora can receive messages on (Live Chat, Email, WhatsApp,
+    Instagram, Facebook Messenger). One row per channel, not a hardcoded
+    Python list, so status/config can change without a deploy — see
+    app/api/channels.py (issue #135) for the read/write endpoints.
+
+    `key` is the stable slug that `Ticket.channel_key` /
+    `Investigation.channel_key` (issue #133) actually store — those
+    columns are deliberately NOT a foreign key to this table's `id` (see
+    their own docstrings): a conversation's channel attribution must
+    survive even if this table were ever re-seeded, same reasoning
+    `ShopifyIntegration` already documents for why some relationships in
+    this codebase are convention rather than a hard DB constraint.
+
+    Seeded once, at `seed_if_empty()` time, with exactly 5 rows — see
+    app/db/seed.py. Real transport for WhatsApp/Instagram/Messenger is
+    out of reach in this environment (Meta business verification/app
+    review) and is mocked at the integration layer in a later
+    Omnichannel phase; this table itself holds no such distinction —
+    every channel is equally real data here, only `status` (most
+    starting "not_configured") reflects what's actually usable today.
+    """
+
+    __tablename__ = "channels"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String, unique=True)  # live_chat|email|whatsapp|instagram|messenger
+    # Defaults to "" (not required at construction time) so a bare
+    # Channel(key=...) never errors — every seeded row above sets a real
+    # one explicitly.
+    display_name: Mapped[str] = mapped_column(String, default="")
+    # active | inactive | not_configured
+    status: Mapped[str] = mapped_column(String, default="not_configured")
+    config_json: Mapped[str] = mapped_column(String, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def config(self) -> dict:
+        return json.loads(self.config_json) if self.config_json else {}
