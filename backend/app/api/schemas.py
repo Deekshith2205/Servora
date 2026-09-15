@@ -539,6 +539,41 @@ class EvidenceDetailOut(BaseModel):
 
 
 # --------------------------------------------------------------------- #
+# Omnichannel Inbox (Phase 2)
+# --------------------------------------------------------------------- #
+
+class CompactCustomerOut(BaseModel):
+    id: int
+    name: str
+    email: str
+
+    class Config:
+        from_attributes = True
+
+
+class InboxItemOut(BaseModel):
+    """GET /api/inbox — one row per Ticket, forming the Unified Inbox list."""
+    id: int
+    customer: CompactCustomerOut
+    channel_key: str
+    subject: str
+    preview: str
+    status: str
+    updated_at: str
+    has_investigation: bool
+
+
+class InboxDetailOut(BaseModel):
+    """GET /api/inbox/{ticket_id} — the full conversation detail for the Inbox."""
+    id: int
+    customer: CompactCustomerOut
+    channel_key: str
+    subject: str
+    message: str
+    status: str
+    updated_at: str
+    investigation_id: int | None = None
+
 # [Omnichannel] Channel Foundation — issue #135
 # --------------------------------------------------------------------- #
 
@@ -555,8 +590,6 @@ class ChannelOut(BaseModel):
 
 class UpdateChannelStatusRequest(BaseModel):
     status: str  # active | inactive | not_configured
-
-
 # --------------------------------------------------------------------- #
 # Shopify integration — Settings -> Integrations
 # --------------------------------------------------------------------- #
