@@ -40,6 +40,20 @@ export default function OmnichannelDashboard() {
     loadData();
   }, []);
 
+  // Polling for active conversations (Issue #156)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchInbox(null, null, "open")
+        .then((openInboxData) => {
+          setOpenInboxItems(openInboxData);
+        })
+        .catch((err) => {
+          console.error("Polling fetch failed", err);
+        });
+    }, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
   if (loading) {
     return (
       <div className="omnichannel-dashboard">
@@ -159,6 +173,31 @@ export default function OmnichannelDashboard() {
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      <div className="dashboard-section">
+        <h2 className="dashboard-section-title">Active Conversations</h2>
+        {openInboxItems.length === 0 ? (
+          <div className="empty-state">
+            <p>No active conversations across any channel.</p>
+          </div>
+        ) : (
+          <div className="active-conversations-list">
+            {openInboxItems.map((ticket) => (
+              <div key={ticket.id} className="active-conversation-item">
+                <ChannelBadge channelKey={ticket.channel_key} />
+                <div className="active-conversation-main">
+                  <div className="active-conversation-header">
+                    <span className="active-conversation-customer">{ticket.customer.name}</span>
+                    <span className="active-conversation-time">{formatDate(ticket.updated_at)}</span>
+                  </div>
+                  <h3 className="active-conversation-subject">{ticket.subject}</h3>
+                  <p className="active-conversation-preview">{ticket.preview}</p>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
