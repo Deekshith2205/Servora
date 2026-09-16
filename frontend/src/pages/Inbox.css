@@ -22,57 +22,6 @@
   padding: 1rem;
 }
 
-/* Tabs */
-.inbox-tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  overflow-x: auto;
-  padding-bottom: 0.25rem;
-  flex-wrap: nowrap;
-}
-
-.inbox-tab {
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: 20px;
-  padding: 0.4rem 0.8rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--app-text);
-  transition: all 0.2s;
-}
-
-.inbox-tab:hover {
-  border-color: var(--app-border-hover);
-}
-
-.inbox-tab.active {
-  background: var(--app-primary);
-  color: white;
-  border-color: var(--app-primary);
-}
-
-.inbox-tab.inactive, .inbox-tab.not_configured {
-  opacity: 0.6;
-}
-
-.inbox-tab-count {
-  background: rgba(128, 128, 128, 0.2);
-  border-radius: 10px;
-  padding: 0.1rem 0.4rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.inbox-tab.active .inbox-tab-count {
-  background: rgba(255, 255, 255, 0.2);
-}
-
 /* List Row */
 .inbox-list {
   display: flex;

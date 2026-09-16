@@ -13,10 +13,10 @@ def list_inbox(channel: str | None = None, db: Session = Depends(get_db)) -> lis
     Unified Inbox Phase 2: One row per Ticket, forming the conversational list view.
     Does not duplicate records if an investigation exists.
     """
-    if channel:
-        valid_channel = db.query(Channel).filter(Channel.key == channel).first()
-        if not valid_channel:
-            raise HTTPException(status_code=400, detail=f"Invalid channel '{channel}'.")
+    if channel is not None:
+        channel_record = db.query(Channel).filter(Channel.key == channel).first()
+        if not channel_record:
+            raise HTTPException(status_code=400, detail=f"Invalid channel: {channel}")
 
     query = (
         db.query(Ticket, Investigation.id.label("investigation_id"))
@@ -24,11 +24,11 @@ def list_inbox(channel: str | None = None, db: Session = Depends(get_db)) -> lis
         .options(joinedload(Ticket.customer))
     )
 
-    if channel:
+    if channel is not None:
         query = query.filter(Ticket.channel_key == channel)
 
     results = query.order_by(Ticket.created_at.desc()).all()
-    
+
     inbox_items = []
     for ticket, inv_id in results:
         preview = ticket.message[:100] + ("..." if len(ticket.message) > 100 else "")
@@ -64,12 +64,12 @@ def get_inbox_detail(ticket_id: int, db: Session = Depends(get_db)) -> InboxDeta
         .filter(Ticket.id == ticket_id)
         .first()
     )
-    
+
     if not result:
         raise HTTPException(status_code=404, detail=f"Conversation {ticket_id} not found")
-        
+
     ticket, inv_id = result
-    
+
     return InboxDetailOut(
         id=ticket.id,
         customer=CompactCustomerOut(
