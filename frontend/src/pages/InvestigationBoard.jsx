@@ -143,7 +143,7 @@ function InvestigationChecklistTimeline({ steps, revealedCount }) {
 // instead of the old plain-text prose list. Clicking a card opens the
 // Explainability Drawer for exactly that evidence item.
 // -------------------------------------------------------------------------
-function EvidencePanel({ timeline, activeEvidenceId, onSelectEvidence }) {
+function EvidencePanel({ timeline, activeEvidenceId, onSelectEvidence, investigationChannel }) {
   const structured = useMemo(() => dedupeEvidence(flattenEvidence(timeline)), [timeline]);
   const prose = useMemo(() => unstructuredEvidence(timeline), [timeline]);
 
@@ -157,7 +157,10 @@ function EvidencePanel({ timeline, activeEvidenceId, onSelectEvidence }) {
   }
   return (
     <div className="ib-section">
-      <div className="ib-section-title">Evidence Collected</div>
+      <div className="ib-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Evidence Collected</span>
+        {investigationChannel && <ChannelBadge channelKey={investigationChannel} />}
+      </div>
       <div className="ib-evidence-grid">
         {structured.map((item) => (
           <EvidenceCard
@@ -477,6 +480,7 @@ export default function InvestigationBoard() {
                     timeline={detail.timeline}
                     activeEvidenceId={activeEvidenceId}
                     onSelectEvidence={setActiveEvidenceId}
+                    investigationChannel={detail.channel}
                   />
                   <RootCauseCard rootCause={detail.root_cause} confidence={detail.confidence} />
                   <ResolutionCard resolution={detail.resolution} confidence={detail.confidence} status={detail.status} />
@@ -497,6 +501,7 @@ export default function InvestigationBoard() {
           investigationId={detail.id}
           evidenceId={activeEvidenceId}
           allEvidence={allEvidence}
+          investigationChannel={detail.channel}
           onClose={() => setActiveEvidenceId(null)}
           onSelectEvidence={setActiveEvidenceId}
         />
