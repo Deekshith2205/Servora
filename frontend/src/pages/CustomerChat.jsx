@@ -1,15 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import { openInvestigationStream, sendChatMessage } from "../api/client";
 import { appendLiveStep, clearLive, finishLive, startLive } from "../liveInvestigation";
-
-// Demo customer — issue "Wire up real auth / customer identity" replaces this.
-const DEMO_CUSTOMER_ID = 1;
+import { useAuth } from "../auth/AuthContext";
 
 import InvestigationTimeline from "../components/InvestigationTimeline";
 import ExplainableAIPanel from "../components/ExplainableAIPanel";
 import { AgentIcon, agentLabel } from "../components/agentMeta";
 
 export default function CustomerChat() {
+  const { currentUser } = useAuth();
+  const customerId = currentUser?.id;
+  const customerName = currentUser?.name || `Customer #${customerId}`;
+
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,7 +54,7 @@ export default function CustomerChat() {
     });
 
     try {
-      const result = await sendChatMessage(DEMO_CUSTOMER_ID, userMessage.text, streamKey);
+      const result = await sendChatMessage(customerId, userMessage.text, streamKey);
       setMessages((prev) => [
         ...prev,
         {
@@ -183,7 +185,7 @@ export default function CustomerChat() {
       {/* Right Side Context Panel */}
       <div className="chat-context">
         <h3>Customer Context</h3>
-        <div className="chat-customer-name">Demo Customer #{DEMO_CUSTOMER_ID}</div>
+        <div className="chat-customer-name">{customerName}</div>
         <div className="chat-customer-id">Active Session</div>
 
         <div className="chat-context-section">

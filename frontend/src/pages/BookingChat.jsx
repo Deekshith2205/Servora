@@ -1,9 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { sendBookingMessage } from "../api/client";
-
-// Demo customer — matches CustomerChat.jsx's placeholder; issue "Wire up
-// real auth / customer identity" replaces both.
-const DEMO_CUSTOMER_ID = 1;
+import { useAuth } from "../auth/AuthContext";
 
 // Issue #19: browser-mic voice I/O, demo-safe (no telephony/Twilio) — see
 // CLAUDE.md's "Key decisions". Both Web Speech APIs are optional browser
@@ -36,6 +33,10 @@ function BookingConfirmationCard({ booking }) {
 }
 
 export default function BookingChat() {
+  const { currentUser } = useAuth();
+  const customerId = currentUser?.id;
+  const customerName = currentUser?.name || `Customer #${customerId}`;
+
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -69,7 +70,7 @@ export default function BookingChat() {
       setInput("");
       setLoading(true);
       try {
-        const result = await sendBookingMessage(DEMO_CUSTOMER_ID, nextMessages);
+        const result = await sendBookingMessage(customerId, nextMessages);
         setMessages([...nextMessages, { role: "assistant", content: result.reply }]);
         if (result.booking) setBooking(result.booking);
         speak(result.reply);
@@ -82,7 +83,7 @@ export default function BookingChat() {
         setLoading(false);
       }
     },
-    [messages, booking, speak]
+    [messages, booking, speak, customerId]
   );
 
   const handleSend = () => sendTurn(input);
@@ -211,7 +212,7 @@ export default function BookingChat() {
 
       <div className="chat-context">
         <h3>Voice Booking</h3>
-        <div className="chat-customer-name">Demo Customer #{DEMO_CUSTOMER_ID}</div>
+        <div className="chat-customer-name">{customerName}</div>
         <div className="chat-customer-id">Active Session</div>
 
         <div className="chat-context-section">
