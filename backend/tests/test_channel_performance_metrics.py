@@ -12,9 +12,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.api.analytics import compute_channel_metrics
+from app.api.analytics import compute_channel_metrics, compute_trend
 from app.db.database import Base
-from app.db.models import Customer, Ticket
+from app.db.models import Customer, Ticket, Channel
 
 
 @pytest.fixture
@@ -105,3 +105,50 @@ def test_channel_metrics_excludes_tickets_outside_the_cutoff_window(db_session):
 
 def test_channel_metrics_returns_empty_list_with_no_tickets(db_session):
     assert compute_channel_metrics(db_session, datetime.utcnow() - timedelta(days=30)) == []
+
+
+def test_trend_channel_breakdown(db_session):
+    # Seed official channels as backend tests don't always run full seeds
+    for key in ["live_chat", "email", "whatsapp", "instagram", "messenger"]:
+        db_session.add(Channel(key=key, display_name=key.title(), status="active"))
+    
+    customer = _seed_customer(db_session)
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=30)
+    
+    t1 = _ticket(customer.id, "email", "resolved")
+    t1.created_at = now
+    
+    t2 = _ticket(customer.id, "whatsapp", "resolved")
+    t2.created_at = now
+    
+    t3 = _ticket(customer.id, "email", "open")
+    t3.created_at = now
+    
+    db_session.add_all([t1, t2, t3])
+    db_session.commit()
+    
+    # 5. Existing aggregate trend remains backward-compatible.
+    agg_trend = compute_trend(db_session, now, cutoff, 30)
+    assert "channels" not in agg_trend[-1]
+    assert agg_trend[-1]["count"] == 3
+    
+    # Run with breakdown
+    brk_trend = compute_trend(db_session, now, cutoff, 30, include_channel_breakdown=True)
+    
+    # 1. Every day is present.
+    assert len(brk_trend) == 30
+    
+    today_data = brk_trend[-1]
+    
+    # 4. Aggregate daily count equals the sum of channel counts.
+    assert today_data["count"] == 3
+    assert sum(today_data["channels"].values()) == 3
+    
+    # 2. Every official channel exists in every day.
+    # 3. Missing channel days are 0.
+    for ch in ["live_chat", "email", "whatsapp", "instagram", "messenger"]:
+        assert ch in today_data["channels"]
+    assert today_data["channels"]["email"] == 2
+    assert today_data["channels"]["whatsapp"] == 1
+    assert today_data["channels"]["live_chat"] == 0

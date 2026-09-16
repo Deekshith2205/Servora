@@ -3,6 +3,7 @@ import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolve
 import BookingsPanel from "./BookingsPanel";
 import InvestigationTimeline from "../components/InvestigationTimeline";
 import ExplainableAIPanel from "../components/ExplainableAIPanel";
+import { ChannelBadge } from "../components/channelMeta";
 
 // Helper to determine badge class
 function getBadgeClass(type, value) {
@@ -653,26 +654,44 @@ export default function StaffDashboard() {
                     </div>
                   )}
 
+                  {detail.customer.channels_used && detail.customer.channels_used.length > 0 && (
+                    <div className="drawer-section">
+                      <div className="drawer-section-title">Channels Used</div>
+                      <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap'}}>
+                        {detail.customer.channels_used.map(ch => (
+                          <ChannelBadge key={ch} channelKey={ch} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="drawer-section">
-                    <div className="drawer-section-title">Customer History</div>
-                    {detail.customer_history && detail.customer_history.length > 0 ? (
+                    <div className="drawer-section-title">Conversation History</div>
+                    {detail.customer.conversation_history && detail.customer.conversation_history.length > 0 ? (
                       <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                        {detail.customer_history.map(pt => (
+                        {detail.customer.conversation_history.map(pt => (
                           <div key={pt.id} style={{
                             display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center', 
-                            padding: '0.5rem 0.75rem', 
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.75rem', 
                             background: 'var(--app-surface)', 
                             border: '1px solid var(--app-border)', 
-                            borderRadius: '4px',
+                            borderRadius: '6px',
                             fontSize: '0.85rem'
                           }}>
-                            <div style={{display: 'flex', gap: '1rem', alignItems: 'center'}}>
-                              <span style={{color: 'var(--app-text-muted)'}}>#{pt.id}</span>
-                              <span style={{fontWeight: 500, color: 'var(--app-text-primary)'}}>{pt.subject}</span>
+                            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                              <div style={{display: 'flex', gap: '0.75rem', alignItems: 'center'}}>
+                                <span style={{color: 'var(--app-text-muted)'}}>#{pt.id}</span>
+                                <ChannelBadge channelKey={pt.channel} />
+                              </div>
+                              <span className={`app-badge ${getBadgeClass('status', pt.status)}`}>{pt.status}</span>
                             </div>
-                            <span className={`app-badge ${getBadgeClass('status', pt.status)}`}>{pt.status}</span>
+                            <div style={{fontWeight: 500, color: 'var(--app-text-primary)'}}>{pt.subject}</div>
+                            <div style={{display: 'flex', justifyContent: 'space-between', color: 'var(--app-text-secondary)', fontSize: '0.75rem'}}>
+                              <span>{pt.category || 'Uncategorized'}</span>
+                              <span>{new Date(pt.created_at).toLocaleString()}</span>
+                            </div>
                           </div>
                         ))}
                       </div>

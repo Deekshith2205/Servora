@@ -106,6 +106,63 @@ def test_get_customer_reports_previous_tickets_count_and_risk_level():
     assert body["risk_level"] == "medium"
 
 
+def test_get_customer_includes_channel_history():
+    """[Omnichannel] issue #157: a customer with multiple tickets across
+    channels gets them correctly mapped, ordered newest-first, and distinct
+    channels_used."""
+    db = SessionLocal()
+    customer = _seed_customer(db)
+    
+    # Add tickets with explicit timing to verify newest-first
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    
+    t1 = Ticket(
+        customer_id=customer.id, subject="First", message="m", 
+        channel_key="email", status="resolved", created_at=now - timedelta(days=2)
+    )
+    t2 = Ticket(
+        customer_id=customer.id, subject="Second", message="m", 
+        channel_key="whatsapp", status="open", created_at=now - timedelta(days=1)
+    )
+    # Testing legacy null/empty channel defaults to live_chat logic
+    t3 = Ticket(
+        customer_id=customer.id, subject="Third", message="m", 
+        channel_key=None, status="escalated", created_at=now
+    )
+    t4 = Ticket(
+        customer_id=customer.id, subject="Fourth", message="m", 
+        channel_key="whatsapp", status="open", created_at=now + timedelta(days=1)
+    )
+    
+    db.add_all([t1, t2, t3, t4])
+    db.commit()
+    headers = staff_headers(db, "administrator")
+
+    with TestClient(app) as client:
+        resp = client.get(f"/api/records/customers/{customer.id}", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # 1. Distinct channels
+    assert body["channels_used"] == ["whatsapp", "live_chat", "email"]
+    
+    # 2. History ordered newest first
+    history = body["conversation_history"]
+    assert len(history) == 4
+    assert history[0]["subject"] == "Fourth"
+    assert history[1]["subject"] == "Third"
+    assert history[2]["subject"] == "Second"
+    assert history[3]["subject"] == "First"
+    
+    # 3. Channel attribution including fallback
+    assert history[0]["channel"] == "whatsapp"
+    assert history[1]["channel"] == "live_chat"
+    assert history[2]["channel"] == "whatsapp"
+    assert history[3]["channel"] == "email"
+
+
 def test_get_customer_404_for_unknown_id():
     with TestClient(app) as client:
         resp = client.get("/api/records/customers/999999")

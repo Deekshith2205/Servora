@@ -15,6 +15,7 @@ from app.api.schemas import (
     ShopifyCustomerRecordOut,
     ShopifyOrderRecordOut,
     TicketRecordOut,
+    CustomerHistoryTicketOut,
 )
 from app.auth.dependency import CurrentActor, get_current_actor
 from app.auth.investigation_visibility import can_view_evidence
@@ -64,6 +65,27 @@ def get_customer(
         raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
     if not can_view_evidence(actor, customer.id):
         raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
+
+    sorted_tickets = sorted(customer.tickets, key=lambda t: t.created_at, reverse=True)
+    channels_used = []
+    for t in sorted_tickets:
+        ch = t.channel_key or "live_chat"
+        if ch not in channels_used:
+            channels_used.append(ch)
+
+    history = [
+        CustomerHistoryTicketOut(
+            id=t.id,
+            subject=t.subject,
+            category=t.category,
+            status=t.status,
+            sentiment=t.sentiment,
+            urgency=t.urgency,
+            created_at=t.created_at.isoformat(),
+            channel=t.channel_key or "live_chat"
+        ) for t in sorted_tickets
+    ]
+
     return CustomerProfileOut(
         id=customer.id,
         name=customer.name,
@@ -72,6 +94,8 @@ def get_customer(
         tier=customer.tier,
         previous_tickets_count=len(customer.tickets),
         risk_level=_risk_level(customer),
+        channels_used=channels_used,
+        conversation_history=history,
     )
 
 
