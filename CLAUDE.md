@@ -1528,6 +1528,41 @@ over HTTP. Confirmed `GET /api/investigations` and
 #136-#141) is next in dependency order, and is the first phase with
 real frontend work.
 
+### 2026-09-16 — PR #167 merged; #146 (Phase 4's first issue) implemented
+
+Confirmed **PR #167 (#134/#135/#142-#145) merged to `main`** before
+starting — also found, already merged from elsewhere (not this
+session's work), **PR #168** closing **#136** (Unified Inbox page,
+Phase 2's first issue). Branched fresh off the real post-both-merges
+`main` tip (`omnichannel-p4-channel-in-investigations`).
+
+- **#146** (Channel information in investigations) — `InvestigationOut`
+  already had `channel_metadata` (from #134's own work), but neither it
+  nor `InvestigationListItemOut` ever exposed the plain `channel` field
+  itself — the exact gap #134's own entry flagged as deliberately
+  out-of-scope, deferred to this issue. Both schemas gained `channel:
+  str = "live_chat"`; `InvestigationListItemOut` also gained
+  `channel_metadata` (the issue's own technical requirements ask for
+  both fields on both schemas, not just `InvestigationOut`).
+  `investigations.py`'s two builder sites
+  (`_to_investigation_out()`/`list_investigations()`) populate both
+  from the existing `Investigation.channel_key`/`channel_metadata`
+  columns — no new DB column, no orchestrator change, purely a read-API
+  exposure of data that has existed since #133.
+
+  4 new tests (`tests/test_investigation_channel_field.py`) — including
+  one proving the full-detail and list-summary endpoints agree on the
+  same investigation's channel (the two builder sites were updated
+  consistently, not just one). Full backend suite: **339 passed** (up
+  from 331 pre-#167, plus whatever #136 added elsewhere), 1 skipped.
+
+  **Verified live**: a real `POST /api/chat` with `"channel":
+  "whatsapp"` through a real LLM call, then confirmed `channel:
+  "whatsapp"` on both `GET /api/investigations/by-ticket/{id}` and
+  `GET /api/investigations` for the same ticket; confirmed older rows
+  (created before #133 even existed) correctly read `"live_chat"`, not
+  null, in the same list response.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the
@@ -1548,20 +1583,22 @@ real frontend work.
    history if needed.
 3. ~~Merge PR #129~~ — done, merged directly to `main`. The general
    CORS/opaque-error gap is fully closed.
-4. **Merge PR #130** (real Shopify integration, CI green) — code-complete
-   and live-verified, just not yet on `main`.
+4. ~~Merge PR #130~~ — done, merged to `main`.
 5. **Fix the "None Agent" bug** found live while verifying #130 — Agent
    Performance Metrics shows an agent literally labeled "None Agent"
    (an `agent_name` rendering as null, most likely somewhere in the
    parallel-specialist reconciliation path). Not yet root-caused.
-5a. **[Omnichannel]: 8 of 34 sub-issues done — #132-#135 (Phase 1,
-   merged via PR #166) and #142-#145 (Phase 3, implemented this
-   session, not yet PR'd — branch `omnichannel-p1-p3-channel-flow`).**
-   Next up: **Phase 2 (#136-#141, Omnichannel Inbox)** — the first
-   phase with real frontend work, needs Phase 1's `Channel`/
-   `channel_key` data (done) to render against. Phase 4-8 (#146-#165)
-   remain untouched. See the 2026-09-15 progress-log entries for the
-   full backlog shape and what each implemented issue actually does.
+5a. **[Omnichannel]: 9 of 34 sub-issues done and merged to `main`** —
+   #132-#135 (Phase 1, PR #166), #142-#145 (Phase 3, PR #167), #146
+   (Phase 4's first issue — Channel information in investigations, PR
+   TBD this session). **#136** (Unified Inbox page, Phase 2) has also
+   been merged (PR #168) — not this session's own work, observed as
+   already-landed when this session next touched the repo; its own
+   implementation details are not recorded here since this session
+   didn't build it. Remaining: #137-#141 (rest of Phase 2), #147-#165
+   (rest of Phase 4 through 8). See the 2026-09-15 progress-log entries
+   for the full backlog shape and what each session-implemented issue
+   actually does.
 6. Two small, well-scoped fixes identified previously, still not done:
    (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite

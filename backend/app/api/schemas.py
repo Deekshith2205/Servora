@@ -371,6 +371,11 @@ class InvestigationOut(BaseModel):
     # `external_conversation_id`) once a channel adapter (issue #142)
     # supplies one.
     channel_metadata: dict | None = None
+    # [Omnichannel] issue #146 — additive. `Investigation.channel_key` has
+    # existed since issue #133, but this read API never actually exposed
+    # it — every row, old and new, has a real value ("live_chat" for
+    # everything that predates the Channel Foundation work), never null.
+    channel: str = "live_chat"
 
 
 class InvestigationListItemOut(BaseModel):
@@ -384,6 +389,10 @@ class InvestigationListItemOut(BaseModel):
     root_cause: str | None = None
     confidence: float | None = None
     started_at: str
+    # [Omnichannel] issue #146 — additive, same convention as
+    # InvestigationOut.channel/channel_metadata above.
+    channel: str = "live_chat"
+    channel_metadata: dict | None = None
 
 
 class AgentPerformanceOut(BaseModel):
