@@ -75,7 +75,7 @@ def _mock_resolved_path(monkeypatch):
     monkeypatch.setattr(
         orchestrator_module,
         "SPECIALISTS",
-        {"technical": lambda db, customer_id, message: SpecialistResponse(reply="fixed it", used_tools=[], confidence=0.6)},
+        {"technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="fixed it", used_tools=[], confidence=0.6)},
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="ok"))
@@ -174,7 +174,7 @@ def test_handle_message_threads_a_real_channel_through_on_verification_failure_e
     monkeypatch.setattr(
         orchestrator_module,
         "SPECIALISTS",
-        {"technical": lambda db, customer_id, message: SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2)},
+        {"technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2)},
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=False, reasoning="too low"))
@@ -219,9 +219,9 @@ def test_handle_message_tags_a_single_channel_on_the_parallel_fan_out_path(monke
     monkeypatch.setattr(
         orchestrator_module, "SPECIALISTS",
         {
-            "billing": lambda db, customer_id, message: SpecialistResponse(reply="billing reply", used_tools=[], confidence=0.9),
-            "order": lambda db, customer_id, message: SpecialistResponse(reply="order reply", used_tools=[], confidence=0.6),
-            "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a"),
+            "billing": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="billing reply", used_tools=[], confidence=0.9),
+            "order": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="order reply", used_tools=[], confidence=0.6),
+            "technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="n/a"),
         },
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
@@ -269,7 +269,7 @@ def test_chat_endpoint_defaults_channel_to_live_chat_when_omitted(monkeypatch):
         "app.orchestrator.plan",
         lambda classification, customer_id, db: PlanDecision(action="resolve", target_agent="order", reasoning="mocked"),
     )
-    mocked_specialist = lambda db, customer_id, message: SpecialistResponse(reply="mocked reply", used_tools=[], confidence=0.9)
+    mocked_specialist = lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="mocked reply", used_tools=[], confidence=0.9)
     monkeypatch.setattr("app.orchestrator.SPECIALISTS", {"order": mocked_specialist, "technical": mocked_specialist})
     monkeypatch.setattr("app.orchestrator.critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr("app.orchestrator.extract_facts", lambda message, reply: [])
@@ -296,7 +296,7 @@ def test_chat_endpoint_persists_a_real_channel_from_the_request_body(monkeypatch
         "app.orchestrator.plan",
         lambda classification, customer_id, db: PlanDecision(action="resolve", target_agent="order", reasoning="mocked"),
     )
-    mocked_specialist = lambda db, customer_id, message: SpecialistResponse(reply="mocked reply", used_tools=[], confidence=0.9)
+    mocked_specialist = lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="mocked reply", used_tools=[], confidence=0.9)
     monkeypatch.setattr("app.orchestrator.SPECIALISTS", {"order": mocked_specialist, "technical": mocked_specialist})
     monkeypatch.setattr("app.orchestrator.critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr("app.orchestrator.extract_facts", lambda message, reply: [])

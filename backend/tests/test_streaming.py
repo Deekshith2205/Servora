@@ -77,8 +77,8 @@ def test_handle_message_publishes_step_events_and_a_final_done_event(monkeypatch
     )
     monkeypatch.setattr(
         orchestrator_module, "SPECIALISTS",
-        {"order": lambda db, customer_id, message: SpecialistResponse(reply="On its way.", used_tools=["get_customer_orders"], confidence=0.6, evidence=["ev"]),
-         "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a")},
+        {"order": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="On its way.", used_tools=["get_customer_orders"], confidence=0.6, evidence=["ev"]),
+         "technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="n/a")},
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="ok"))

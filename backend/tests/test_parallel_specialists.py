@@ -60,17 +60,17 @@ def test_cross_cutting_issue_runs_two_specialists_and_reconciles_them(monkeypatc
     monkeypatch.setattr(
         orchestrator_module, "SPECIALISTS",
         {
-            "billing": lambda db, customer_id, message: SpecialistResponse(
+            "billing": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
                 reply="The payment was charged successfully.", used_tools=["check_payment_issue"],
                 confidence=0.9, root_cause="Payment succeeded.", evidence=["Payment confirmed."],
                 evidence_refs=[{"type": "order", "ref_id": 5, "label": "Order #5"}],
             ),
-            "order": lambda db, customer_id, message: SpecialistResponse(
+            "order": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
                 reply="No order record was ever created for this payment.", used_tools=["check_order_issue"],
                 confidence=0.6, root_cause="Order creation failed after payment.", evidence=["No order found."],
                 evidence_refs=[{"type": "order", "ref_id": 5, "label": "Order #5"}],
             ),
-            "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a"),
+            "technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="n/a"),
         },
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
@@ -145,8 +145,8 @@ def test_single_specialist_path_is_unaffected_by_the_fan_out_code(monkeypatch, d
     )
     monkeypatch.setattr(
         orchestrator_module, "SPECIALISTS",
-        {"order": lambda db, customer_id, message: SpecialistResponse(reply="On its way.", used_tools=["get_customer_orders"], confidence=0.6, evidence=["ev"]),
-         "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a")},
+        {"order": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="On its way.", used_tools=["get_customer_orders"], confidence=0.6, evidence=["ev"]),
+         "technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="n/a")},
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="ok"))

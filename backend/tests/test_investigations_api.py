@@ -42,13 +42,13 @@ def _resolve_via_chat(client, customer_id):
             action="resolve", target_agent="order", reasoning="order can handle it"
         )):
             with patch("app.orchestrator.SPECIALISTS", {
-                "order": lambda db, customer_id, message: SpecialistResponse(
+                "order": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
                     reply="Your order is on its way.",
                     used_tools=["get_customer_orders"],
                     confidence=0.6,
                     evidence=["Retrieved 1 order(s) for customer #1: #1."],
                 ),
-                "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a"),
+                "technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="n/a"),
             }):
                 with patch("app.orchestrator.verify") as mock_verify:
                     from app.agents.verification import VerificationResult

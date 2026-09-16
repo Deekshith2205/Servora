@@ -235,6 +235,7 @@ def _run_specialist(
     max_tokens: int = 1500,
     *,
     specialist: str,
+    channel: str = "live_chat",
 ) -> SpecialistResponse:
     """Shared plumbing for a tool-calling specialist: wires the DB-bound,
     PERMISSION-FILTERED tool registry into call_llm(), captures which
@@ -259,6 +260,15 @@ def _run_specialist(
     which a real API call would have surfaced immediately, and no session
     had a key to catch it) and, when issue #11's memory has anything on
     file, a short list of previously learned facts about this customer.
+
+    [Omnichannel] issue #150: `channel` — additive, defaults to
+    "live_chat" — is included in that same context as plain text (e.g.
+    "Channel: whatsapp"), real and honest, never invented. This is
+    CONTEXT for how to phrase a reply (a specialist may choose to write
+    "reply here on WhatsApp" instead of a generic "we'll follow up"), not
+    a new input to the Planner's resolve/escalate/clarify decision —
+    plan() itself is never called with a channel and has no access to
+    one, an explicit, deliberate scope boundary.
     """
     profile = load_profile(customer_id, db)
     tool_schemas, tool_handlers = build_filtered_tool_registry(db, specialist)
@@ -316,7 +326,7 @@ def _run_specialist(
             return res
         tool_handlers["check_order_issue"] = wrapped_check_order
 
-    context_lines = [f"Customer ID: {customer_id}"]
+    context_lines = [f"Customer ID: {customer_id}", f"Channel: {channel}"]
     if profile.get("facts"):
         context_lines.append("Known facts about this customer from past interactions: " + "; ".join(profile["facts"]))
     context_lines.append(f"Customer message: {message}")
@@ -381,8 +391,8 @@ refund tool — issue_refund only ever affects this system's own records.
 """
 
 
-def resolve_billing(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _BILLING_SYSTEM_PROMPT, customer_id, message, specialist="billing")
+def resolve_billing(db: Session, customer_id: int, message: str, channel: str = "live_chat") -> SpecialistResponse:
+    return _run_specialist(db, _BILLING_SYSTEM_PROMPT, customer_id, message, specialist="billing", channel=channel)
 
 
 _TECHNICAL_SYSTEM_PROMPT = """You are the Technical specialist agent in an \
@@ -409,8 +419,8 @@ in what search_kb actually returned.
 """
 
 
-def resolve_technical(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _TECHNICAL_SYSTEM_PROMPT, customer_id, message, specialist="technical")
+def resolve_technical(db: Session, customer_id: int, message: str, channel: str = "live_chat") -> SpecialistResponse:
+    return _run_specialist(db, _TECHNICAL_SYSTEM_PROMPT, customer_id, message, specialist="technical", channel=channel)
 
 
 _ORDER_SYSTEM_PROMPT = """You are the Order specialist agent in an autonomous \
@@ -448,8 +458,8 @@ order lookup instead of treating it as the order not existing.
 """
 
 
-def resolve_order(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _ORDER_SYSTEM_PROMPT, customer_id, message, specialist="order")
+def resolve_order(db: Session, customer_id: int, message: str, channel: str = "live_chat") -> SpecialistResponse:
+    return _run_specialist(db, _ORDER_SYSTEM_PROMPT, customer_id, message, specialist="order", channel=channel)
 
 
 _ACCOUNT_SYSTEM_PROMPT = """You are the Account specialist agent in an \
@@ -471,8 +481,8 @@ explanation.
 """
 
 
-def resolve_account(db: Session, customer_id: int, message: str) -> SpecialistResponse:
-    return _run_specialist(db, _ACCOUNT_SYSTEM_PROMPT, customer_id, message, specialist="account")
+def resolve_account(db: Session, customer_id: int, message: str, channel: str = "live_chat") -> SpecialistResponse:
+    return _run_specialist(db, _ACCOUNT_SYSTEM_PROMPT, customer_id, message, specialist="account", channel=channel)
 
 
 SPECIALISTS = {

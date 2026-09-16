@@ -27,7 +27,7 @@ def _mock_resolved_path(monkeypatch):
         "app.orchestrator.plan",
         lambda classification, customer_id, db: PlanDecision(action="resolve", target_agent="order", reasoning="mocked"),
     )
-    mocked_specialist = lambda db, customer_id, message: SpecialistResponse(reply="mocked reply", used_tools=[], confidence=0.9)
+    mocked_specialist = lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="mocked reply", used_tools=[], confidence=0.9)
     monkeypatch.setattr("app.orchestrator.SPECIALISTS", {"order": mocked_specialist, "technical": mocked_specialist})
     monkeypatch.setattr("app.orchestrator.critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr("app.orchestrator.extract_facts", lambda message, reply: [])

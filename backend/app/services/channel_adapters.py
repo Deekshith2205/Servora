@@ -21,7 +21,6 @@ against representative fixtures.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
@@ -139,6 +138,35 @@ _NORMALIZERS = {
 }
 
 
+def _normalize_phone_digits(phone: str) -> str:
+    """[Omnichannel] issue #152: a real cross-channel-identity bug found
+    while implementing context preservation, not assumed away — WhatsApp
+    provides phone numbers as bare digits with no `+` (e.g.
+    "15555550101"), but this codebase's own seeded `Customer.phone`
+    values are human-formatted (e.g. "+1-555-0101", see app/db/seed.py).
+    An exact string match between the two would never find the existing
+    row, silently creating a duplicate `Customer` every time — exactly
+    the failure this issue's own acceptance criteria (the same real
+    person resolving to the SAME customer_id across channels) is meant
+    to catch. Comparing on digits-only makes the match format-agnostic."""
+    return "".join(ch for ch in phone if ch.isdigit())
+
+
+def _find_customer_by_phone(db: Session, phone: str) -> Customer | None:
+    """Python-side scan, not a SQL `LIKE`/normalization expression —
+    simple and correct at this demo's scale (a handful of seeded
+    customers), the same "not a performance-sensitive path" convention
+    `find_recent_conversation_on_channel()` already established for a
+    similar small-scale lookup."""
+    target = _normalize_phone_digits(phone)
+    if not target:
+        return None
+    for customer in db.query(Customer).all():
+        if customer.phone and _normalize_phone_digits(customer.phone) == target:
+            return customer
+    return None
+
+
 def _resolve_or_create_customer(db: Session, normalized: NormalizedMessage) -> Customer:
     """Resolves the SAME real `Customer` row across repeated messages
     from the same real contact — the mechanism issue #144 (conversation
@@ -161,7 +189,7 @@ def _resolve_or_create_customer(db: Session, normalized: NormalizedMessage) -> C
             phone=normalized.contact_phone or "",
         )
     elif normalized.contact_phone:
-        customer = db.query(Customer).filter(Customer.phone == normalized.contact_phone).first()
+        customer = _find_customer_by_phone(db, normalized.contact_phone)
         if customer:
             return customer
         customer = Customer(
@@ -249,46 +277,10 @@ def find_recent_conversation_on_channel(
     return None
 
 
-_MARKDOWN_BOLD_ITALIC = re.compile(r"\*\*(.+?)\*\*|\*(.+?)\*|__(.+?)__|_(.+?)_")
-_MARKDOWN_INLINE_CODE = re.compile(r"`([^`]+)`")
-_MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
-_MARKDOWN_BULLET = re.compile(r"^[ \t]*[-*][ \t]+", re.MULTILINE)
-
-
-def _strip_markdown(text: str) -> str:
-    text = _MARKDOWN_LINK.sub(r"\1 (\2)", text)
-    text = _MARKDOWN_INLINE_CODE.sub(r"\1", text)
-    text = _MARKDOWN_BOLD_ITALIC.sub(lambda m: next(g for g in m.groups() if g is not None), text)
-    text = _MARKDOWN_BULLET.sub("• ", text)
-    return text
-
-
-def format_reply_for_channel(reply: str, channel_key: str) -> str:
-    """[Omnichannel] issue #143 — formats an already-decided reply for
-    the channel it's headed to. Never changes WHAT was decided (that's
-    every agent upstream's job) — only HOW the same text is presented.
-
-    - `live_chat`: passed through byte-for-byte unchanged — this is the
-      one channel already proven correct in production, and this
-      function must never regress it.
-    - `whatsapp`/`instagram`/`messenger`: markdown stripped (no rich
-      text support on these platforms) via a plain regex substitution,
-      not a full markdown parser dependency — good enough for the
-      simple bold/italic/code/link/bullet patterns this codebase's own
-      replies actually produce.
-    - `email`: passed through unchanged — email natively renders
-      markdown-ish plain text fine, and fabricating a subject
-      line/signature that wasn't part of the agent's actual reply would
-      misrepresent what was decided. (The real subject line lives in
-      `channel_metadata["subject"]`, already captured by
-      `normalize_email()` — a future email-sending integration reads it
-      from there, not from the reply body.)
-
-    NOT yet wired into the real `handle_message()`/`route_channel_message()`
-    reply path — that's a separate, later issue ([Omnichannel] #151,
-    "Response formatting by channel"). This function is deliberately
-    proven correct in isolation first.
-    """
-    if channel_key in ("whatsapp", "instagram", "messenger"):
-        return _strip_markdown(reply)
-    return reply
+# [Omnichannel] issue #151: format_reply_for_channel() moved to its own
+# module, app/services/reply_formatting.py, specifically to let
+# orchestrator.py import it without a circular import (this module
+# already imports orchestrator.handle_message/ChatResult above) — see
+# that module's own docstring for the full explanation. Re-exported here
+# so anything that already imports it from this module keeps working.
+from app.services.reply_formatting import format_reply_for_channel  # noqa: E402,F401

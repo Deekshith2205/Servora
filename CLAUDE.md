@@ -1563,6 +1563,136 @@ Phase 2's first issue). Branched fresh off the real post-both-merges
   (created before #133 even existed) correctly read `"live_chat"`, not
   null, in the same list response.
 
+### 2026-09-16 (continued) — 6 more Omnichannel issues: #150-#152
+(Phase 5, Agent Enhancements), #158 (Phase 7), #162/#164 (Phase 8)
+
+Branch `omnichannel-p5-p7-p8-batch`, synced fresh off `main` after
+confirming PR #285 (#146) had merged.
+
+- **#150** (Channel-aware responses) — `_run_specialist()` includes a
+  real `f"Channel: {channel}"` line in the specialist's own LLM
+  context, same convention `Customer ID`/known-facts lines already use.
+  All 4 `resolve_x()` wrappers and `SPECIALISTS`' two orchestrator call
+  sites (single-specialist and the #88 parallel path's
+  `_run_specialist_isolated()`) thread it through. `plan()` itself was
+  never touched — a real test (`test_planner_is_never_given_a_channel`)
+  asserts `channel` isn't even in its signature, the structural proof
+  channel can't influence resolve/escalate/clarify.
+
+  **A real backward-compatibility risk found and fixed before it broke
+  anything**: `SPECIALISTS[key](db, customer_id, message)` is mocked
+  with a bare 3-arg lambda in 9 different test files (channel/parallel/
+  explainability/streaming/critic-adjacent tests, ~30 lambdas total).
+  Passing `channel=channel` from the real call sites would have broken
+  every one of them with a `TypeError` — caught before running the
+  suite, fixed with a single mechanical find/replace adding
+  `channel="live_chat"` to every one, rather than each test file
+  rediscovering the same break independently.
+
+- **#151** (Response formatting by channel) — wires #143's
+  `format_reply_for_channel()` into the real reply path, via a new
+  `_finalize_reply()` closure inside `handle_message()` called at all 3
+  `ChatResult` return points (direct-escalate, verification-fail-
+  escalate, resolved) — the formatting call itself lives in exactly one
+  place, per the issue's own requirement, even though the function has
+  multiple return points.
+
+  **A real circular import found and fixed, not routed around**:
+  `channel_adapters.py` already imports `handle_message`/`ChatResult`
+  from `orchestrator.py` (#142); wiring `format_reply_for_channel` the
+  other direction would have created a genuine import cycle. Fixed by
+  extracting the function (plus its regex helpers) into a new,
+  dependency-free `app/services/reply_formatting.py` — `channel_adapters.py`
+  re-exports it for backward compatibility with anything already
+  importing it from there (`tests/test_channel_formatting.py`
+  unchanged).
+
+- **#152** (Context preservation across channels) — no new table, per
+  the issue's own scope note: the real work is
+  `_resolve_or_create_customer()` (#142) reliably resolving the SAME
+  `customer_id` across channels, so the existing `CustomerMemory` merge
+  (#11) does the rest.
+
+  **A real cross-channel-identity bug found and fixed while implementing
+  this, not assumed away**: WhatsApp's raw "from" field is bare digits
+  ("15550101"), but this codebase's own seeded `Customer.phone` values
+  are human-formatted ("+1-555-0101") — an exact string match would
+  never find the existing row, silently creating a duplicate `Customer`
+  every time, defeating this issue's entire purpose. Fixed with a new
+  `_find_customer_by_phone()` doing a digit-normalized comparison
+  (Python-side scan, same "simple and correct at this demo's scale"
+  convention `find_recent_conversation_on_channel()` already
+  established) instead of the exact-match filter.
+
+- **#158** (Channel performance metrics) — new `compute_channel_metrics()`
+  in `analytics.py`, folded into `GET /api/analytics/summary` as a new
+  `channel_metrics` key. The first function in this file to use a real
+  SQL `GROUP BY` (`Ticket.channel_key`, `Ticket.status`) rather than
+  the Python-side aggregation its siblings (`compute_churn_signals()`,
+  `compute_trend()`) use — a deliberate, noted deviation from this
+  file's usual pattern, matching the issue's own explicit "real SQL
+  aggregation, not client-side re-aggregation" requirement.
+
+- **#162** (Demo data generation) — 4 new real, coherent seeded
+  conversations in `seed.py` (one each for WhatsApp/Instagram/
+  Messenger/Email, grounded in Alice/Bob's real existing orders —
+  Live Chat already has plenty via the model's own default).
+  **Deliberately Ticket rows only, no fabricated Investigation rows** —
+  this codebase has never seeded a fake reasoning trace for any ticket,
+  and inventing one here would mean fabricating AI output that never
+  ran; the Inbox already renders a Ticket with no Investigation
+  correctly (`has_investigation=False`), a real, fully-supported state.
+
+- **#164** (End-to-end validation) — a real integration test
+  (`route_channel_message()` for WhatsApp and Email, checked against
+  the Inbox, the Investigation detail endpoint, and Analytics'
+  `channel_metrics`, all via the SAME shared test DB so the check is
+  real, not two DBs that happen to agree by construction). **Honestly
+  scoped**: the issue's own text also names `GET /api/dashboard/
+  omnichannel`, which doesn't exist yet (#153, Phase 6, not this
+  batch) — noted explicitly in the test file rather than silently
+  skipped without explanation.
+
+  **A second real, pre-existing test-isolation bug found while writing
+  this phase's own tests** (the same class already documented once for
+  #14/#17): `test_analytics.py`/`test_kb_api.py`/`test_records_api.py`
+  all legitimately wipe the shared session-wide `Ticket` table for
+  their own scoped needs — #162's first test draft asserted against
+  that same mutable DB's *current* state and failed the moment it ran
+  after one of those files in the full suite (passed fine in
+  isolation). Fixed by testing against a genuinely fresh, isolated
+  `seed_if_empty()` run instead (monkeypatching `app.db.seed.SessionLocal`
+  to a throwaway in-memory engine) — which is what the acceptance
+  criteria actually asked for ("a fresh seed_if_empty() run
+  produces...") anyway, not a workaround.
+
+**Verified live against real LLM calls**: confirmed the same real
+"Alice" (seeded with both a phone and an email) resolves to the exact
+same `customer_id` whether contacting via real `route_channel_message()`
+calls on Email then WhatsApp — the actual proof #152 works, not just
+the mocked test. A brand-new WhatsApp contact with no prior ticket
+history got a real, resolved reply from the parallel Billing+Order
+fan-out, correctly persisted with `channel="whatsapp"`. Confirmed the 4
+new seeded conversations render correctly in the real Inbox
+(`GET /api/inbox`), and `GET /api/analytics/summary`'s new
+`channel_metrics` reports real, correct per-channel counts summing to
+the real total ticket count.
+
+20 new tests across 6 new files: `test_channel_aware_responses.py` (3,
+#150), `test_response_formatting_wiring.py` (4, #151),
+`test_context_preservation.py` (4, #152),
+`test_channel_performance_metrics.py` (4, #158),
+`test_demo_data_channels.py` (3, #162), `test_omnichannel_e2e.py` (2,
+#164). Full backend suite: **360 passed** (up from 339 pre-this-batch),
+1 skipped — confirmed genuinely order-independent this time (the #162
+fix above was specifically about that).
+
+**Omnichannel epic status: 16 of 34 sub-issues done and merged or
+PR'd** (#132-#136, #142-#146, #150-#152, #158, #162, #164). Remaining:
+#137-#141 (rest of Phase 2), #147/#148/#149 (rest of Phase 4),
+#153-#157 (Phase 6), #159-#161 (rest of Phase 7), #163/#165 (rest of
+Phase 8).
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the
@@ -1588,17 +1718,19 @@ Phase 2's first issue). Branched fresh off the real post-both-merges
    Performance Metrics shows an agent literally labeled "None Agent"
    (an `agent_name` rendering as null, most likely somewhere in the
    parallel-specialist reconciliation path). Not yet root-caused.
-5a. **[Omnichannel]: 9 of 34 sub-issues done and merged to `main`** —
-   #132-#135 (Phase 1, PR #166), #142-#145 (Phase 3, PR #167), #146
-   (Phase 4's first issue — Channel information in investigations, PR
-   TBD this session). **#136** (Unified Inbox page, Phase 2) has also
-   been merged (PR #168) — not this session's own work, observed as
-   already-landed when this session next touched the repo; its own
+5a. **[Omnichannel]: 16 of 34 sub-issues done** — #132-#135 (Phase 1,
+   PR #166), #142-#145 (Phase 3, PR #167), #146 (Phase 4's first issue,
+   PR #285, merged), #150-#152 (Phase 5), #158 (Phase 7's first issue),
+   #162/#164 (Phase 8's 1st/4th issues) — the last 6 on branch
+   `omnichannel-p5-p7-p8-batch`, PR TBD this session. **#136**
+   (Unified Inbox page, Phase 2) has also been merged (PR #168) — not
+   this session's own work, observed as already-landed; its own
    implementation details are not recorded here since this session
-   didn't build it. Remaining: #137-#141 (rest of Phase 2), #147-#165
-   (rest of Phase 4 through 8). See the 2026-09-15 progress-log entries
-   for the full backlog shape and what each session-implemented issue
-   actually does.
+   didn't build it. Remaining: #137-#141 (rest of Phase 2), #147-#149
+   (rest of Phase 4), #153-#157 (Phase 6), #159-#161 (rest of Phase 7),
+   #163/#165 (rest of Phase 8). See the 2026-09-15/2026-09-16
+   progress-log entries for the full backlog shape and what each
+   session-implemented issue actually does.
 6. Two small, well-scoped fixes identified previously, still not done:
    (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
    schema change (`create_all()` doesn't migrate existing SQLite

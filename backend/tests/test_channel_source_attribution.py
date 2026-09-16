@@ -77,7 +77,7 @@ def _mock_verification_failure_escalate(monkeypatch):
     )
     monkeypatch.setattr(
         orchestrator_module, "SPECIALISTS",
-        {"technical": lambda db, customer_id, message: SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2)},
+        {"technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2)},
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=False, reasoning="too low"))
@@ -97,7 +97,7 @@ def _mock_resolved(monkeypatch):
     )
     monkeypatch.setattr(
         orchestrator_module, "SPECIALISTS",
-        {"technical": lambda db, customer_id, message: SpecialistResponse(reply="fixed it", used_tools=[], confidence=0.6)},
+        {"technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="fixed it", used_tools=[], confidence=0.6)},
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="ok"))

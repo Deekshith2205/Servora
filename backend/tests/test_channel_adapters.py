@@ -65,7 +65,7 @@ def _mock_resolved_path(monkeypatch):
     )
     monkeypatch.setattr(
         orchestrator_module, "SPECIALISTS",
-        {"technical": lambda db, customer_id, message: SpecialistResponse(reply="fixed it", used_tools=[], confidence=0.6)},
+        {"technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="fixed it", used_tools=[], confidence=0.6)},
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=True, reasoning="ok"))
