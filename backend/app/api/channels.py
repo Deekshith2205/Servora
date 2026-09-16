@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.schemas import ChannelOut, UpdateChannelStatusRequest
+from app.auth.dependency import require_permission
 from app.db.database import get_db
 from app.db.models import Channel
 
@@ -37,7 +38,15 @@ def list_channels(db: Session = Depends(get_db)) -> list[ChannelOut]:
 
 
 @router.patch("/{channel_id}", response_model=ChannelOut)
-def update_channel_status(channel_id: int, payload: UpdateChannelStatusRequest, db: Session = Depends(get_db)) -> ChannelOut:
+def update_channel_status(
+    channel_id: int,
+    payload: UpdateChannelStatusRequest,
+    db: Session = Depends(get_db),
+    _actor=Depends(require_permission("manage_integrations")),
+) -> ChannelOut:
+    # [RBAC] issue #202: PATCH (write) gated Administrator-only; GET
+    # (list, above) stays open to all staff roles — that issue's own
+    # explicit acceptance criteria for this exact distinction.
     channel = db.get(Channel, channel_id)
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found.")

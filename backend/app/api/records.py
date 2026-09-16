@@ -17,12 +17,16 @@ from app.api.schemas import (
     TicketRecordOut,
     CustomerHistoryTicketOut,
 )
+from app.auth.dependency import CurrentActor, get_current_actor
+from app.auth.investigation_visibility import can_view_evidence
 from app.db.database import get_db
 from app.db.models import Customer, Order, Ticket
 from app.services import shopify_service
 from app.services.shopify_service import ShopifyAPIError, ShopifyNotConnectedError
 
 router = APIRouter(prefix="/api/records", tags=["records"])
+
+_FORBIDDEN_DETAIL = "You do not have permission to perform this action."
 
 # Deliberately NOT under /api/orders, /api/customers, /api/tickets — the
 # latter already has a literal route (GET /api/tickets/resolved) that a
@@ -33,18 +37,35 @@ router = APIRouter(prefix="/api/records", tags=["records"])
 
 
 @router.get("/orders/{order_id}", response_model=OrderRecordOut)
-def get_order(order_id: int, db: Session = Depends(get_db)) -> Order:
+def get_order(
+    order_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> Order:
+    """[RBAC] issue #188/#218: `can_view_evidence()`, resolving the
+    order's own real `customer_id` as the ownership check — staff with
+    `view_evidence` can view any order; a Customer only their own."""
     order = db.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    if not can_view_evidence(actor, order.customer_id):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
     return order
 
 
 @router.get("/customers/{customer_id}", response_model=CustomerProfileOut)
-def get_customer(customer_id: int, db: Session = Depends(get_db)) -> CustomerProfileOut:
+def get_customer(
+    customer_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> CustomerProfileOut:
+    """[RBAC] issues #184 + #188/#218: this ONE endpoint serves BOTH
+    the staff Evidence Explorer case (`view_evidence`) and a Customer
+    viewing their OWN profile (issue #184) — `can_view_evidence()`
+    covers both through the same check, using the customer record's own
+    `id` as the ownership key."""
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
+    if not can_view_evidence(actor, customer.id):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
+
     sorted_tickets = sorted(customer.tickets, key=lambda t: t.created_at, reverse=True)
     channels_used = []
     for t in sorted_tickets:
@@ -97,10 +118,16 @@ def _risk_level(customer: Customer) -> str | None:
 
 
 @router.get("/tickets/{ticket_id}", response_model=TicketRecordOut)
-def get_ticket(ticket_id: int, db: Session = Depends(get_db)) -> TicketRecordOut:
+def get_ticket(
+    ticket_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> TicketRecordOut:
+    """[RBAC] issue #188/#218: same `can_view_evidence()` check,
+    resolving the ticket's own `customer_id`."""
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
+    if not can_view_evidence(actor, ticket.customer_id):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
     return TicketRecordOut(
         id=ticket.id,
         customer_id=ticket.customer_id,

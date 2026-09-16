@@ -1693,6 +1693,147 @@ PR'd** (#132-#136, #142-#146, #150-#152, #158, #162, #164). Remaining:
 #153-#157 (Phase 6), #159-#161 (rest of Phase 7), #163/#165 (rest of
 Phase 8).
 
+### 2026-09-16 (continued) — [RBAC] Track A (Backend/Authorization Core): all 31 issues (#171-#223) implemented, tested, and verified live
+
+New backend-only RBAC epic split (Track A / Track B, this session's own
+division) — implemented ALL of Track A end to end on
+`rbac-track-a-backend` (branched from `main` at `f91b0f8`).
+
+**Identity model — deliberately NOT real authentication**: 4 roles
+(Customer/Support Agent/Manager/Administrator) resolved via demo-
+appropriate `X-Servora-*` HTTP headers
+(`app/auth/dependency.py::get_current_actor()`), matching this
+codebase's own pre-existing `DEMO_CUSTOMER_ID=1` hardcoded-identity
+convention — no passwords, sessions, or JWTs; building real auth would
+itself be the architecture redesign the RBAC epic's own instructions
+forbid. `CurrentActor.role=None` is the honest anonymous state, never a
+fabricated default. **Security-critical design decision, verified
+live**: for a staff actor, the resolved `User` row's own `role` DB
+column is authoritative, never the `X-Servora-Role` header's claim —
+confirmed by sending a real Support Agent's `user_id` with a spoofed
+`X-Servora-Role: administrator` header and observing the response still
+resolve as `support_agent` (see live verification below).
+
+**New module layout**: `app/auth/roles.py` (constants) ->
+`app/auth/permissions.py` (pure `ROLE_PERMISSIONS` dict +
+`has_permission()`/`has_any_permission()`, zero FastAPI imports —
+deliberately, to avoid the exact class of circular-import bug this
+session hit earlier with `channel_adapters.py`/`orchestrator.py`) ->
+`app/auth/dependency.py` (`require_permission()`/
+`require_any_permission()` dependency factories) /
+`app/auth/investigation_visibility.py` (centralized
+`can_view_investigation`/`can_view_evidence`/`can_view_explanation`/
+`can_view_escalation_queue`/`can_handle_escalation` helpers, so route
+handlers that must agree on the same rule — e.g. the customer-facing and
+staff-facing investigation endpoints — share one real check instead of
+two that could drift). Administrator's permission set is a computed
+UNION of every other role's permissions plus admin-only ones
+(`manage_users`/`manage_integrations`/`manage_knowledge_base`/
+`manage_system_settings`) — never hand-duplicated, verified by a direct
+set-equality test.
+
+New DB tables: `User` (staff identity, no password field — see its own
+docstring) and `SystemSetting` (flat key-value, honest/minimal). New
+endpoints: `GET /api/auth/permissions` + `GET /api/auth/me` (both
+ungated — reference data / self-lookup), `GET/POST/PATCH /api/users`
+(Administrator-only, #200), `GET/PATCH /api/settings`
+(Administrator-only, #204), `GET /api/tickets/mine` (Customer-only,
+#182), `GET /api/team/activity` (`view_analytics`-gated, #197 — reuses
+the existing `Ticket.assigned_to` free-text-not-FK limitation, flagged
+again).
+
+**Enforcement is strict everywhere except one deliberate, documented
+exception**: every gated endpoint (Investigation Board, Evidence
+Explorer, Explainability Panel, Escalations, Analytics, Shopify
+Integrations, Channels PATCH, KB approve, User/Settings management)
+returns a real 403 for an anonymous or under-permissioned actor,
+matching each issue's own literal "gets a real 403" acceptance
+criteria. **The one exception is `POST /api/chat`**: additive-only
+enforcement — no headers at all is completely unaffected (matches every
+current caller, since Track B's Role Switcher that would send these
+headers doesn't exist yet); only a Customer identity that is both
+asserted AND conflicts with the payload's `customer_id` gets a real
+403. This was a deliberate call to avoid breaking the live,
+currently-working Customer Chat demo — verified live (see below) that a
+header-less `/api/chat` call still returns 200.
+
+**Real, expected test breakage, fixed file by file**: wiring the strict
+gates broke 69 pre-existing tests (`test_analytics.py`,
+`test_channels_api.py`, `test_channel_metadata.py`,
+`test_explainability.py`, `test_integrations_api.py`,
+`test_investigation_channel_field.py`, `test_investigations_api.py`,
+`test_kb_api.py`, `test_omnichannel_e2e.py`, `test_records_api.py`,
+`test_tickets_api.py`) — this is issue #177's own explicit acceptance
+criteria ("every existing test that calls a now-gated endpoint is
+updated to send valid identity headers, not left broken"), not a
+regression. Fixed with a new `tests/rbac_headers.py` helper
+(`staff_headers(db, role)` looks up/creates a real seeded `User`;
+`customer_headers(customer_id)`), added to every affected call site —
+including several real 403-vs-404 ordering subtleties worth
+remembering: `resolve_escalation()`/`assign_escalation()`/
+`close_escalation()`/`get_escalation_detail()`/`list_escalations()` all
+check permission BEFORE the ticket lookup (so even an "unknown ticket"
+test needs valid headers to actually reach the 404), while
+`get_investigation()`/`get_investigation_by_ticket()`/the
+`/api/records/...` lookups check the row FIRST (so their own "unknown
+id" 404 tests are unaffected either way).
+
+**New, issue-specific tests** (not just wiring fixes) added on top:
+`tests/test_rbac_permissions.py` (#171-#173/#199 — pure unit tests of
+the role/permission definitions, including the Administrator-union
+equality check), `tests/test_rbac_dependency.py` (#175-#177/#180 —
+header resolution, the header-spoofing rejection,
+`require_any_permission`'s OR semantics, the generic non-leaking 403
+message), `tests/test_investigation_visibility_helpers.py`
+(#217-#220 — unit tests of every visibility helper, including #219's
+deliberate owner-can't-see-explanation asymmetry), `tests/test_users_api.py`
+(#200), `tests/test_settings_api.py` (#204),
+`tests/test_customer_endpoints.py` (#182/#184/#185/#186 —
+two-seeded-customers ownership isolation, staff-unaffected notification
+scoping, a full customer-can't-reach-any-staff-surface sweep), and
+`tests/test_rbac_matrix.py` (#223 — a real parametrized role×endpoint
+matrix across all 4 roles + anonymous, both non-resource-gated and
+resource-owned cases, plus the live Administrator-union sweep). Full
+backend suite: **446 passed** (up from 366 pre-this-batch), 1 skipped —
+confirmed stable across repeated runs (one real flake found and fixed
+along the way: the new matrix fixture's `/api/chat`-created ticket
+could reuse a low ROWID that an orphaned `Investigation` row from an
+earlier test file's `Ticket`-clearing still referenced — same class of
+hazard `test_records_api.py` already documented; fixed by clearing
+genuinely orphaned `Investigation`/`InvestigationStep` rows before
+creating the fixture's own).
+
+**Verified live**, not just via mocked tests — reseeded a fresh
+`servora.db` (schema changed — see the standing note below) and ran
+real `curl` calls with real seeded staff identities (Jordan/
+support_agent, Priya/manager, Sam/administrator) and real customers
+(Alice id=1, Bob id=2) against the running dev server: anonymous → 403
+on `/api/users`; `GET /api/auth/permissions` → 200, public; Manager →
+403 on Investigation Board, 200 on Analytics; Support Agent → the exact
+inverse (200 Board, 403 Analytics); Administrator → 200 on Users/
+Escalations; the header-spoof attempt (real Support Agent `user_id`,
+claimed `X-Servora-Role: administrator`) → resolved and enforced as
+`support_agent`, not administrator; Alice → 200 on her own profile/
+tickets, 403 on Bob's profile; and, critically, `POST /api/chat` with
+**zero** identity headers (the current, unmodified frontend's exact
+call shape) → still a clean 200, confirming the additive-only exception
+holds against the real running app.
+
+**The real tradeoff this session is flagging prominently, not
+softening**: merging this backend-only PR will make most of the
+previously-open Staff Dashboard surfaces (Investigation Board, Evidence
+Explorer, Explainability Panel, Escalations, Analytics, Integrations,
+Channels PATCH, KB approve) return real 403s for ANY caller that
+doesn't send the new identity headers — which is every current caller,
+since Track B's Role Switcher (issue #206, separate, not-yet-built
+work) is what's supposed to start sending them. `/api/chat` was
+deliberately spared for exactly this reason; everything else was gated
+strictly per each issue's own literal acceptance criteria, on the
+judgment that matching the issues as written matters more than
+silently softening enforcement to keep today's UI working end-to-end.
+Whoever reviews/merges this PR should treat shipping Track B promptly
+as a real follow-on dependency, not a someday item.
+
 ## Next up (in priority order)
 
 1. **Still the single highest-priority loose thread, now spanning the
@@ -1739,6 +1880,20 @@ Phase 8).
    `app/services/notifications.py` (see #21's entry above for why it's
    mocked today) — self-contained, doesn't change any caller, not
    blocking a demo.
+7. **[RBAC] Track A (#171-#223) is code-complete, tested (446 passed, 1
+   skipped), and live-verified on branch `rbac-track-a-backend` — not
+   yet PR'd/merged.** See the 2026-09-16 progress-log entry above for
+   the full implementation. **Real, important tradeoff to weigh before
+   merging**: this PR alone makes most of the previously-open Staff
+   Dashboard surfaces (Investigation Board, Evidence Explorer,
+   Explainability Panel, Escalations, Analytics, Integrations, Channels
+   PATCH, KB approve) return real 403s for any caller lacking the new
+   identity headers — i.e. every current caller, since Track B's Role
+   Switcher (issue #206) is what's supposed to start sending them and
+   doesn't exist yet. `/api/chat` was deliberately spared (additive-only
+   enforcement) to keep the live Customer Chat demo working either way.
+   Recommend treating Track B as a prompt follow-on, not a someday item,
+   once this merges.
 
 ## Open questions / blockers
 
@@ -1761,12 +1916,14 @@ Phase 8).
   do it directly.
 - **`servora.db` schema drift after `create_all()` still requires a
   manual delete** — see Next up #6(a).
-- **No staff-identity/auth system exists at all** — flagged concretely
-  while scoping #63 (reassign needs *someone* to reassign to). Worth a
-  real decision (even a fake/demo login) before #63 is picked up, rather
-  than each future issue re-discovering the same gap.
+- **Staff-identity now exists** (the `User` table + `X-Servora-*`
+  headers, [RBAC] Track A, 2026-09-16) but is still demo-appropriate,
+  not real authentication — no passwords, sessions, or JWTs. #63's own
+  free-text `assigned_to` limitation (not a real FK to `User`) is
+  unchanged by this and still worth a real decision if picked up.
 - **The "None Agent" display bug** (see the 2026-09-15 Shopify
   integration progress-log entry) — a real agent_name rendering as
   null somewhere, not yet root-caused. See Next up #5.
-- **PR #130 (Shopify integration) not yet merged to `main`** — see
-  Next up #4.
+- **[RBAC] Track A (#171-#223) is done but not yet merged to `main`** —
+  see Next up #7 for the real tradeoff to weigh before merging (most
+  staff-facing endpoints will 403 until Track B's Role Switcher ships).

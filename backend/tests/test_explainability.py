@@ -29,6 +29,14 @@ from app.db.database import Base, SessionLocal
 from app.db.models import Customer, Investigation, InvestigationStep
 from app.main import app
 from app.orchestrator import handle_message
+from tests.rbac_headers import staff_headers
+
+# [RBAC] issue #187/#189: every investigation/explanation/evidence GET
+# below now requires `view_investigation_board`/`view_evidence`/
+# `view_explainability` — an Administrator has the full permission union,
+# so every HTTP call in the API-level section sends a real Administrator
+# identity header. The orchestrator-level tests above call
+# `handle_message()` directly (no HTTP), so they're unaffected.
 
 # [CRITIC] issue #110: mocked so resolve-path tests here stay network-free.
 _MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
@@ -263,8 +271,8 @@ def _escalate_via_chat(client, customer_id):
                 return client.post("/api/chat", json={"customer_id": customer_id, "message": "please make an exception"})
 
 
-def _investigation_id_for(client, ticket_id):
-    resp = client.get(f"/api/investigations/by-ticket/{ticket_id}")
+def _investigation_id_for(client, ticket_id, headers):
+    resp = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
     assert resp.status_code == 200
     return resp.json()["id"]
 
@@ -272,10 +280,11 @@ def _investigation_id_for(client, ticket_id):
 def test_investigation_detail_includes_a_correct_execution_graph():
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        resp = client.get(f"/api/investigations/{investigation_id}")
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        resp = client.get(f"/api/investigations/{investigation_id}", headers=headers)
 
     body = resp.json()
     graph = body["graph"]
@@ -294,10 +303,11 @@ def test_critic_review_round_trips_through_the_investigation_api():
     critic's own step, null everywhere else."""
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        resp = client.get(f"/api/investigations/{investigation_id}")
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        resp = client.get(f"/api/investigations/{investigation_id}", headers=headers)
 
     body = resp.json()
     by_agent = {s["agent_name"]: s for s in body["timeline"]}
@@ -315,10 +325,11 @@ def test_critic_review_round_trips_through_the_investigation_api():
 def test_explanation_endpoint_for_a_resolved_investigation():
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        resp = client.get(f"/api/investigations/{investigation_id}/explanation")
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        resp = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -363,10 +374,11 @@ def test_explanation_endpoint_for_an_escalated_investigation_falls_back_to_the_h
     specialist entry that never ran."""
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _escalate_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        resp = client.get(f"/api/investigations/{investigation_id}/explanation")
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        resp = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers)
 
     body = resp.json()
     assert body["status"] == "escalated"
@@ -387,11 +399,12 @@ def test_explanation_endpoint_for_an_escalated_investigation_falls_back_to_the_h
 def test_evidence_endpoint_matches_the_explanation_endpoints_evidence():
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        explanation = client.get(f"/api/investigations/{investigation_id}/explanation").json()
-        evidence = client.get(f"/api/investigations/{investigation_id}/evidence").json()
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        explanation = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers).json()
+        evidence = client.get(f"/api/investigations/{investigation_id}/evidence", headers=headers).json()
 
     assert evidence["evidence"] == explanation["evidence"]
     assert evidence["evidence_refs"] == explanation["evidence_refs"]
@@ -401,18 +414,21 @@ def test_evidence_endpoint_matches_the_explanation_endpoints_evidence():
 def test_confidence_endpoint_matches_the_explanation_endpoints_confidence():
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        explanation = client.get(f"/api/investigations/{investigation_id}/explanation").json()
-        confidence = client.get(f"/api/investigations/{investigation_id}/confidence").json()
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        explanation = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers).json()
+        confidence = client.get(f"/api/investigations/{investigation_id}/confidence", headers=headers).json()
 
     assert confidence == explanation["confidence"]
 
 
 def test_explanation_404_for_unknown_investigation():
+    db = SessionLocal()
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
-        resp = client.get("/api/investigations/999999/explanation")
+        resp = client.get("/api/investigations/999999/explanation", headers=headers)
     assert resp.status_code == 404
 
 
@@ -428,10 +444,11 @@ def test_evidence_detail_for_a_real_order_ref():
     see _resolve_via_chat above."""
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:0")
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:0", headers=headers)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -468,11 +485,12 @@ def test_evidence_detail_for_a_real_order_ref():
 def test_evidence_detail_for_a_kb_article_ref_has_lower_source_reliability_than_the_order_ref():
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        order_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:0").json()
-        kb_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:1").json()
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        order_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:0", headers=headers).json()
+        kb_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:1", headers=headers).json()
 
     assert kb_evidence["title"] == "Billing Policy"
     assert kb_evidence["evidence_ref"]["type"] == "kb_article"
@@ -485,37 +503,42 @@ def test_evidence_detail_for_a_kb_article_ref_has_lower_source_reliability_than_
 def test_evidence_detail_malformed_id_is_a_400_not_a_500():
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/not-a-valid-id")
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/not-a-valid-id", headers=headers)
     assert resp.status_code == 400
 
 
 def test_evidence_detail_out_of_range_index_is_404():
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
         # Step 3 only has 2 evidence_refs (indices 0-1).
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:99")
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:99", headers=headers)
     assert resp.status_code == 404
 
 
 def test_evidence_detail_unknown_step_is_404():
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/999:0")
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/999:0", headers=headers)
     assert resp.status_code == 404
 
 
 def test_evidence_detail_404_for_unknown_investigation():
+    db = SessionLocal()
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
-        resp = client.get("/api/investigations/999999/evidence/1:0")
+        resp = client.get("/api/investigations/999999/evidence/1:0", headers=headers)
     assert resp.status_code == 404
 
 
@@ -526,10 +549,11 @@ def test_evidence_detail_on_escalation_reports_escalation_impact():
     root-cause-style sentence that branch never produced."""
     db = SessionLocal()
     customer = _seed_api_customer(db)
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
         chat_resp = _escalate_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"])
-        detail = client.get(f"/api/investigations/{investigation_id}")
+        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+        detail = client.get(f"/api/investigations/{investigation_id}", headers=headers)
         # Find any step on this investigation that actually has an
         # evidence ref to drill into — the escalation step itself may or
         # may not, so search rather than assume step_number.
@@ -538,7 +562,7 @@ def test_evidence_detail_on_escalation_reports_escalation_impact():
         )
         if step_with_ref is None:
             pytest.skip("this escalation path recorded no structured evidence refs to drill into")
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/{step_with_ref['step_number']}:0")
+        resp = client.get(f"/api/investigations/{investigation_id}/evidence/{step_with_ref['step_number']}:0", headers=headers)
 
     assert resp.status_code == 200
     assert "escalate" in resp.json()["impact"].lower()

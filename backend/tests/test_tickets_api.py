@@ -7,6 +7,11 @@ None" — created explicitly here rather than assumed from seed data,
 since other test files running earlier in the same session (they all
 share one file-based servora.db — see conftest.py's note) may have
 already cleared the seeded tickets out from under this one.
+
+[RBAC] issue #190/#196/#220: every escalation-queue endpoint here
+(list/detail/assign/resolve.../close) checks permission BEFORE looking
+up the ticket — even the "unknown ticket" 404 test needs valid staff
+headers, or it would get a 403 first instead.
 """
 from fastapi.testclient import TestClient
 
@@ -16,12 +21,20 @@ from app.agents.planner import PlanDecision
 from app.db.database import SessionLocal
 from app.db.models import Ticket
 from app.main import app
+from tests.rbac_headers import staff_headers
 
 client = TestClient(app)
 
 
+def _admin_headers():
+    db = SessionLocal()
+    headers = staff_headers(db, "administrator")
+    db.close()
+    return headers
+
+
 def test_escalation_detail_404_for_missing_ticket():
-    resp = client.get("/api/escalations/999999")
+    resp = client.get("/api/escalations/999999", headers=_admin_headers())
     assert resp.status_code == 404
 
 
@@ -33,8 +46,9 @@ def test_escalation_detail_for_a_ticket_with_no_trace_has_none_for_both():
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+    headers = staff_headers(db, "administrator")
 
-    resp = client.get(f"/api/escalations/{ticket.id}")
+    resp = client.get(f"/api/escalations/{ticket.id}", headers=headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["trace"] is None
@@ -64,14 +78,15 @@ def test_escalation_detail_for_a_real_escalation_has_trace_and_packet(monkeypatc
             urgency=urgency,
         ),
     )
+    headers = _admin_headers()
 
     chat_resp = client.post("/api/chat", json={"customer_id": 1, "message": "please grant a policy exception"})
     assert chat_resp.status_code == 200
 
-    escalations = client.get("/api/escalations").json()
+    escalations = client.get("/api/escalations", headers=headers).json()
     newest = max(escalations, key=lambda t: t["id"])
 
-    detail = client.get(f"/api/escalations/{newest['id']}")
+    detail = client.get(f"/api/escalations/{newest['id']}", headers=headers)
     assert detail.status_code == 200
     body = detail.json()
     assert body["trace"] is not None
@@ -87,7 +102,8 @@ def test_list_resolved_tickets_excludes_open_and_escalated():
     ticket_escalated = Ticket(customer_id=1, category="order", subject="escalated ticket", message="m", status="escalated")
     db.add_all([ticket_resolved, ticket_open, ticket_escalated])
     db.commit()
-    
+
+    # GET /api/tickets/resolved is not permission-gated — untouched by RBAC.
     resp = client.get("/api/tickets/resolved")
     assert resp.status_code == 200
     body = resp.json()
@@ -101,11 +117,19 @@ def test_list_escalations_excludes_resolved_and_closed():
     ticket_closed = Ticket(customer_id=1, category="order", subject="cls", message="m", status="closed")
     db.add_all([ticket_resolved, ticket_closed])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
-    resp = client.get("/api/escalations")
+    resp = client.get("/api/escalations", headers=headers)
     assert resp.status_code == 200
     body = resp.json()
     assert not any(t["status"] in ["resolved", "closed"] for t in body)
+
+
+def test_list_escalations_without_permission_is_a_real_403():
+    """[RBAC] issue #190/#196/#220: an anonymous caller (no identity
+    headers) gets a real 403, not the real queue."""
+    resp = client.get("/api/escalations")
+    assert resp.status_code == 403
 
 
 def test_escalation_detail_includes_customer_and_history():
@@ -119,12 +143,13 @@ def test_escalation_detail_includes_customer_and_history():
     ticket1 = Ticket(customer_id=customer.id, category="order", subject="Past 1", message="m", status="resolved")
     ticket2 = Ticket(customer_id=customer.id, category="order", subject="Past 2", message="m", status="closed")
     ticket_main = Ticket(customer_id=customer.id, category="account", subject="Current", message="m", status="open")
-    
+
     db.add_all([ticket1, ticket2, ticket_main])
     db.commit()
     db.refresh(ticket_main)
+    headers = staff_headers(db, "administrator")
 
-    resp = client.get(f"/api/escalations/{ticket_main.id}")
+    resp = client.get(f"/api/escalations/{ticket_main.id}", headers=headers)
     assert resp.status_code == 200
     body = resp.json()
 
@@ -145,14 +170,15 @@ def test_assign_escalation():
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+    headers = staff_headers(db, "administrator")
 
     # Assign
-    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": "Asha"})
+    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": "Asha"}, headers=headers)
     assert resp.status_code == 200
     assert resp.json()["assigned_to"] == "Asha"
 
     # Unassign
-    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": None})
+    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": None}, headers=headers)
     assert resp.status_code == 200
     assert resp.json()["assigned_to"] is None
 
@@ -163,9 +189,10 @@ def test_assign_escalation_validation():
     db.add(ticket_resolved)
     db.commit()
     db.refresh(ticket_resolved)
+    headers = staff_headers(db, "administrator")
 
     # Cannot assign resolved
-    resp = client.post(f"/api/escalations/{ticket_resolved.id}/assign", json={"assigned_to": "Asha"})
+    resp = client.post(f"/api/escalations/{ticket_resolved.id}/assign", json={"assigned_to": "Asha"}, headers=headers)
     assert resp.status_code == 400
 
     ticket_open = Ticket(customer_id=1, category="order", subject="Assign valid", message="m", status="open")
@@ -174,8 +201,20 @@ def test_assign_escalation_validation():
     db.refresh(ticket_open)
 
     # Empty string
-    resp = client.post(f"/api/escalations/{ticket_open.id}/assign", json={"assigned_to": "   "})
+    resp = client.post(f"/api/escalations/{ticket_open.id}/assign", json={"assigned_to": "   "}, headers=headers)
     assert resp.status_code == 400
+
+
+def test_assign_escalation_without_permission_is_a_real_403():
+    db = SessionLocal()
+    ticket = Ticket(customer_id=1, category="order", subject="Assign test perm", message="m", status="open")
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    headers = staff_headers(db, "manager")  # can view the queue, but not act on it
+
+    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": "Asha"}, headers=headers)
+    assert resp.status_code == 403
 
 
 def test_close_escalation():
@@ -184,8 +223,9 @@ def test_close_escalation():
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+    headers = staff_headers(db, "administrator")
 
-    resp = client.post(f"/api/escalations/{ticket.id}/close")
+    resp = client.post(f"/api/escalations/{ticket.id}/close", headers=headers)
     assert resp.status_code == 200
     assert resp.json()["status"] == "closed"
 
@@ -196,6 +236,7 @@ def test_close_escalation_validation():
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+    headers = staff_headers(db, "administrator")
 
-    resp = client.post(f"/api/escalations/{ticket.id}/close")
+    resp = client.post(f"/api/escalations/{ticket.id}/close", headers=headers)
     assert resp.status_code == 400

@@ -32,10 +32,14 @@ from app.api.schemas import (
     InvestigationAgentSummaryOut,
     ToolExecutionOut,
 )
+from app.auth.dependency import CurrentActor, get_current_actor
+from app.auth.investigation_visibility import can_view_evidence, can_view_explanation
 from app.db.database import get_db
 from app.db.models import Investigation, InvestigationStep, Ticket
 
 router = APIRouter(prefix="/api/investigations", tags=["explanations"])
+
+_FORBIDDEN_DETAIL = "You do not have permission to perform this action."
 
 
 def _get_investigation(investigation_id: int, db: Session) -> Investigation:
@@ -142,9 +146,19 @@ def _decision_rationale(investigation: Investigation, db: Session) -> str:
 
 
 @router.get("/{investigation_id}/explanation", response_model=ExplanationOut)
-def get_explanation(investigation_id: int, db: Session = Depends(get_db)) -> ExplanationOut:
-    """The Explainability Panel's single source of data."""
+def get_explanation(
+    investigation_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> ExplanationOut:
+    """The Explainability Panel's single source of data.
+
+    [RBAC] issue #219: staff-only (`can_view_explanation()`) — a real,
+    intentional asymmetry from `GET .../by-ticket/{id}`, documented
+    there and in that helper's own docstring: a Customer who owns this
+    investigation still cannot reach the FULL explanation, only staff
+    holding `view_explainability` can."""
     investigation = _get_investigation(investigation_id, db)
+    if not can_view_explanation(actor, investigation):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
     evidence = _evidence(investigation)
     return ExplanationOut(
         investigation_id=investigation.id,
@@ -162,16 +176,33 @@ def get_explanation(investigation_id: int, db: Session = Depends(get_db)) -> Exp
 
 
 @router.get("/{investigation_id}/evidence", response_model=EvidenceOut)
-def get_investigation_evidence(investigation_id: int, db: Session = Depends(get_db)) -> EvidenceOut:
+def get_investigation_evidence(
+    investigation_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> EvidenceOut:
     """Lightweight — for a widget that only needs evidence/policy refs
-    without pulling the whole explanation."""
-    return _evidence(_get_investigation(investigation_id, db))
+    without pulling the whole explanation.
+
+    [RBAC] issue #218: `can_view_evidence()` — staff with `view_evidence`
+    OR a Customer who genuinely owns this investigation."""
+    investigation = _get_investigation(investigation_id, db)
+    if not can_view_evidence(actor, investigation.customer_id):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
+    return _evidence(investigation)
 
 
 @router.get("/{investigation_id}/confidence", response_model=ConfidenceOut)
-def get_investigation_confidence(investigation_id: int, db: Session = Depends(get_db)) -> ConfidenceOut:
-    """Lightweight — for a widget that only needs the confidence gauge."""
-    return _confidence_breakdown(_get_investigation(investigation_id, db))
+def get_investigation_confidence(
+    investigation_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> ConfidenceOut:
+    """Lightweight — for a widget that only needs the confidence gauge.
+
+    [RBAC] issue #219: same staff-only asymmetry as `get_explanation()`
+    above — the confidence gauge is part of the full Explainability
+    Panel, not the customer-facing summary."""
+    investigation = _get_investigation(investigation_id, db)
+    if not can_view_explanation(actor, investigation):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
+    return _confidence_breakdown(investigation)
 
 
 # --------------------------------------------------------------------- #
@@ -296,11 +327,21 @@ def _evidence_impact(investigation: Investigation, step: InvestigationStep) -> s
 
 
 @router.get("/{investigation_id}/evidence/{evidence_id}", response_model=EvidenceDetailOut)
-def get_evidence_detail(investigation_id: int, evidence_id: str, db: Session = Depends(get_db)) -> EvidenceDetailOut:
+def get_evidence_detail(
+    investigation_id: int,
+    evidence_id: str,
+    db: Session = Depends(get_db),
+    actor: CurrentActor = Depends(get_current_actor),
+) -> EvidenceDetailOut:
     """The Explainability Drawer's single source of data for one evidence
     item. See EvidenceDetailOut's docstring for the addressing scheme and
-    why the source record itself isn't re-embedded here."""
+    why the source record itself isn't re-embedded here.
+
+    [RBAC] issue #218: `can_view_evidence()`, same helper as the plain
+    evidence endpoint above."""
     investigation = _get_investigation(investigation_id, db)
+    if not can_view_evidence(actor, investigation.customer_id):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
 
     try:
         step_number, index = _parse_evidence_id(evidence_id)

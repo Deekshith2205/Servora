@@ -416,3 +416,54 @@ class Channel(Base):
     @property
     def config(self) -> dict:
         return json.loads(self.config_json) if self.config_json else {}
+
+
+class User(Base):
+    """[RBAC] issue #172 — a minimal, honest staff-identity table.
+
+    Deliberately NOT a real login system — see app/auth/roles.py and the
+    RBAC epic's own explanation for why: this codebase has no
+    authentication anywhere (no password hashing, no session, no JWT),
+    and building one would itself be an architecture redesign the RBAC
+    epic's own instructions forbid. A staff member's real identity here
+    is asserted via the frontend's Role Switcher (a demo-appropriate
+    mechanism, matching this codebase's own pre-existing
+    `DEMO_CUSTOMER_ID = 1` convention), not a credential — so there is no
+    password/credential field at all, matching this table's own honest
+    scope.
+
+    Customers do NOT get a row here — an existing `Customer` row already
+    IS "the customer role" (see app/auth/dependency.py::get_current_actor()),
+    so no new customer-identity table exists either.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    email: Mapped[str] = mapped_column(String, unique=True)
+    # support_agent | manager | administrator — see app/auth/roles.py.
+    # A plain string column, not a FK to a Role table, same convention
+    # every other fixed-vocabulary column in this file already uses.
+    role: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SystemSetting(Base):
+    """[RBAC] issue #204 — a genuinely new, minimal admin settings
+    surface. There is no existing "system configuration" concept in this
+    codebase (app/config.py is environment-variable-driven, read once at
+    process start, not a runtime-editable table) — this is an honest,
+    small, real DB-backed key-value table, not a fabricated wrapper
+    around env vars that were never meant to be edited live. Same flat
+    key-value shape convention `Channel.config_json` already uses
+    elsewhere, just as its own table rather than nested JSON, since these
+    values are meant to be individually listed/edited, not read as one
+    blob.
+    """
+
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

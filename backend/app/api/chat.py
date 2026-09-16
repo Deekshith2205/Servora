@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.schemas import ChatRequest, ChatResponse
+from app.auth.dependency import CurrentActor, get_current_actor
+from app.auth.roles import CUSTOMER
 from app.db.database import get_db
 from app.llm import LLMError
 from app.orchestrator import handle_message
@@ -12,7 +14,24 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+def chat(
+    payload: ChatRequest, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> ChatResponse:
+    # [RBAC] issue #177: a real DATA-LEVEL check, not just a permission
+    # check — only enforced when a real Customer identity was actually
+    # asserted (via the Role Switcher's headers, issue #206, Track B).
+    # An anonymous caller (no identity headers at all — the ONLY way
+    # this endpoint has ever been called before this issue, since
+    # Track B's header-sending Role Switcher is a separate, not-yet-
+    # merged piece of work) is left completely unaffected, so this
+    # stays additive rather than a breaking change to the live app the
+    # moment this PR alone lands. A caller that DOES assert a Customer
+    # identity, but for a DIFFERENT customer_id than the payload claims,
+    # gets a real 403 — the actual enforcement this issue's own
+    # acceptance criteria names.
+    if actor.role == CUSTOMER and actor.customer_id is not None and actor.customer_id != payload.customer_id:
+        raise HTTPException(status_code=403, detail="You do not have permission to perform this action.")
+
     # Found live, with a real API key, once the account ran out of credit:
     # classify() has its own fallback for a failed LLM call (issue #57), but
     # plan()/the specialists/build_handoff_packet() do not, and this

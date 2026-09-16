@@ -8,6 +8,13 @@ from fastapi.testclient import TestClient
 from app.db.database import SessionLocal
 from app.db.models import Customer, KBArticle, Order, Ticket
 from app.main import app
+from tests.rbac_headers import staff_headers
+
+# [RBAC] issue #188/#218: each get-real-row test below sends a real
+# Administrator identity header (`view_evidence` covers all three
+# record types). The "unknown id" 404 tests are unaffected — the lookup
+# raises before the permission check. `/kb-articles/{id}` and the
+# Shopify record endpoints are untouched by this RBAC batch.
 
 _email_counter = 0
 
@@ -29,9 +36,10 @@ def test_get_order_returns_the_real_row():
     db.add(order)
     db.commit()
     db.refresh(order)
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.get(f"/api/records/orders/{order.id}")
+        resp = client.get(f"/api/records/orders/{order.id}", headers=headers)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -49,9 +57,10 @@ def test_get_order_404_for_unknown_id():
 def test_get_customer_returns_the_real_row():
     db = SessionLocal()
     customer = _seed_customer(db)
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.get(f"/api/records/customers/{customer.id}")
+        resp = client.get(f"/api/records/customers/{customer.id}", headers=headers)
 
     assert resp.status_code == 200
     assert resp.json()["tier"] == "vip"
@@ -64,9 +73,10 @@ def test_get_customer_reports_zero_previous_tickets_and_no_risk_level_when_clean
     entirely rather than reporting a floor value."""
     db = SessionLocal()
     customer = _seed_customer(db)
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.get(f"/api/records/customers/{customer.id}")
+        resp = client.get(f"/api/records/customers/{customer.id}", headers=headers)
 
     body = resp.json()
     assert body["previous_tickets_count"] == 0
@@ -84,9 +94,10 @@ def test_get_customer_reports_previous_tickets_count_and_risk_level():
             message="m", sentiment="neutral", urgency=5, status=status,
         ))
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.get(f"/api/records/customers/{customer.id}")
+        resp = client.get(f"/api/records/customers/{customer.id}", headers=headers)
 
     body = resp.json()
     assert body["previous_tickets_count"] == 3  # all 3, regardless of status
@@ -126,13 +137,14 @@ def test_get_customer_includes_channel_history():
     
     db.add_all([t1, t2, t3, t4])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.get(f"/api/records/customers/{customer.id}")
+        resp = client.get(f"/api/records/customers/{customer.id}", headers=headers)
 
     assert resp.status_code == 200
     body = resp.json()
-    
+
     # 1. Distinct channels
     assert body["channels_used"] == ["whatsapp", "live_chat", "email"]
     
@@ -173,9 +185,10 @@ def test_get_ticket_returns_the_real_row():
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.get(f"/api/records/tickets/{ticket.id}")
+        resp = client.get(f"/api/records/tickets/{ticket.id}", headers=headers)
 
     assert resp.status_code == 200
     assert resp.json()["subject"] == "Test ticket"

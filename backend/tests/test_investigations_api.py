@@ -17,6 +17,14 @@ from app.db.database import SessionLocal
 from app.db.models import Customer
 from app.main import app
 from fastapi.testclient import TestClient
+from tests.rbac_headers import staff_headers
+
+# [RBAC] issue #187/#194/#217: list/metrics are permission-gated up
+# front (a real 403 for an anonymous actor), and the detail/by-ticket
+# lookups are gated inline via `can_view_investigation()` once the row
+# is found — every call below that reaches a real row sends a real
+# Administrator identity header. The two "unknown id" 404 tests are
+# unaffected: the 404 raises before the permission check ever runs.
 
 # [CRITIC] issue #110: mocked so resolve-path tests here stay network-free.
 _MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
@@ -75,17 +83,18 @@ def _escalate_via_chat(client, customer_id):
 def test_get_investigation_by_id_for_a_resolved_conversation():
     db = SessionLocal()
     customer = _seed_customer(db)
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
         chat_resp = _resolve_via_chat(client, customer.id)
         assert chat_resp.status_code == 200
         ticket_id = chat_resp.json()["ticket_id"]
 
-        by_ticket = client.get(f"/api/investigations/by-ticket/{ticket_id}")
+        by_ticket = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
         assert by_ticket.status_code == 200
         investigation_id = by_ticket.json()["id"]
 
-        resp = client.get(f"/api/investigations/{investigation_id}")
+        resp = client.get(f"/api/investigations/{investigation_id}", headers=headers)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -112,12 +121,13 @@ def test_get_investigation_by_ticket_404_when_no_investigation_exists():
 def test_list_investigations_includes_recent_ones():
     db = SessionLocal()
     customer = _seed_customer(db)
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
         chat_resp = _escalate_via_chat(client, customer.id)
         ticket_id = chat_resp.json()["ticket_id"]
 
-        resp = client.get("/api/investigations")
+        resp = client.get("/api/investigations", headers=headers)
 
     assert resp.status_code == 200
     ticket_ids = [row["ticket_id"] for row in resp.json()]
@@ -130,10 +140,11 @@ def test_list_investigations_includes_recent_ones():
 def test_agent_performance_metrics_reflects_recorded_steps():
     db = SessionLocal()
     customer = _seed_customer(db)
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
         _resolve_via_chat(client, customer.id)
-        resp = client.get("/api/investigations/metrics/agents")
+        resp = client.get("/api/investigations/metrics/agents", headers=headers)
 
     assert resp.status_code == 200
     agent_names = {row["agent_name"] for row in resp.json()["agents"]}
