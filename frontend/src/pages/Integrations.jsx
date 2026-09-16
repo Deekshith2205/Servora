@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { connectShopify, disconnectShopify, fetchShopifyStatus } from "../api/client";
 import "./Integrations.css";
+import Can from "../auth/Can";
 
 const STATUS_BADGE = {
   connected: "badge-success",
@@ -128,46 +129,50 @@ export default function Integrations() {
             {status.last_error && (
               <div className="ig-last-error">Last error: {status.last_error}</div>
             )}
-            <button className="ig-btn-secondary" onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting ? "Disconnecting…" : "Disconnect"}
-            </button>
+            <Can permission="manage_integrations">
+              <button className="ig-btn-secondary" onClick={handleDisconnect} disabled={disconnecting}>
+                {disconnecting ? "Disconnecting…" : "Disconnect"}
+              </button>
+            </Can>
           </div>
         ) : (
-          <form className="ig-connect-form" onSubmit={handleConnect}>
-            <p className="ig-connect-hint">
-              Connect a real Shopify store — Servora's Order and Billing agents will be able to
-              look up real orders, customers, and fulfillment status from it, alongside this app's
-              own seeded demo data.
-            </p>
-            <div className="ig-form-row">
-              <label className="ig-form-label" htmlFor="ig-store-url">Store URL</label>
-              <input
-                id="ig-store-url"
-                className="ig-input"
-                type="text"
-                placeholder="my-store.myshopify.com"
-                value={storeUrl}
-                onChange={(e) => setStoreUrl(e.target.value)}
-                required
-              />
-            </div>
-            <div className="ig-form-row">
-              <label className="ig-form-label" htmlFor="ig-access-token">Admin API Access Token</label>
-              <input
-                id="ig-access-token"
-                className="ig-input"
-                type="password"
-                placeholder="shpat_..."
-                value={accessToken}
-                onChange={(e) => setAccessToken(e.target.value)}
-                required
-              />
-            </div>
-            {connectError && <div className="ig-connect-error">{connectError}</div>}
-            <button className="ig-btn-primary" type="submit" disabled={connecting}>
-              {connecting ? "Connecting…" : "Connect Shopify"}
-            </button>
-          </form>
+          <Can permission="manage_integrations">
+            <form className="ig-connect-form" onSubmit={handleConnect}>
+              <p className="ig-connect-hint">
+                Connect a real Shopify store — Servora's Order and Billing agents will be able to
+                look up real orders, customers, and fulfillment status from it, alongside this app's
+                own seeded demo data.
+              </p>
+              <div className="ig-form-row">
+                <label className="ig-form-label" htmlFor="ig-store-url">Store URL</label>
+                <input
+                  id="ig-store-url"
+                  className="ig-input"
+                  type="text"
+                  placeholder="my-store.myshopify.com"
+                  value={storeUrl}
+                  onChange={(e) => setStoreUrl(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="ig-form-row">
+                <label className="ig-form-label" htmlFor="ig-access-token">Admin API Access Token</label>
+                <input
+                  id="ig-access-token"
+                  className="ig-input"
+                  type="password"
+                  placeholder="shpat_..."
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  required
+                />
+              </div>
+              {connectError && <div className="ig-connect-error">{connectError}</div>}
+              <button className="ig-btn-primary" type="submit" disabled={connecting}>
+                {connecting ? "Connecting…" : "Connect Shopify"}
+              </button>
+            </form>
+          </Can>
         )}
       </div>
 
