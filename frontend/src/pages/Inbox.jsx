@@ -15,8 +15,23 @@ function StatusBadge({ status }) {
   return <span className={className}>{status}</span>;
 }
 
-function ConversationRow({ item, isSelected, onClick }) {
-  const timeStr = new Date(item.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function formatRelativeTime(dateString) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffSecs = Math.floor((now - date) / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return "yesterday";
+  return `${diffDays}d ago`;
+}
+
+function ConversationListItem({ item, isSelected, onClick }) {
+  const timeStr = formatRelativeTime(item.updated_at);
 
   return (
     <button
@@ -175,7 +190,7 @@ export default function Inbox() {
         ) : (
           <div className="inbox-list">
             {conversations.map(conv => (
-              <ConversationRow
+              <ConversationListItem
                 key={conv.id}
                 item={conv}
                 isSelected={selectedId === conv.id}
