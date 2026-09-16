@@ -9,7 +9,8 @@ export default function OmnichannelDashboard() {
   
   // Data state
   const [channels, setChannels] = useState([]);
-  const [inboxItems, setInboxItems] = useState([]);
+  const [openInboxItems, setOpenInboxItems] = useState([]);
+  const [allInboxItems, setAllInboxItems] = useState([]);
   const [analytics, setAnalytics] = useState(null);
 
   const loadData = () => {
@@ -18,11 +19,13 @@ export default function OmnichannelDashboard() {
     Promise.all([
       fetchChannels(),
       fetchInbox(null, null, "open"),
+      fetchInbox(),
       fetchAnalyticsSummary()
     ])
-      .then(([channelsData, inboxData, analyticsData]) => {
+      .then(([channelsData, openInboxData, allInboxData, analyticsData]) => {
         setChannels(channelsData);
-        setInboxItems(inboxData);
+        setOpenInboxItems(openInboxData);
+        setAllInboxItems(allInboxData);
         setAnalytics(analyticsData);
       })
       .catch((err) => {
@@ -74,8 +77,15 @@ export default function OmnichannelDashboard() {
   }
 
   // Derive metrics
-  const totalActive = inboxItems.length;
+  const totalActive = openInboxItems.length;
   const todaysVolume = analytics?.trend?.length > 0 ? analytics.trend[analytics.trend.length - 1].count : 0;
+
+  // Format date helper
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "—";
+    const d = new Date(dateStr);
+    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  };
 
   return (
     <div className="omnichannel-dashboard">
@@ -96,7 +106,7 @@ export default function OmnichannelDashboard() {
       </div>
 
       <div className="dashboard-section">
-        <h2 className="dashboard-section-title">Active by Channel</h2>
+        <h2 className="dashboard-section-title">Channel Activity</h2>
         {channels.length === 0 ? (
           <div className="empty-state">
             <p>No channels configured.</p>
@@ -104,12 +114,31 @@ export default function OmnichannelDashboard() {
         ) : (
           <div className="summary-cards-grid">
             {channels.map((ch) => {
-              const count = inboxItems.filter((t) => t.channel_key === ch.key).length;
+              const openCount = openInboxItems.filter((t) => t.channel_key === ch.key).length;
+              
+              const channelTickets = allInboxItems.filter((t) => t.channel_key === ch.key);
+              let latestDate = null;
+              if (channelTickets.length > 0) {
+                // Since inbox items are sorted newest first from the API, the first is the latest.
+                latestDate = channelTickets[0].updated_at;
+              }
+
               return (
-                <div key={ch.key} className="summary-card">
-                  <div className="summary-value">{count}</div>
-                  <div className="summary-label">
+                <div key={ch.key} className="channel-widget-card">
+                  <div className="channel-widget-header">
                     <ChannelBadge channelKey={ch.key} />
+                  </div>
+                  <div className="channel-widget-metrics">
+                    <div className="channel-widget-metric">
+                      <span className="channel-widget-metric-label">Open</span>
+                      <span className="channel-widget-metric-value">{openCount}</span>
+                    </div>
+                    <div className="channel-widget-metric">
+                      <span className="channel-widget-metric-label">Latest</span>
+                      <span className={`channel-widget-metric-value ${!latestDate ? "dim" : ""}`} style={{ fontSize: "14px", marginTop: "4px" }}>
+                        {formatDate(latestDate)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               );

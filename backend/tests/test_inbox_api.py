@@ -67,6 +67,45 @@ def test_inbox_list_all_tickets_with_customer_and_sorting(db_session):
     assert t1_data["channel_key"] == "live_chat"
     assert t1_data["preview"] == "Short msg"
 
+def test_dashboard_channel_counts_consistency_with_inbox(db_session):
+    """
+    [Omnichannel] issue #154 requires a focused verification that Dashboard 
+    channel counts (calculated client-side from the open inbox items) 
+    match the Inbox channel-filtered API counts.
+    """
+    # Create test data
+    c = Customer(name="Dashboard Test", email="dashboard@example.com")
+    db_session.add(c)
+    db_session.commit()
+    
+    # 2 open whatsapp, 1 resolved whatsapp, 1 open email
+    db_session.add_all([
+        Ticket(customer_id=c.id, subject="s1", message="m", channel_key="whatsapp", status="open"),
+        Ticket(customer_id=c.id, subject="s2", message="m", channel_key="whatsapp", status="open"),
+        Ticket(customer_id=c.id, subject="s3", message="m", channel_key="whatsapp", status="resolved"),
+        Ticket(customer_id=c.id, subject="s4", message="m", channel_key="email", status="open"),
+    ])
+    db_session.commit()
+
+    # What the dashboard fetches:
+    all_open_resp = client.get("/api/inbox?status=open")
+    assert all_open_resp.status_code == 200
+    all_open_items = all_open_resp.json()
+
+    # Dashboard client-side calculation for whatsapp:
+    dashboard_whatsapp_open = len([t for t in all_open_items if t["channel_key"] == "whatsapp"])
+    
+    # What the Inbox fetch uses for the channel tab:
+    channel_open_resp = client.get("/api/inbox?channel=whatsapp&status=open")
+    assert channel_open_resp.status_code == 200
+    channel_open_items = channel_open_resp.json()
+    
+    # Verify consistency
+    assert dashboard_whatsapp_open == len(channel_open_items)
+    
+    # Sanity check against actual test data (should be 2)
+    assert dashboard_whatsapp_open >= 2
+
 def test_inbox_detail_success(db_session):
     """
     Test /api/inbox/{ticket_id} returns exact conversation details
