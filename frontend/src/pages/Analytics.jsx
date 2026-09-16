@@ -295,6 +295,71 @@ export default function Analytics() {
             )}
           </div>
 
+          {/* Issue #161: ticket volume by channel */}
+          {summary && summary.channel_trend && summary.channel_trend.length > 0 && channels.length > 0 && (
+            <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+              <div className="escalations-header">
+                <div>
+                  <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Ticket Volume by Channel</h3>
+                  <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Daily breakdown of volume by channel.</p>
+                </div>
+                <div style={{display: 'flex', gap: '1rem', fontSize: '0.8rem', flexWrap: 'wrap', justifyContent: 'flex-end'}}>
+                  {channels.map((ch, idx) => (
+                    <span key={ch.key} style={{display: 'flex', alignItems: 'center', gap: '0.4rem'}}>
+                      <span style={{display: 'inline-block', width: '12px', height: '4px', borderRadius: '2px', background: `hsl(${idx * 137.5 % 360}, 70%, 50%)`}}></span>
+                      {ch.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="app-panel" style={{padding: '1rem 1rem 0.5rem'}}>
+                <svg
+                  viewBox={`0 0 ${summary.channel_trend.length * 12} 120`}
+                  width="100%"
+                  height="120"
+                  preserveAspectRatio="none"
+                >
+                  {summary.channel_trend.map((day, i) => {
+                    const totalDayCount = day.count;
+                    let currentY = 120;
+                    
+                    if (totalDayCount === 0) {
+                      return (
+                        <rect key={day.date} x={i * 12} y={120 - 3} width={9} height={3} rx={1.5} style={{ fill: 'var(--app-border)' }} />
+                      );
+                    }
+
+                    const elements = [];
+                    // We iterate over the official channels (to keep color stability and stacking order)
+                    channels.forEach((ch, idx) => {
+                      const countForCh = day.channels[ch.key] || 0;
+                      if (countForCh > 0) {
+                        const h = (countForCh / trendMax) * 116; // Use the same trendMax to keep scale identical
+                        const drawH = Math.max(1, h); // Ensure visible if > 0
+                        currentY -= drawH;
+                        elements.push(
+                          <rect 
+                            key={`${day.date}-${ch.key}`} 
+                            x={i * 12} 
+                            y={currentY} 
+                            width={9} 
+                            height={drawH} 
+                            fill={`hsl(${idx * 137.5 % 360}, 70%, 50%)`} 
+                          >
+                            <title>{`${day.date} - ${ch.name}: ${countForCh}`}</title>
+                          </rect>
+                        );
+                      }
+                    });
+
+                    return <g key={day.date}>{elements}</g>;
+                  })}
+                </svg>
+              </div>
+            </div>
+          )}
+
+
           <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
             <div className="escalations-header">
               <div>
