@@ -200,6 +200,7 @@ export default function Inbox() {
           </button>
         ))}
       </div>
+      <div className="inbox-panels-row">
       <div className={`inbox-list-panel ${selectedId ? 'hide-on-mobile' : ''}`}>
         <div className="inbox-filters">
           <input
@@ -295,6 +296,7 @@ export default function Inbox() {
             </div>
           </div>
         ) : null}
+      </div>
       </div>
     </div>
   );

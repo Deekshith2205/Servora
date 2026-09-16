@@ -1,6 +1,23 @@
 .inbox-container {
+  /* Column, not row: the channel filter bar is a full-width block above
+     the list/detail split, not a third sibling competing for row space
+     with them. (A flex-wrap version of this was tried and reverted —
+     forcing the bar onto its own "line" via flex-basis:100% made
+     align-content:stretch split the container's height evenly between
+     that one-line-tall bar and the list/detail row, so the bar rendered
+     as tall as half the page. A real column layout has no such
+     cross-axis-splitting behavior to fight.) */
   display: flex;
+  flex-direction: column;
   height: 100%;
+  overflow: hidden;
+  gap: 1rem;
+}
+
+.inbox-panels-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   gap: 1.5rem;
 }
@@ -126,6 +143,7 @@
 }
 
 .inbox-channels-sidebar {
+  flex-shrink: 0;
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
@@ -269,11 +287,16 @@
 /* Responsive */
 @media (max-width: 768px) {
   .inbox-container {
+    gap: 0;
+    overflow: visible;
+  }
+
+  .inbox-panels-row {
     flex-direction: column;
     gap: 0;
     overflow: visible;
   }
-  
+
   .inbox-list-panel {
     flex: none;
     border-right: none;

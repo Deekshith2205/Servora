@@ -9,8 +9,14 @@ import { AgentIcon, agentLabel } from "../components/agentMeta";
 
 export default function CustomerChat() {
   const { currentUser } = useAuth();
-  const customerId = currentUser?.id;
-  const customerName = currentUser?.name || `Customer #${customerId}`;
+  // GET /api/auth/me returns customer_id/user_id, never a bare "id" — see
+  // app/auth/dependency.py::CurrentActor. A staff identity (Administrator
+  // included, despite holding every permission via the real union — see
+  // CLAUDE.md's [RBAC] #199 entry) has no customer_id at all, since
+  // issue #181 ties this chat to whoever is genuinely authenticated as a
+  // customer rather than a hardcoded demo id.
+  const customerId = currentUser?.customer_id;
+  const customerName = currentUser?.name || (customerId ? `Customer #${customerId}` : null);
 
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -31,6 +37,22 @@ export default function CustomerChat() {
 
   async function handleSend() {
     if (!input.trim()) return;
+    if (!customerId) {
+      // A staff identity has no real customer_id to send as (see the
+      // customerId derivation above) — fail clearly instead of letting
+      // sendChatMessage go out with an undefined id and 422.
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          text: "Switch to a Customer identity (see \"Demo Role\" above) to send a message here — this chat represents what a real customer sees, not a staff view.",
+          status: "error",
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+      setInput("");
+      return;
+    }
     const userMessage = { role: "customer", text: input, timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
@@ -202,7 +224,7 @@ export default function CustomerChat() {
         <div className="chat-context-section">
           <div className="chat-context-section-title">Workflow</div>
           <div className="chat-context-value">
-            This demo environment connects to a live SQLite backend. The agent has tools to query orders and tickets.
+            This demo environment connects to a live database backend. The agent has tools to query orders and tickets.
           </div>
         </div>
       </div>

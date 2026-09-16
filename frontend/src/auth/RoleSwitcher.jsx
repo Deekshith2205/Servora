@@ -43,9 +43,13 @@ export default function RoleSwitcher() {
     setIsOpen(false);
   };
 
-  const currentName = currentUser?.actor_type === "customer" 
-    ? DEMO_CUSTOMERS.find(c => c.id === currentUser.id)?.name || "Unknown Customer"
-    : DEMO_USERS.find(u => u.id === currentUser?.id)?.name || "Unknown User";
+  // GET /api/auth/me already returns the real resolved name directly
+  // (see app/auth/dependency.py::CurrentActor) — no need to re-derive it
+  // by matching actor_type/id against the DEMO_USERS/DEMO_CUSTOMERS
+  // lists above, which used response fields (actor_type, a bare id) the
+  // real endpoint never actually sends (it sends role/user_id/
+  // customer_id/name), so that lookup always fell through to "Unknown".
+  const currentName = currentUser?.name || "Unknown";
 
   return (
     <div style={{ position: "relative", marginLeft: "auto", marginRight: "1rem" }}>
