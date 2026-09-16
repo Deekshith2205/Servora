@@ -123,6 +123,12 @@ export default function OmnichannelDashboard() {
                 latestDate = channelTickets[0].updated_at;
               }
 
+              // Compute statistics from analytics
+              const chStats = analytics?.channel_metrics?.find((m) => m.channel === ch.key);
+              const processed = chStats ? chStats.resolved + chStats.escalated : 0;
+              const resolutionRate = processed > 0 ? chStats.resolved / processed : 0;
+              const hasStats = processed > 0;
+
               return (
                 <div key={ch.key} className="channel-widget-card">
                   <div className="channel-widget-header">
@@ -138,6 +144,16 @@ export default function OmnichannelDashboard() {
                       <span className={`channel-widget-metric-value ${!latestDate ? "dim" : ""}`} style={{ fontSize: "14px", marginTop: "4px" }}>
                         {formatDate(latestDate)}
                       </span>
+                    </div>
+                    <div className="channel-widget-metric">
+                      <span className="channel-widget-metric-label">Resolution Rate</span>
+                      <span className={`channel-widget-metric-value ${!hasStats ? "dim" : ""}`}>
+                        {hasStats ? `${Math.round(resolutionRate * 100)}%` : "—"}
+                      </span>
+                    </div>
+                    <div className="channel-widget-metric">
+                      <span className="channel-widget-metric-label">Avg Response Time</span>
+                      <span className="channel-widget-metric-value dim">—</span>
                     </div>
                   </div>
                 </div>
