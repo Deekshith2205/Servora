@@ -27,6 +27,17 @@ async function request(path, options = {}) {
     } catch {
       // Body wasn't JSON (or was empty) — fall through to the generic message.
     }
+    // A 422 from FastAPI's own request-validation (e.g. a required field
+    // like customer_id missing from the body) shapes "detail" as a LIST
+    // of {type, loc, msg} objects, not a string — new Error(detail) on
+    // that array stringifies to the unreadable "[object Object]" rather
+    // than throwing here, so it must be turned into real text first.
+    if (Array.isArray(detail)) {
+      detail = detail
+        .map((e) => (e?.loc ? `${e.loc[e.loc.length - 1]}: ${e.msg}` : e?.msg))
+        .filter(Boolean)
+        .join("; ");
+    }
     throw new Error(detail || `Request to ${path} failed: ${res.status}`);
   }
   return res.json();
