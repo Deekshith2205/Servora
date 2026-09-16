@@ -13,6 +13,7 @@ import { ConfidenceBreakdownBars, ConfidenceGauge } from "./ConfidenceGauge";
 import DecisionTree from "./DecisionTree";
 import { EvidenceExplorer, PolicyReferenceExplorer } from "./EvidenceExplorer";
 import { agentLabel } from "./agentMeta";
+import { ChannelBadge } from "./channelMeta";
 import "./ExplainableAIPanel.css";
 
 // [EXPLAIN] issue #96: the chosen action rendered visually distinct from
@@ -62,6 +63,11 @@ function PanelBody({ explanation }) {
         <div className="eap-section-label">Confidence</div>
         <ConfidenceGauge value={explanation.confidence.overall} size={128} />
         <ConfidenceBreakdownBars byAgent={explanation.confidence.by_agent} />
+      </div>
+
+      <div className="eap-section eap-source-section">
+        <div className="eap-section-label">Source</div>
+        <ChannelBadge channelKey={explanation.channel} />
       </div>
 
       <div className="eap-section">
