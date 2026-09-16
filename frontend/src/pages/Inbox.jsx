@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { fetchInbox, fetchInboxDetail, fetchChannels } from "../api/client";
+import { ChannelBadge } from "../components/channelMeta";
 import "./Inbox.css";
 
 function StatusBadge({ status }) {
@@ -12,11 +13,6 @@ function StatusBadge({ status }) {
     default: className += "status-default"; break;
   }
   return <span className={className}>{status}</span>;
-}
-
-function ChannelBadge({ channel }) {
-  const display = channel === "live_chat" ? "Live Chat" : channel;
-  return <span className="inbox-channel-badge">{display}</span>;
 }
 
 function ConversationRow({ item, isSelected, onClick }) {
@@ -33,7 +29,7 @@ function ConversationRow({ item, isSelected, onClick }) {
         <span className="inbox-row-time">{timeStr}</span>
       </div>
       <div className="inbox-row-meta">
-        <ChannelBadge channel={item.channel_key} />
+        <ChannelBadge channelKey={item.channel_key} />
         <StatusBadge status={item.status} />
       </div>
       <div className="inbox-row-subject">{item.subject}</div>
@@ -213,7 +209,7 @@ export default function Inbox() {
             <div className="inbox-detail-meta summary-card">
               <div className="detail-meta-row">
                 <span className="meta-label">Channel:</span>
-                <ChannelBadge channel={detail.channel_key} />
+                <ChannelBadge channelKey={detail.channel_key} />
               </div>
               <div className="detail-meta-row">
                 <span className="meta-label">Status:</span>
