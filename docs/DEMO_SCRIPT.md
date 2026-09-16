@@ -1,6 +1,6 @@
 # Demo Script
 
-Issue #22's deliverable: the exact steps to run the three core scenarios
+Issue #22's deliverable: the exact steps to run the six core scenarios
 judges should see, plus what each one is meant to demonstrate. Written so
 anyone on the team can run this cold, without having read the rest of the
 codebase first.
@@ -16,6 +16,14 @@ outcomes below describe what the system is *designed* to do per each
 agent's system prompt — real model output can vary in wording, though the
 underlying tool calls and routing decisions should be consistent.
 
+## Scenarios
+- [Scenario 1 — Autonomous resolve](#scenario-1--autonomous-resolve)
+- [Scenario 2 — Multi-step investigation + action](#scenario-2--multi-step-investigation--action)
+- [Scenario 3 — Escalation with full handoff](#scenario-3--escalation-with-full-handoff)
+- [Scenario 4 — Genuine parallel multi-agent investigation](#scenario-4--genuine-parallel-multi-agent-investigation)
+- [Scenario 5 — Critic Agent: an independent second opinion](#scenario-5--critic-agent-an-independent-second-opinion)
+- [Scenario 6 — The Multi-Channel Journey](#scenario-6--the-multi-channel-journey)
+
 ## Setup
 
 1. Follow [`CONTRIBUTING.md`](../CONTRIBUTING.md) to get both servers
@@ -27,7 +35,7 @@ underlying tool calls and routing decisions should be consistent.
    the next backend startup.
 3. Open the app at `http://localhost:5173/app` (the marketing landing
    page is a separate route — the demo happens in the actual product).
-4. All three scenarios below are run from the **Customer Chat** tab, as
+4. All scenarios below are run from the **Customer Chat** tab, as
    "Demo Customer #1" (Alice Rao) — that customer ID is hardcoded in
    `CustomerChat.jsx` today, which is why every scenario is written
    around her rather than the second seeded customer (Bob).
@@ -162,11 +170,13 @@ specialist's first answer. Issue #109/#110.
 
 **What it shows:** the agent maintaining context across different channels, and the Staff Dashboard displaying a unified view of the customer's cross-channel interactions. Issue #163.
 
-1. In **Customer Chat**, start a conversation to create a ticket (e.g., "I need help with my recent order"). This defaults to Live Chat (or Email if selected in the demo harness). Wait for the resolution or escalation.
-2. Using the backend test data or demo harness, simulate the customer reaching out again regarding the same or a new issue, but this time via **WhatsApp** (or another channel). Note that the agent is fully aware of the prior interaction and seamlessly continues the context.
-3. Switch to the **Staff Dashboard** and open an escalation (or just view the customer profile from the Evidence Explorer). 
-4. Scroll down to the **Customer Profile** section in the drawer. Point out the **Channels Used** badge list — a visual summary proving the customer has interacted across multiple distinct channels.
-5. Look at the **Conversation History** list directly below it. Point out that the previous tickets are listed newest-first, and each ticket has a distinct **channel badge** (e.g., Live Chat, WhatsApp) right next to the Ticket ID. This demonstrates a true omnichannel history without requiring the agent or staff to check different systems.
+1. **Prerequisite**: This scenario uses the seeded WhatsApp message from `app/db/seed.py`. Do NOT run Scenario 1 before this, as it may change the state of the customer's tickets.
+2. Go to the **Inbox** tab and locate Alice Rao's open WhatsApp ticket. The subject is "Bluetooth Speaker still processing".
+3. Open the ticket and observe the actual message:
+   > Hi! Just checking in on my Bluetooth Speaker order, it's still showing processing.
+4. From the **Inbox**, switch to the **Staff Dashboard** and open an escalation for Alice (e.g. from Scenario 3) or click into her details.
+5. Scroll down to the **Customer Profile** section in the drawer. Point out the **Channels Used** badge list — a visual summary proving Alice has interacted across multiple distinct channels (Live Chat, WhatsApp, Messenger).
+6. Look at the **Conversation History** list directly below it. Point out that the previous tickets are listed newest-first, and each ticket has a distinct **channel badge** (e.g., Live Chat, WhatsApp, Messenger) right next to the Ticket ID. This demonstrates a true omnichannel history without requiring the agent or staff to check different systems.
 
 ## Optional bonus material (if time allows)
 

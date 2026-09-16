@@ -57,10 +57,6 @@ export default function OmnichannelDashboard() {
   if (loading) {
     return (
       <div className="omnichannel-dashboard">
-        <div className="dashboard-header">
-          <h1>Omnichannel Dashboard</h1>
-          <p>Live operational view across every support channel</p>
-        </div>
         <div className="summary-cards-grid">
           <div className="summary-card skeleton-pulse">
             <div className="skeleton-stat"></div>
@@ -78,10 +74,6 @@ export default function OmnichannelDashboard() {
   if (error) {
     return (
       <div className="omnichannel-dashboard">
-        <div className="dashboard-header">
-          <h1>Omnichannel Dashboard</h1>
-          <p>Live operational view across every support channel</p>
-        </div>
         <div className="dashboard-error-state">
           <p>{error}</p>
           <button className="primary-button" onClick={loadData}>Retry</button>
@@ -103,11 +95,6 @@ export default function OmnichannelDashboard() {
 
   return (
     <div className="omnichannel-dashboard">
-      <div className="dashboard-header">
-        <h1>Omnichannel Dashboard</h1>
-        <p>Live operational view across every support channel</p>
-      </div>
-
       <div className="summary-cards-grid dashboard-section">
         <div className="summary-card">
           <div className="summary-value">{totalActive}</div>
@@ -126,7 +113,7 @@ export default function OmnichannelDashboard() {
             <p>No channels configured.</p>
           </div>
         ) : (
-          <div className="summary-cards-grid">
+          <div className="channel-cards-grid">
             {channels.map((ch) => {
               const openCount = openInboxItems.filter((t) => t.channel_key === ch.key).length;
               

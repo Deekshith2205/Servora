@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { fetchAnalyticsSummary, fetchChannels } from "../api/client";
 
 export default function Analytics() {
