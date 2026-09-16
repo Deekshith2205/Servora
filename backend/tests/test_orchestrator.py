@@ -101,7 +101,7 @@ def test_verification_failure_escalate_produces_a_populated_handoff_packet_with_
     monkeypatch.setattr(
         orchestrator_module,
         "SPECIALISTS",
-        {"technical": lambda db, customer_id, message: SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2)},
+        {"technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2)},
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=False, reasoning="too low"))
@@ -134,7 +134,7 @@ def test_resolved_path_creates_a_real_ticket_and_has_no_handoff_packet(monkeypat
         orchestrator_module,
         "SPECIALISTS",
         {
-            "technical": lambda db, customer_id, message: SpecialistResponse(
+            "technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
                 reply="fixed it", used_tools=["search_kb"], confidence=0.6
             )
         },

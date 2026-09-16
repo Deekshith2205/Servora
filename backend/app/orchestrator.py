@@ -56,6 +56,7 @@ from app.db.database import SessionLocal
 from app.db.models import Investigation, InvestigationStep, Ticket
 from app.llm import LLMError
 from app.services import stream_bus
+from app.services.reply_formatting import format_reply_for_channel
 
 _SUBJECT_MAX_LEN = 80
 
@@ -190,6 +191,15 @@ def handle_message(
         if stream_key:
             stream_bus.publish(stream_key, {"type": "done", "ticket_id": ticket_id, "investigation_id": investigation_id})
 
+    def _finalize_reply(raw_reply: str) -> str:
+        """[Omnichannel] issue #151: the ONE call site
+        `format_reply_for_channel()` is invoked from — every branch below
+        that builds a `ChatResult.reply` calls this closure instead of
+        reimplementing or re-calling the formatter directly, so the
+        actual formatting logic stays centralized in exactly one place
+        even though `handle_message()` has multiple return points."""
+        return format_reply_for_channel(raw_reply, channel)
+
     try:
         t0, t0_wall = time.perf_counter(), datetime.utcnow()
         classification = classify(message)
@@ -241,7 +251,7 @@ def handle_message(
             )
             _finish(ticket_id, investigation_id)
             return ChatResult(
-                reply="A human agent will follow up shortly.",
+                reply=_finalize_reply("A human agent will follow up shortly."),
                 status="escalated",
                 trace=trace,
                 handoff_packet=packet,
@@ -263,7 +273,7 @@ def handle_message(
             responses: dict[str, object] = {}
             with ThreadPoolExecutor(max_workers=len(agents_to_run)) as executor:
                 future_to_agent = {
-                    executor.submit(_run_specialist_isolated, agent, customer_id, message): agent
+                    executor.submit(_run_specialist_isolated, agent, customer_id, message, channel): agent
                     for agent in agents_to_run
                 }
                 for future in as_completed(future_to_agent):
@@ -302,7 +312,7 @@ def handle_message(
         else:
             t0, t0_wall = time.perf_counter(), datetime.utcnow()
             specialist_fn = SPECIALISTS.get(decision.target_agent, SPECIALISTS["technical"])
-            response = specialist_fn(db, customer_id, message)
+            response = specialist_fn(db, customer_id, message, channel=channel)
 
             # Extract root_cause safely if it was populated by the specialist
             root_cause = getattr(response, "root_cause", None)
@@ -379,7 +389,7 @@ def handle_message(
             )
             _finish(ticket_id, investigation_id)
             return ChatResult(
-                reply="A human agent will follow up shortly.",
+                reply=_finalize_reply("A human agent will follow up shortly."),
                 status="escalated",
                 trace=trace,
                 handoff_packet=packet,
@@ -415,7 +425,7 @@ def handle_message(
             confidence=response.confidence, channel=channel, channel_metadata=channel_metadata,
         )
         _finish(ticket_id, investigation_id)
-        return ChatResult(reply=response.reply, status="resolved", trace=trace, ticket_id=ticket_id)
+        return ChatResult(reply=_finalize_reply(response.reply), status="resolved", trace=trace, ticket_id=ticket_id)
     finally:
         # [SWARM] issue #79: unconditionally send the "no more events"
         # sentinel — on a normal return, `_finish()` above already
@@ -433,7 +443,7 @@ def handle_message(
             stream_bus.close(stream_key)
 
 
-def _run_specialist_isolated(agent: str, customer_id: int, message: str) -> SpecialistResponse:
+def _run_specialist_isolated(agent: str, customer_id: int, message: str, channel: str = "live_chat") -> SpecialistResponse:
     """[SWARM] issue #88: runs one specialist on ITS OWN DB session, in a
     thread pool worker — never the request's shared `db` session.
 
@@ -454,7 +464,7 @@ def _run_specialist_isolated(agent: str, customer_id: int, message: str) -> Spec
     thread_db = SessionLocal()
     try:
         specialist_fn = SPECIALISTS.get(agent, SPECIALISTS["technical"])
-        return specialist_fn(thread_db, customer_id, message)
+        return specialist_fn(thread_db, customer_id, message, channel=channel)
     finally:
         thread_db.close()
 

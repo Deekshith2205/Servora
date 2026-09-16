@@ -1,6 +1,7 @@
 import string
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.db.models import Customer, Ticket
@@ -154,6 +155,40 @@ def compute_confidence_distribution(db: Session, cutoff: datetime) -> dict:
     }
 
 
+def compute_channel_metrics(db: Session, cutoff: datetime) -> list[dict]:
+    """[Omnichannel] issue #158 — real per-channel ticket counts via a
+    genuine SQL `GROUP BY` (`Ticket.channel_key`, `Ticket.status`), not a
+    Python-side re-aggregation of every matching row already fetched.
+    This file's sibling aggregations (`compute_churn_signals()`,
+    `compute_trend()`) all pull the full row set via `.all()` and group
+    in Python; this is the first to group in SQL directly, since a
+    per-channel-per-status breakdown is a genuinely two-dimensional
+    `GROUP BY` that SQL expresses more directly than hand-rolled Python
+    grouping would.
+
+    Every channel a matching `Ticket` row actually carries appears —
+    never a hardcoded list of the 5 seeded channels, so a genuinely new
+    or renamed channel_key still shows up correctly.
+    """
+    rows = (
+        db.query(Ticket.channel_key, Ticket.status, func.count(Ticket.id))
+        .filter(Ticket.created_at >= cutoff)
+        .group_by(Ticket.channel_key, Ticket.status)
+        .all()
+    )
+
+    by_channel: dict[str, dict] = {}
+    for channel_key, status, count in rows:
+        bucket = by_channel.setdefault(
+            channel_key, {"channel": channel_key, "total": 0, "resolved": 0, "escalated": 0, "open": 0}
+        )
+        bucket["total"] += count
+        if status in ("resolved", "escalated", "open"):
+            bucket[status] += count
+
+    return sorted(by_channel.values(), key=lambda m: m["total"], reverse=True)
+
+
 @router.get("/analytics/summary")
 def analytics_summary(db: Session = Depends(get_db)) -> dict:
     now = datetime.utcnow()
@@ -274,6 +309,7 @@ def analytics_summary(db: Session = Depends(get_db)) -> dict:
     rates = compute_resolution_and_escalation_rates(db, cutoff)
     sentiment_trend = compute_sentiment_trend(db, now, cutoff, days=30)
     confidence_distribution = compute_confidence_distribution(db, cutoff)
+    channel_metrics = compute_channel_metrics(db, cutoff)
 
     return {
         "status": "ok",
@@ -285,4 +321,6 @@ def analytics_summary(db: Session = Depends(get_db)) -> dict:
         "escalation_rate": rates["escalation_rate"],
         "sentiment_trend": sentiment_trend,
         "confidence_distribution": confidence_distribution,
+        # [Omnichannel] issue #158 — additive.
+        "channel_metrics": channel_metrics,
     }

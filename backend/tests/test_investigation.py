@@ -57,7 +57,7 @@ def test_resolved_conversation_creates_an_investigation_linked_to_its_ticket(mon
         orchestrator_module, "plan",
         lambda classification, customer_id, db: PlanDecision(action="resolve", target_agent="billing", reasoning="billing can fix it"),
     )
-    billing_specialist = lambda db, customer_id, message: SpecialistResponse(
+    billing_specialist = lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
         reply="Refunded the duplicate charge.",
         used_tools=["get_customer_orders", "check_payment_issue", "issue_refund"],
         confidence=0.9,
@@ -182,7 +182,7 @@ def test_verification_failure_escalation_also_creates_an_investigation(monkeypat
     )
     monkeypatch.setattr(
         orchestrator_module, "SPECIALISTS",
-        {"technical": lambda db, customer_id, message: SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2, evidence=[])},
+        {"technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="not sure", used_tools=[], confidence=0.2, evidence=[])},
     )
     monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
     monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=False, reasoning="too low"))

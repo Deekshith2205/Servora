@@ -40,7 +40,7 @@ def test_chat_endpoint_runs_end_to_end(monkeypatch):
             action="resolve", target_agent="order", reasoning="mocked for test"
         ),
     )
-    mocked_specialist = lambda db, customer_id, message: SpecialistResponse(
+    mocked_specialist = lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
         reply="mocked specialist reply", used_tools=[], confidence=0.9
     )
     monkeypatch.setattr(

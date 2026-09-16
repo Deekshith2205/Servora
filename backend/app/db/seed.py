@@ -152,6 +152,68 @@ def seed_if_empty() -> None:
             ]
         )
 
+        # [Omnichannel] issue #162: real, coherent conversations on each
+        # of the other 4 channels (Live Chat already has plenty above,
+        # via the model's own "live_chat" default) — grounded in Alice/
+        # Bob's real seeded orders, not lorem-ipsum, same convention
+        # issue #22's own seed data already established. Deliberately
+        # Ticket rows only, no fabricated Investigation/InvestigationStep
+        # rows: this codebase has never seeded a fake reasoning trace for
+        # any Ticket (every existing seeded ticket "predates the
+        # pipeline," and the Staff Dashboard/Investigation Board already
+        # handle that honestly) — inventing one here would mean
+        # fabricating AI output that never actually ran, which this
+        # project's own conventions consistently avoid. The Inbox
+        # (#136) already renders a Ticket with no Investigation
+        # correctly (`has_investigation=False`), so this is a real,
+        # fully-supported state, not a gap.
+        db.add_all(
+            [
+                Ticket(
+                    customer_id=alice.id,
+                    category="order",
+                    subject="Bluetooth Speaker still processing",
+                    message="Hi! Just checking in on my Bluetooth Speaker order, it's still showing processing.",
+                    sentiment="neutral",
+                    urgency=3,
+                    status="open",
+                    channel_key="whatsapp",
+                ),
+                Ticket(
+                    customer_id=bob.id,
+                    category="billing",
+                    subject="Refund question",
+                    message="hey do refunds usually take a while? still don't see mine",
+                    sentiment="neutral",
+                    urgency=3,
+                    status="open",
+                    channel_key="instagram",
+                ),
+                Ticket(
+                    customer_id=alice.id,
+                    category="billing",
+                    subject="Duplicate charge on headphones",
+                    message="I think I was charged twice for my Wireless Headphones order — can someone check?",
+                    sentiment="negative",
+                    urgency=6,
+                    status="open",
+                    channel_key="messenger",
+                ),
+                Ticket(
+                    customer_id=bob.id,
+                    category="order",
+                    subject="Smart Watch tracking not updating",
+                    message="Hello, I'm writing to follow up on my Smart Watch order. The tracking information "
+                    "has not updated in several days and I would appreciate a status check at your earliest "
+                    "convenience.",
+                    sentiment="negative",
+                    urgency=5,
+                    status="open",
+                    channel_key="email",
+                ),
+            ]
+        )
+
         db.add_all(
             [
                 KBArticle(

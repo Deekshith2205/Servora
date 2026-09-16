@@ -74,7 +74,7 @@ def test_resolved_step_carries_real_timing_reasoning_tools_and_refs(monkeypatch,
             ],
         ),
     )
-    billing_specialist = lambda db, customer_id, message: SpecialistResponse(
+    billing_specialist = lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
         reply="Refunded the duplicate charge.",
         used_tools=["get_customer_orders", "check_payment_issue", "issue_refund"],
         confidence=0.9,
@@ -227,7 +227,7 @@ def _resolve_via_chat(client, customer_id):
             alternatives_considered=[Alternative(action="escalate", rejected_because="confidence sufficient to resolve automatically")],
         )):
             with patch("app.orchestrator.SPECIALISTS", {
-                "billing": lambda db, customer_id, message: SpecialistResponse(
+                "billing": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
                     reply="Refunded the duplicate charge.",
                     used_tools=["get_customer_orders", "issue_refund"],
                     confidence=0.9,
@@ -239,7 +239,7 @@ def _resolve_via_chat(client, customer_id):
                         {"type": "kb_article", "ref_id": 2, "label": "Billing Policy"},
                     ],
                 ),
-                "technical": lambda db, customer_id, message: SpecialistResponse(reply="n/a"),
+                "technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="n/a"),
             }):
                 with patch("app.orchestrator.verify", return_value=VerificationResult(approved=True, reasoning="grounded")):
                     with patch("app.orchestrator.critique", return_value=_MOCK_CRITIC_REVIEW):
