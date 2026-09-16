@@ -46,6 +46,7 @@ export default function Inbox() {
   const [channels, setChannels] = useState([]);
   const [selectedChannelKey, setSelectedChannelKey] = useState(null);
   const [channelCounts, setChannelCounts] = useState({});
+  const [totalCount, setTotalCount] = useState(0);
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -62,14 +63,30 @@ export default function Inbox() {
     const init = async () => {
       try {
         const chans = await fetchChannels();
+        if (!isMounted) return;
+        setChannels(chans);
+
+        const counts = {};
+
+        fetchInbox().then(data => {
+          if (isMounted) setTotalCount(data.length);
+        }).catch(err => console.error("Failed to load total count", err));
+
+        await Promise.all(chans.map(async (c) => {
+          try {
+            const data = await fetchInbox(c.key);
+            if (isMounted) counts[c.key] = data.length;
+          } catch (err) {
+            console.error(`Failed to load count for ${c.key}`, err);
+            if (isMounted) counts[c.key] = 0;
+          }
+        }));
+
         if (isMounted) {
-          setChannels(chans);
-          const counts = {};
-          chans.forEach(c => { counts[c.key] = c.active_tickets_count; });
           setChannelCounts(counts);
         }
       } catch (err) {
-        console.error("Failed to load channels", err);
+        console.error("Failed to load channels/counts", err);
       }
     };
     init();
@@ -134,6 +151,7 @@ export default function Inbox() {
           onClick={() => handleChannelSelect(null)}
         >
           All
+          {totalCount > 0 && <span className="channel-count">{totalCount}</span>}
         </button>
         {channels.map(ch => (
           <button
@@ -141,8 +159,10 @@ export default function Inbox() {
             className={`channel-tab ${selectedChannelKey === ch.key ? 'active' : ''}`}
             onClick={() => handleChannelSelect(ch.key)}
           >
-            {ch.name === "live_chat" ? "Live Chat" : ch.name}
-            {channelCounts[ch.key] > 0 && <span className="channel-count">{channelCounts[ch.key]}</span>}
+            {ch.display_name || ch.key}
+            {channelCounts[ch.key] !== undefined && channelCounts[ch.key] > 0 && (
+              <span className="channel-count">{channelCounts[ch.key]}</span>
+            )}
           </button>
         ))}
       </div>
