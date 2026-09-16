@@ -15,6 +15,7 @@ from app.api.schemas import (
     ShopifyCustomerRecordOut,
     ShopifyOrderRecordOut,
     TicketRecordOut,
+    CustomerHistoryTicketOut,
 )
 from app.db.database import get_db
 from app.db.models import Customer, Order, Ticket
@@ -44,6 +45,26 @@ def get_customer(customer_id: int, db: Session = Depends(get_db)) -> CustomerPro
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
+    sorted_tickets = sorted(customer.tickets, key=lambda t: t.created_at, reverse=True)
+    channels_used = []
+    for t in sorted_tickets:
+        ch = t.channel_key or "live_chat"
+        if ch not in channels_used:
+            channels_used.append(ch)
+
+    history = [
+        CustomerHistoryTicketOut(
+            id=t.id,
+            subject=t.subject,
+            category=t.category,
+            status=t.status,
+            sentiment=t.sentiment,
+            urgency=t.urgency,
+            created_at=t.created_at.isoformat(),
+            channel=t.channel_key or "live_chat"
+        ) for t in sorted_tickets
+    ]
+
     return CustomerProfileOut(
         id=customer.id,
         name=customer.name,
@@ -52,6 +73,8 @@ def get_customer(customer_id: int, db: Session = Depends(get_db)) -> CustomerPro
         tier=customer.tier,
         previous_tickets_count=len(customer.tickets),
         risk_level=_risk_level(customer),
+        channels_used=channels_used,
+        conversation_history=history,
     )
 
 

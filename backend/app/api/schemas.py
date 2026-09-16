@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
@@ -93,6 +93,8 @@ class CustomerProfileOut(BaseModel):
     # "low") — only "medium"/"high" are ever set. See
     # app/api/records.py::_risk_level() for the exact thresholds.
     risk_level: str | None = None
+    channels_used: list[str] = Field(default_factory=list)
+    conversation_history: list["CustomerHistoryTicketOut"] = Field(default_factory=list)
 
 
 class CustomerHistoryTicketOut(BaseModel):
@@ -103,6 +105,7 @@ class CustomerHistoryTicketOut(BaseModel):
     sentiment: str
     urgency: int
     created_at: str
+    channel: str = "live_chat"
 
     class Config:
         from_attributes = True
