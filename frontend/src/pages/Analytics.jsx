@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
-import { fetchAnalyticsSummary } from "../api/client";
+import { fetchAnalyticsSummary, fetchChannels } from "../api/client";
 
 export default function Analytics() {
   const [summary, setSummary] = useState(null);
+  const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const doFetch = () => {
-    fetchAnalyticsSummary()
-      .then(setSummary)
+    Promise.all([fetchAnalyticsSummary(), fetchChannels()])
+      .then(([summaryData, channelsData]) => {
+        setSummary(summaryData);
+        setChannels(channelsData);
+      })
       .catch((err) => setError(err.message || "Failed to load analytics"))
       .finally(() => setLoading(false));
   };
@@ -33,6 +37,25 @@ export default function Analytics() {
   const sentimentMax = hasSentiment ? Math.max(1, ...summary.sentiment_trend.map((d) => Math.max(d.positive, d.neutral, d.negative))) : 1;
   
   const hasConfidence = summary && summary.confidence_distribution && summary.confidence_distribution.total > 0;
+
+  const channelMetricsData = useMemo(() => {
+    if (!summary || !summary.channel_metrics || !channels.length) return [];
+    return channels.map(ch => {
+      const metric = summary.channel_metrics.find(m => m.channel === ch.key);
+      const total = metric ? metric.total : 0;
+      const resolved = metric ? metric.resolved : 0;
+      const escalated = metric ? metric.escalated : 0;
+      return {
+        key: ch.key,
+        name: ch.name,
+        total,
+        resolvedRate: total > 0 ? resolved / total : 0,
+        escalatedRate: total > 0 ? escalated / total : 0,
+        resolvedCount: resolved,
+        escalatedCount: escalated
+      };
+    });
+  }, [summary, channels]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', flex: 1 }}>
@@ -98,6 +121,94 @@ export default function Analytics() {
               <span className="summary-card-desc">Resolved + escalated</span>
             </div>
           </div>
+          
+          {channelMetricsData.length > 0 && (
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem'}}>
+              <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+                <div className="escalations-header">
+                  <div>
+                    <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Resolution Rate by Channel</h3>
+                    <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Resolved / Total</p>
+                  </div>
+                </div>
+                <div className="app-panel" style={{padding: '1rem 1rem 0.5rem'}}>
+                  <svg
+                    viewBox={`0 0 ${channelMetricsData.length * 40} 120`}
+                    width="100%"
+                    height="120"
+                    preserveAspectRatio="none"
+                  >
+                    {channelMetricsData.map((ch, i) => {
+                      const barHeight = Math.max(3, ch.resolvedRate * 116);
+                      return (
+                        <g key={ch.key}>
+                          <rect
+                            x={i * 40 + 10}
+                            y={120 - barHeight}
+                            width={20}
+                            height={barHeight}
+                            rx={2}
+                            style={{ fill: 'var(--app-success-text)', opacity: ch.total ? 1 : 0.15 }}
+                          >
+                            <title>{`${ch.name}: ${Math.round(ch.resolvedRate * 100)}% (${ch.resolvedCount}/${ch.total})`}</title>
+                          </rect>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                  <div style={{display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem'}}>
+                    {channelMetricsData.map(ch => (
+                      <div key={ch.key} style={{width: `${100 / channelMetricsData.length}%`, textAlign: 'center', fontSize: '0.7rem', color: 'var(--app-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}} title={ch.name}>
+                        {ch.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+                <div className="escalations-header">
+                  <div>
+                    <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Escalation Rate by Channel</h3>
+                    <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Escalated / Total</p>
+                  </div>
+                </div>
+                <div className="app-panel" style={{padding: '1rem 1rem 0.5rem'}}>
+                  <svg
+                    viewBox={`0 0 ${channelMetricsData.length * 40} 120`}
+                    width="100%"
+                    height="120"
+                    preserveAspectRatio="none"
+                  >
+                    {channelMetricsData.map((ch, i) => {
+                      const barHeight = Math.max(3, ch.escalatedRate * 116);
+                      return (
+                        <g key={ch.key}>
+                          <rect
+                            x={i * 40 + 10}
+                            y={120 - barHeight}
+                            width={20}
+                            height={barHeight}
+                            rx={2}
+                            style={{ fill: 'var(--app-danger-text)', opacity: ch.total ? 1 : 0.15 }}
+                          >
+                            <title>{`${ch.name}: ${Math.round(ch.escalatedRate * 100)}% (${ch.escalatedCount}/${ch.total})`}</title>
+                          </rect>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                  <div style={{display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem'}}>
+                    {channelMetricsData.map(ch => (
+                      <div key={ch.key} style={{width: `${100 / channelMetricsData.length}%`, textAlign: 'center', fontSize: '0.7rem', color: 'var(--app-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}} title={ch.name}>
+                        {ch.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="escalations-header">
             <div>
               <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Recurring Issues</h3>
