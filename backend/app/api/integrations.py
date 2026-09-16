@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.schemas import ShopifyConnectRequest, ShopifyStatusOut
+from app.auth.dependency import require_permission
 from app.db.database import get_db
 from app.db.models import InvestigationStep, ShopifyIntegration
 from app.services.shopify_service import ShopifyAPIError, test_connection
@@ -38,7 +39,13 @@ def _connected_orders_count(db: Session) -> int:
 
 
 @router.get("/shopify/status", response_model=ShopifyStatusOut)
-def get_shopify_status(db: Session = Depends(get_db)) -> ShopifyStatusOut:
+def get_shopify_status(
+    db: Session = Depends(get_db), _actor=Depends(require_permission("manage_integrations"))
+) -> ShopifyStatusOut:
+    # [RBAC] issue #202: gated to Administrator only, per that issue's
+    # own literal technical requirement ("GET/POST .../status|connect|
+    # disconnect... gated") — distinct from GET /api/channels, which
+    # that same issue explicitly keeps open for staff (see channels.py).
     integration = _latest_integration(db)
     if integration is None:
         return ShopifyStatusOut(connected=False, status="never_connected")
@@ -53,7 +60,11 @@ def get_shopify_status(db: Session = Depends(get_db)) -> ShopifyStatusOut:
 
 
 @router.post("/shopify/connect", response_model=ShopifyStatusOut)
-def connect_shopify(payload: ShopifyConnectRequest, db: Session = Depends(get_db)) -> ShopifyStatusOut:
+def connect_shopify(
+    payload: ShopifyConnectRequest,
+    db: Session = Depends(get_db),
+    _actor=Depends(require_permission("manage_integrations")),
+) -> ShopifyStatusOut:
     """Verifies the credentials against a REAL Shopify API call
     (test_connection) before ever persisting them as "connected" — never
     saves a row that claims to be connected but isn't, which would
@@ -89,7 +100,9 @@ def connect_shopify(payload: ShopifyConnectRequest, db: Session = Depends(get_db
 
 
 @router.post("/shopify/disconnect", response_model=ShopifyStatusOut)
-def disconnect_shopify(db: Session = Depends(get_db)) -> ShopifyStatusOut:
+def disconnect_shopify(
+    db: Session = Depends(get_db), _actor=Depends(require_permission("manage_integrations"))
+) -> ShopifyStatusOut:
     """Marks the row disconnected AND clears the stored credential —
     once a user explicitly disconnects, this app should hold onto zero
     live secrets for that store, not just stop using them. The row

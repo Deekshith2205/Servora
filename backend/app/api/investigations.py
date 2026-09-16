@@ -23,6 +23,8 @@ from app.api.schemas import (
     InvestigationOut,
     InvestigationStepOut,
 )
+from app.auth.dependency import CurrentActor, get_current_actor, require_any_permission, require_permission
+from app.auth.investigation_visibility import can_view_investigation
 from app.db.database import get_db
 from app.db.models import Investigation, InvestigationStep
 
@@ -103,9 +105,14 @@ def _build_graph(steps: list[InvestigationStep]) -> InvestigationGraphOut:
 
 
 @router.get("", response_model=list[InvestigationListItemOut])
-def list_investigations(limit: int = 50, db: Session = Depends(get_db)) -> list[Investigation]:
+def list_investigations(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _actor: CurrentActor = Depends(require_permission("view_investigation_board")),
+) -> list[Investigation]:
     """Recent investigations, newest first — backs the Investigation
-    Board's browse list."""
+    Board's browse list. [RBAC] issue #187: staff-only, no per-customer
+    data scoping — matches how this page already works today."""
     investigations = (
         db.query(Investigation).order_by(Investigation.started_at.desc()).limit(limit).all()
     )
@@ -126,11 +133,18 @@ def list_investigations(limit: int = 50, db: Session = Depends(get_db)) -> list[
 
 
 @router.get("/metrics/agents", response_model=InvestigationMetricsOut)
-def agent_performance_metrics(db: Session = Depends(get_db)) -> InvestigationMetricsOut:
+def agent_performance_metrics(
+    db: Session = Depends(get_db),
+    _actor: CurrentActor = Depends(require_any_permission("view_investigation_board", "view_analytics")),
+) -> InvestigationMetricsOut:
     """Cross-investigation aggregate per agent — a real SQL GROUP BY over
     every InvestigationStep ever recorded, not a per-investigation view.
     This is the data behind the Investigation Board's "Agent Performance
-    Metrics" section."""
+    Metrics" section. [RBAC] issue #194: reachable via EITHER a Support
+    Agent's `view_investigation_board` OR a Manager's `view_analytics` —
+    a Manager who never got the former must still reach this one
+    specific metrics endpoint, since it's explicitly named in their own
+    spec."""
     rows = (
         db.query(
             InvestigationStep.agent_name,
@@ -155,19 +169,34 @@ def agent_performance_metrics(db: Session = Depends(get_db)) -> InvestigationMet
 
 
 @router.get("/by-ticket/{ticket_id}", response_model=InvestigationOut)
-def get_investigation_by_ticket(ticket_id: int, db: Session = Depends(get_db)) -> InvestigationOut:
+def get_investigation_by_ticket(
+    ticket_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> InvestigationOut:
     """Convenience lookup for callers that only have a ticket_id in hand
     (e.g. ChatResult.ticket_id from /api/chat, or a row from
-    GET /api/escalations) — Investigation<->Ticket is 1:1."""
+    GET /api/escalations) — Investigation<->Ticket is 1:1.
+
+    [RBAC] issue #217: gated via `can_view_investigation()` — the SAME
+    helper `get_investigation()` below calls, so a Customer viewing
+    their own investigation and staff viewing any investigation share
+    one real rule, not two independently-drifting checks."""
     investigation = db.query(Investigation).filter_by(ticket_id=ticket_id).first()
     if investigation is None:
         raise HTTPException(status_code=404, detail=f"No investigation recorded for ticket {ticket_id}")
+    if not can_view_investigation(actor, investigation):
+        raise HTTPException(status_code=403, detail="You do not have permission to perform this action.")
     return _to_investigation_out(investigation)
 
 
 @router.get("/{investigation_id}", response_model=InvestigationOut)
-def get_investigation(investigation_id: int, db: Session = Depends(get_db)) -> InvestigationOut:
+def get_investigation(
+    investigation_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> InvestigationOut:
+    """[RBAC] issue #217: same `can_view_investigation()` helper as
+    `get_investigation_by_ticket()` above."""
     investigation = db.get(Investigation, investigation_id)
     if investigation is None:
         raise HTTPException(status_code=404, detail=f"Investigation {investigation_id} not found")
+    if not can_view_investigation(actor, investigation):
+        raise HTTPException(status_code=403, detail="You do not have permission to perform this action.")
     return _to_investigation_out(investigation)

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.schemas import ApproveKBArticleRequest, KBArticleOut
+from app.auth.dependency import require_permission
 from app.db.database import get_db
 from app.db.models import KBArticle
 
@@ -29,7 +30,15 @@ def get_kb_article(article_id: int, db: Session = Depends(get_db)) -> KBArticle:
 
 
 @router.post("/kb-articles", response_model=KBArticleOut)
-def approve_kb_article(payload: ApproveKBArticleRequest, db: Session = Depends(get_db)) -> KBArticle:
+def approve_kb_article(
+    payload: ApproveKBArticleRequest,
+    db: Session = Depends(get_db),
+    _actor=Depends(require_permission("manage_knowledge_base")),
+) -> KBArticle:
+    # [RBAC] issue #203: approving a Learning-Agent-drafted article is a
+    # content-publishing action, Administrator only — GET /kb-articles
+    # (read) stays open above, unaffected, so the Evidence Explorer's KB
+    # citations keep working for every staff role.
     article = KBArticle(title=payload.title, body=payload.body, tags=",".join(payload.tags))
     db.add(article)
     db.commit()

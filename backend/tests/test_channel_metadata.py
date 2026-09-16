@@ -22,6 +22,7 @@ from app.db.database import Base
 from app.db.models import Customer, Investigation
 from app.main import app
 from app.orchestrator import handle_message
+from tests.rbac_headers import customer_headers
 
 _MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 
@@ -116,6 +117,6 @@ def test_get_investigation_exposes_channel_metadata(monkeypatch):
     assert resp.status_code == 200
     ticket_id = resp.json()["ticket_id"]
 
-    inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}")
+    inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=customer_headers(1))
     assert inv_resp.status_code == 200
     assert inv_resp.json()["channel_metadata"] is None

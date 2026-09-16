@@ -6,6 +6,10 @@ call, exercise the real endpoint" convention as every other API test in
 this codebase (e.g. test_health.py mocking `app.orchestrator.classify`).
 app/services/shopify_service.py's OWN real HTTP/retry logic is already
 covered directly in tests/test_shopify_service.py.
+
+[RBAC]: every Shopify endpoint here is now gated to `manage_integrations`
+(Administrator only, issue #202) — every call sends a real
+Administrator identity header.
 """
 from unittest.mock import patch
 
@@ -15,6 +19,7 @@ from app.db.database import SessionLocal
 from app.db.models import ShopifyIntegration
 from app.main import app
 from app.services.shopify_service import ShopifyAPIError
+from tests.rbac_headers import staff_headers
 
 
 def _clear_integrations(db):
@@ -30,9 +35,10 @@ def _clear_integrations(db):
 def test_status_reports_never_connected_when_no_row_exists():
     db = SessionLocal()
     _clear_integrations(db)
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.get("/api/integrations/shopify/status")
+        resp = client.get("/api/integrations/shopify/status", headers=headers)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -44,12 +50,13 @@ def test_status_reports_never_connected_when_no_row_exists():
 def test_connect_verifies_real_credentials_before_saving():
     db = SessionLocal()
     _clear_integrations(db)
+    headers = staff_headers(db, "administrator")
 
     with patch("app.api.integrations.test_connection", return_value={"name": "Test Shop"}):
         with TestClient(app) as client:
             resp = client.post("/api/integrations/shopify/connect", json={
                 "store_url": "test-shop.myshopify.com", "access_token": "shpat_real_looking_token",
-            })
+            }, headers=headers)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -62,12 +69,13 @@ def test_connect_verifies_real_credentials_before_saving():
 def test_connect_never_saves_as_connected_when_credentials_are_bad():
     db = SessionLocal()
     _clear_integrations(db)
+    headers = staff_headers(db, "administrator")
 
     with patch("app.api.integrations.test_connection", side_effect=ShopifyAPIError("bad creds", status_code=401)):
         with TestClient(app) as client:
             resp = client.post("/api/integrations/shopify/connect", json={
                 "store_url": "test-shop.myshopify.com", "access_token": "shpat_invalid",
-            })
+            }, headers=headers)
 
     assert resp.status_code == 400
 
@@ -82,9 +90,10 @@ def test_status_reflects_a_real_connected_row_and_masks_the_token():
     _clear_integrations(db)
     db.add(ShopifyIntegration(store_url="test-shop.myshopify.com", access_token="shpat_super_secret", status="connected"))
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.get("/api/integrations/shopify/status")
+        resp = client.get("/api/integrations/shopify/status", headers=headers)
 
     body = resp.json()
     assert body["connected"] is True
@@ -97,9 +106,10 @@ def test_disconnect_clears_the_stored_credential():
     _clear_integrations(db)
     db.add(ShopifyIntegration(store_url="test-shop.myshopify.com", access_token="shpat_super_secret", status="connected"))
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.post("/api/integrations/shopify/disconnect")
+        resp = client.post("/api/integrations/shopify/disconnect", headers=headers)
 
     assert resp.status_code == 200
     assert resp.json()["connected"] is False
@@ -113,9 +123,10 @@ def test_disconnect_clears_the_stored_credential():
 def test_disconnect_with_nothing_connected_is_a_clean_400():
     db = SessionLocal()
     _clear_integrations(db)
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.post("/api/integrations/shopify/disconnect")
+        resp = client.post("/api/integrations/shopify/disconnect", headers=headers)
 
     assert resp.status_code == 400
 
@@ -148,8 +159,21 @@ def test_status_reports_a_real_connected_orders_count():
         evidence_refs_json=json.dumps([{"type": "shopify_order", "ref_id": 1002, "label": "Shopify #1002"}]),
     ))
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        resp = client.get("/api/integrations/shopify/status")
+        resp = client.get("/api/integrations/shopify/status", headers=headers)
 
     assert resp.json()["connected_orders_count"] >= 1
+
+
+def test_shopify_status_without_permission_is_a_real_403():
+    """[RBAC] issue #202: a Support Agent (no `manage_integrations`)
+    cannot even check Shopify's connection status."""
+    db = SessionLocal()
+    headers = staff_headers(db, "support_agent")
+
+    with TestClient(app) as client:
+        resp = client.get("/api/integrations/shopify/status", headers=headers)
+
+    assert resp.status_code == 403

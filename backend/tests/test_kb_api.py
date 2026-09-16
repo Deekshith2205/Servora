@@ -10,6 +10,13 @@ from app.db.database import SessionLocal
 from app.db.models import KBArticle, Ticket
 from app.main import app
 from fastapi.testclient import TestClient
+from tests.rbac_headers import staff_headers
+
+# [RBAC] issue #190/#202: `/escalations/{id}/resolve` requires
+# `handle_escalations` (permission checked before the ticket lookup, so
+# even the "unknown ticket" 404 test needs valid headers); `POST
+# /kb-articles` requires `manage_knowledge_base`; `GET /kb-articles`
+# stays open.
 
 
 def test_resolve_marks_ticket_resolved_and_returns_no_suggestion(monkeypatch):
@@ -20,6 +27,7 @@ def test_resolve_marks_ticket_resolved_and_returns_no_suggestion(monkeypatch):
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+    headers = staff_headers(db, "administrator")
 
     monkeypatch.setattr(
         "app.api.tickets.draft_kb_article",
@@ -27,7 +35,7 @@ def test_resolve_marks_ticket_resolved_and_returns_no_suggestion(monkeypatch):
     )
 
     with TestClient(app) as client:
-        resp = client.post(f"/api/escalations/{ticket.id}/resolve", json={"resolution_notes": "one-time waiver"})
+        resp = client.post(f"/api/escalations/{ticket.id}/resolve", json={"resolution_notes": "one-time waiver"}, headers=headers)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -43,6 +51,7 @@ def test_resolve_returns_a_real_suggestion_when_reusable(monkeypatch):
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+    headers = staff_headers(db, "administrator")
 
     monkeypatch.setattr(
         "app.api.tickets.draft_kb_article",
@@ -52,7 +61,7 @@ def test_resolve_returns_a_real_suggestion_when_reusable(monkeypatch):
     )
 
     with TestClient(app) as client:
-        resp = client.post(f"/api/escalations/{ticket.id}/resolve", json={"resolution_notes": "migrated then refunded"})
+        resp = client.post(f"/api/escalations/{ticket.id}/resolve", json={"resolution_notes": "migrated then refunded"}, headers=headers)
 
     body = resp.json()
     assert body["kb_suggestion"]["should_add"] is True
@@ -60,8 +69,10 @@ def test_resolve_returns_a_real_suggestion_when_reusable(monkeypatch):
 
 
 def test_resolve_404_for_missing_ticket():
+    db = SessionLocal()
+    headers = staff_headers(db, "administrator")
     with TestClient(app) as client:
-        resp = client.post("/api/escalations/999999/resolve", json={"resolution_notes": "x"})
+        resp = client.post("/api/escalations/999999/resolve", json={"resolution_notes": "x"}, headers=headers)
     assert resp.status_code == 404
 
 
@@ -77,6 +88,7 @@ def test_resolve_survives_llm_failure(monkeypatch):
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+    headers = staff_headers(db, "administrator")
 
     def _raise(**kwargs):
         raise LLMError("no key configured")
@@ -84,7 +96,7 @@ def test_resolve_survives_llm_failure(monkeypatch):
     monkeypatch.setattr("app.api.tickets.draft_kb_article", _raise)
 
     with TestClient(app) as client:
-        resp = client.post(f"/api/escalations/{ticket.id}/resolve", json={"resolution_notes": "x"})
+        resp = client.post(f"/api/escalations/{ticket.id}/resolve", json={"resolution_notes": "x"}, headers=headers)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -96,11 +108,13 @@ def test_approve_kb_article_inserts_a_real_row():
     db = SessionLocal()
     db.query(KBArticle).delete()
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
         resp = client.post(
             "/api/kb-articles",
             json={"title": "Test article", "body": "Test body", "tags": ["billing", "refund"]},
+            headers=headers,
         )
 
     assert resp.status_code == 200

@@ -649,3 +649,71 @@ class ShopifyCustomerRecordOut(BaseModel):
     email: str | None = None
     orders_count: int | None = None
     total_spent: str | None = None
+
+
+# --------------------------------------------------------------------- #
+# [RBAC] Role-Based Access Control — issues #171-#223
+# --------------------------------------------------------------------- #
+
+
+class CurrentActorOut(BaseModel):
+    """GET /api/auth/me — mirrors app.auth.dependency.CurrentActor.
+    `role=None` is the real, honest "not resolved" state (missing/
+    invalid identity headers), never a fabricated default role."""
+
+    role: str | None = None
+    customer_id: int | None = None
+    user_id: int | None = None
+    name: str | None = None
+
+
+class UserOut(BaseModel):
+    """One row from app.db.models.User — a seeded/administrator-created
+    staff identity. Never carries a credential (there isn't one)."""
+
+    id: int
+    name: str
+    email: str
+    role: str
+
+    class Config:
+        from_attributes = True
+
+
+class CreateUserRequest(BaseModel):
+    name: str
+    email: str
+    role: str
+
+
+class UpdateUserRequest(BaseModel):
+    """[RBAC] issue #200: PATCH semantics, all fields optional — only
+    what an Administrator actually changed gets sent."""
+
+    name: str | None = None
+    role: str | None = None
+
+
+class SystemSettingOut(BaseModel):
+    key: str
+    value: str
+
+    class Config:
+        from_attributes = True
+
+
+class UpdateSystemSettingRequest(BaseModel):
+    value: str
+
+
+class TeamActivityEntryOut(BaseModel):
+    """[RBAC] issue #197 — one seeded staff member's real, current open/
+    escalated ticket count, matched to them by `Ticket.assigned_to`
+    (a free-text name match, not a FK — see that issue's own honest
+    scope note)."""
+
+    user_id: int
+    name: str
+    role: str
+    open_ticket_count: int
+    escalated_ticket_count: int

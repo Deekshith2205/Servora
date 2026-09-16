@@ -5,6 +5,11 @@ from fastapi.testclient import TestClient
 from app.db.database import SessionLocal
 from app.db.models import Ticket
 from app.main import app
+from tests.rbac_headers import staff_headers
+
+# [RBAC] issue #193/#198: GET /api/analytics/summary is now gated to
+# `view_analytics` (Manager/Administrator) — every call below sends a
+# real Administrator identity header.
 
 
 def test_analytics_summary_empty():
@@ -12,9 +17,10 @@ def test_analytics_summary_empty():
     # Ensure tickets from seed are not empty, but we can clear them for this test
     db.query(Ticket).delete()
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        response = client.get("/api/analytics/summary")
+        response = client.get("/api/analytics/summary", headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
@@ -43,20 +49,21 @@ def test_analytics_summary_clustering_shipping_delay():
     )
     db.add_all([t1, t2, t3, t4, t5])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        response = client.get("/api/analytics/summary")
+        response = client.get("/api/analytics/summary", headers=headers)
         assert response.status_code == 200
         data = response.json()
-        
+
         issues = data["recurring_issues"]
         assert len(issues) == 1
-        
+
         cluster = issues[0]
         assert cluster["ticket_count"] == 4
         assert "stuck" in cluster["pattern"] or "tracking" in cluster["pattern"] or "shipment" in cluster["pattern"] or "delay" in cluster["pattern"]
         assert "delays" in cluster["root_cause_hypothesis"].lower()
-        
+
         # Verify ticket IDs
         ticket_ids = cluster["ticket_ids"]
         assert t1.id in ticket_ids
@@ -76,9 +83,10 @@ def test_analytics_isolated_ticket():
     )
     db.add_all([t1])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        response = client.get("/api/analytics/summary")
+        response = client.get("/api/analytics/summary", headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data["recurring_issues"]) == 0
@@ -91,19 +99,20 @@ def test_analytics_ignores_old_tickets():
 
     now = datetime.utcnow()
     t_old = Ticket(
-        customer_id=1, category="order", subject="Tracking hasn't updated", message="My tracking is stuck", 
+        customer_id=1, category="order", subject="Tracking hasn't updated", message="My tracking is stuck",
         status="open", created_at=now - timedelta(days=35)
     )
     t_new = Ticket(
-        customer_id=1, category="order", subject="Tracking hasn't updated", message="My tracking is stuck", 
+        customer_id=1, category="order", subject="Tracking hasn't updated", message="My tracking is stuck",
         status="open", created_at=now - timedelta(days=5)
     )
-    
+
     db.add_all([t_old, t_new])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        response = client.get("/api/analytics/summary")
+        response = client.get("/api/analytics/summary", headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data["recurring_issues"]) == 0
@@ -123,25 +132,38 @@ def test_analytics_clustering_is_deterministic():
     t3 = Ticket(
         customer_id=1, category="order", subject="Package stuck at fulfillment stage", message="package stuck fulfillment", status="open"
     )
-    
+
     db.add_all([t1, t2, t3])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        response1 = client.get("/api/analytics/summary")
-        response2 = client.get("/api/analytics/summary")
-        
+        response1 = client.get("/api/analytics/summary", headers=headers)
+        response2 = client.get("/api/analytics/summary", headers=headers)
+
         data1 = response1.json()
         data2 = response2.json()
-        
+
         assert len(data1["recurring_issues"]) == 1
         cluster1 = data1["recurring_issues"][0]
         cluster2 = data2["recurring_issues"][0]
-        
+
         assert cluster1["ticket_count"] == cluster2["ticket_count"]
         assert cluster1["pattern"] == cluster2["pattern"]
         assert cluster1["root_cause_hypothesis"] == cluster2["root_cause_hypothesis"]
         assert cluster1["ticket_ids"] == cluster2["ticket_ids"]
+
+
+def test_analytics_summary_without_permission_is_a_real_403():
+    """[RBAC] issue #193/#198: a Support Agent (no `view_analytics`)
+    gets a real 403 on the analytics summary."""
+    db = SessionLocal()
+    headers = staff_headers(db, "support_agent")
+
+    with TestClient(app) as client:
+        response = client.get("/api/analytics/summary", headers=headers)
+
+    assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -156,9 +178,10 @@ def test_churn_signal_below_threshold_is_not_flagged():
 
     db.add(Ticket(customer_id=1, category="order", subject="Where is my order", message="?", status="open"))
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        response = client.get("/api/analytics/summary")
+        response = client.get("/api/analytics/summary", headers=headers)
         assert response.status_code == 200
         assert response.json()["churn_signals"] == []
 
@@ -173,9 +196,10 @@ def test_churn_signal_medium_risk_at_two_unresolved_tickets():
         Ticket(customer_id=1, category="billing", subject="b", message="b", status="escalated"),
     ])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     signals = data["churn_signals"]
     assert len(signals) == 1
@@ -193,9 +217,10 @@ def test_churn_signal_high_risk_at_four_unresolved_tickets():
         Ticket(customer_id=1, category="order", subject=f"t{i}", message="m", status="open") for i in range(4)
     ])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     signals = data["churn_signals"]
     assert len(signals) == 1
@@ -214,9 +239,10 @@ def test_churn_signal_resolved_tickets_dont_count():
         Ticket(customer_id=1, category="order", subject="c", message="c", status="resolved"),
     ])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     assert data["churn_signals"] == []
 
@@ -228,9 +254,10 @@ def test_trend_is_zero_padded_across_the_window():
 
     db.add(Ticket(customer_id=1, category="order", subject="a", message="a", status="open"))
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     trend = data["trend"]
     assert len(trend) == 30  # exactly 30 calendar days
@@ -257,11 +284,12 @@ def test_rates_with_mixed_tickets():
         db.add(Ticket(customer_id=1, category="order", subject="a", message="a", status="escalated"))
     for i in range(5):
         db.add(Ticket(customer_id=1, category="order", subject="a", message="a", status="open"))
-        
+
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     # denominator should be processed tickets (resolved + escalated) = 8
     res_rate = data["resolution_rate"]
@@ -283,9 +311,10 @@ def test_rates_with_only_open_tickets():
 
     db.add(Ticket(customer_id=1, category="order", subject="a", message="a", status="open"))
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     # no processed tickets
     res_rate = data["resolution_rate"]
@@ -310,9 +339,10 @@ def test_old_resolved_tickets_are_excluded_from_rates():
     t_new = Ticket(customer_id=1, category="order", subject="a", message="a", status="resolved", created_at=now - timedelta(days=5))
     db.add_all([t_old, t_new])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     res_rate = data["resolution_rate"]
     assert res_rate["resolved"] == 1
@@ -335,18 +365,19 @@ def test_sentiment_trend():
         Ticket(customer_id=1, category="order", subject="a", message="a", sentiment="invalid_sentiment"),
     ])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     sentiment_trend = data["sentiment_trend"]
     assert len(sentiment_trend) == 30
     today_bucket = sentiment_trend[-1]
-    
+
     assert today_bucket["positive"] == 1
     assert today_bucket["negative"] == 2
     assert today_bucket["neutral"] == 0
-    
+
     # sum of all positives across the trend should be exactly 1
     assert sum(day["positive"] for day in sentiment_trend) == 1
     assert sum(day["negative"] for day in sentiment_trend) == 2
@@ -366,9 +397,10 @@ def test_confidence_distribution_ignores_nulls():
         Ticket(customer_id=1, category="order", subject="a", message="a", confidence=None),
     ])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     dist = data["confidence_distribution"]
     assert dist["low"] == 1
@@ -389,9 +421,10 @@ def test_confidence_distribution_boundaries():
         Ticket(customer_id=1, category="order", subject="high", message="a", confidence=0.80),
     ])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     dist = data["confidence_distribution"]
     assert dist["low"] == 1
@@ -411,12 +444,13 @@ def test_analytics_30_day_cutoff_boundaries():
     t_exactly_30_days_ago = Ticket(customer_id=1, category="order", subject="30d ago", message="a", status="resolved", created_at=now - timedelta(days=30))
     t_start_of_29d_ago = Ticket(customer_id=1, category="order", subject="29d ago midnight", message="a", status="resolved", created_at=datetime(now.year, now.month, now.day) - timedelta(days=29))
     t_today = Ticket(customer_id=1, category="order", subject="today", message="a", status="resolved", created_at=now)
-    
+
     db.add_all([t_exactly_30_days_ago, t_start_of_29d_ago, t_today])
     db.commit()
+    headers = staff_headers(db, "administrator")
 
     with TestClient(app) as client:
-        data = client.get("/api/analytics/summary").json()
+        data = client.get("/api/analytics/summary", headers=headers).json()
 
     # t_exactly_30_days_ago is excluded, others included
     res_rate = data["resolution_rate"]

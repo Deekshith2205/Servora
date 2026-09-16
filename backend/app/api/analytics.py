@@ -3,8 +3,10 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from app.api.schemas import TeamActivityEntryOut
+from app.auth.dependency import require_permission
 from app.db.database import get_db
-from app.db.models import Customer, Ticket
+from app.db.models import Customer, Ticket, User
 
 router = APIRouter(prefix="/api", tags=["analytics"])
 
@@ -190,7 +192,11 @@ def compute_channel_metrics(db: Session, cutoff: datetime) -> list[dict]:
 
 
 @router.get("/analytics/summary")
-def analytics_summary(db: Session = Depends(get_db)) -> dict:
+def analytics_summary(
+    db: Session = Depends(get_db), _actor=Depends(require_permission("view_analytics"))
+) -> dict:
+    # [RBAC] issue #193: Manager + Administrator only — deliberately NOT
+    # Support Agent, matching the original spec's role boundaries.
     now = datetime.utcnow()
     # 30 calendar days including today (today + 29 previous days)
     # Start from midnight of the 29th day ago.
@@ -324,3 +330,48 @@ def analytics_summary(db: Session = Depends(get_db)) -> dict:
         # [Omnichannel] issue #158 — additive.
         "channel_metrics": channel_metrics,
     }
+
+
+def compute_team_activity(db: Session, cutoff: datetime) -> list[dict]:
+    """[RBAC] issue #197 — a real, if modest, per-staff-member open/
+    escalated ticket count, matched against the seeded `User` table by
+    NAME (`Ticket.assigned_to` is a plain free-text string, not a FK —
+    an honest limitation flagged explicitly here rather than silently
+    assumed away, matching this codebase's own convention of naming
+    scope limits instead of hiding them; a real FK is out of scope,
+    per issue #172's own explicit "left completely untouched" note)."""
+    staff = db.query(User).order_by(User.name).all()
+    tickets = (
+        db.query(Ticket)
+        .filter(Ticket.status.in_(["open", "escalated"]), Ticket.created_at >= cutoff, Ticket.assigned_to.isnot(None))
+        .all()
+    )
+
+    by_name: dict[str, dict] = {}
+    for t in tickets:
+        bucket = by_name.setdefault(t.assigned_to, {"open": 0, "escalated": 0})
+        bucket[t.status] += 1
+
+    activity = []
+    for user in staff:
+        counts = by_name.get(user.name, {"open": 0, "escalated": 0})
+        if counts["open"] == 0 and counts["escalated"] == 0:
+            continue  # only staff with at least one real assigned ticket, per the issue's own acceptance criteria
+        activity.append({
+            "user_id": user.id,
+            "name": user.name,
+            "role": user.role,
+            "open_ticket_count": counts["open"],
+            "escalated_ticket_count": counts["escalated"],
+        })
+    return activity
+
+
+@router.get("/team/activity", response_model=list[TeamActivityEntryOut])
+def team_activity(
+    db: Session = Depends(get_db), _actor=Depends(require_permission("view_analytics"))
+) -> list[dict]:
+    now = datetime.utcnow()
+    cutoff_date = (now - timedelta(days=29)).date()
+    cutoff = datetime(cutoff_date.year, cutoff_date.month, cutoff_date.day)
+    return compute_team_activity(db, cutoff)

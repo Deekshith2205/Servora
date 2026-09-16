@@ -3,8 +3,9 @@ something real to look up instead of hallucinating an answer.
 
 Run automatically on startup (see app/main.py) if the DB is empty.
 """
+from app.auth.roles import ADMINISTRATOR, MANAGER, SUPPORT_AGENT
 from app.db.database import SessionLocal
-from app.db.models import Channel, Customer, KBArticle, Order, Room, Ticket
+from app.db.models import Channel, Customer, KBArticle, Order, Room, SystemSetting, Ticket, User
 
 
 def seed_if_empty() -> None:
@@ -252,6 +253,27 @@ def seed_if_empty() -> None:
                 Channel(key="whatsapp", display_name="WhatsApp", status="not_configured"),
                 Channel(key="instagram", display_name="Instagram", status="not_configured"),
                 Channel(key="messenger", display_name="Facebook Messenger", status="not_configured"),
+            ]
+        )
+
+        # [RBAC] issue #172: 3 seeded staff identities, one per staff
+        # role — real names, real roles, no password (see User's own
+        # docstring for why). These are the identities the Role
+        # Switcher (a later, frontend issue) lets a session act as.
+        db.add_all(
+            [
+                User(name="Jordan Lee", email="jordan.lee@servora.example", role=SUPPORT_AGENT),
+                User(name="Priya Shah", email="priya.shah@servora.example", role=MANAGER),
+                User(name="Sam Okafor", email="sam.okafor@servora.example", role=ADMINISTRATOR),
+            ]
+        )
+
+        # [RBAC] issue #204: 2 real, meaningful starting settings — not a
+        # placeholder empty table.
+        db.add_all(
+            [
+                SystemSetting(key="demo_mode", value="true"),
+                SystemSetting(key="default_escalation_confidence_threshold", value="0.5"),
             ]
         )
 

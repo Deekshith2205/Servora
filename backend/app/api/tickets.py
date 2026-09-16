@@ -23,15 +23,42 @@ from app.api.schemas import (
     CustomerHistoryTicketOut,
     AssignTicketRequest,
 )
+from app.auth.dependency import CurrentActor, get_current_actor, require_permission
+from app.auth.investigation_visibility import can_handle_escalation, can_view_escalation_queue
 from app.db.database import get_db
 from app.db.models import Ticket, Customer
 from app.llm import LLMError
 
 router = APIRouter(prefix="/api", tags=["tickets"])
 
+_FORBIDDEN_DETAIL = "You do not have permission to perform this action."
+
+
+@router.get("/tickets/mine", response_model=list[TicketOut])
+def list_my_tickets(
+    db: Session = Depends(get_db), actor: CurrentActor = Depends(require_permission("view_own_tickets"))
+) -> list[Ticket]:
+    """[RBAC] issue #182 — a Customer's own real ticket status, reusing
+    the existing `Ticket`/`TicketOut` machinery. Scoped strictly to the
+    resolved actor's own `customer_id` — an actor with the permission
+    but no real `customer_id` (should not happen, `view_own_tickets` is
+    customer-only) gets a real empty list, never another customer's."""
+    if actor.customer_id is None:
+        return []
+    return db.query(Ticket).filter(Ticket.customer_id == actor.customer_id).order_by(Ticket.created_at.desc()).all()
+
 
 @router.get("/escalations", response_model=list[TicketOut])
-def list_escalations(db: Session = Depends(get_db)) -> list[Ticket]:
+def list_escalations(
+    db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> list[Ticket]:
+    """[RBAC] issues #190/#196/#220: `can_view_escalation_queue()` — a
+    Manager (`view_escalation_queue`) or a Support Agent/Administrator
+    (`handle_escalations`) may both list the real queue; only
+    `handle_escalations` holders may act on it (see the assign/resolve
+    endpoints below)."""
+    if not can_view_escalation_queue(actor):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
     return db.query(Ticket).filter(Ticket.status.in_(["open", "escalated"])).all()
 
 
@@ -41,7 +68,13 @@ def list_resolved(db: Session = Depends(get_db)) -> list[Ticket]:
 
 
 @router.get("/escalations/{ticket_id}", response_model=EscalationDetailOut)
-def get_escalation_detail(ticket_id: int, db: Session = Depends(get_db)) -> EscalationDetailOut:
+def get_escalation_detail(
+    ticket_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> EscalationDetailOut:
+    """[RBAC] issue #190: same `can_view_escalation_queue()` gate as the
+    list endpoint — detail is a drill-down of the same queue."""
+    if not can_view_escalation_queue(actor):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
@@ -99,8 +132,16 @@ def get_escalation_detail(ticket_id: int, db: Session = Depends(get_db)) -> Esca
 
 @router.post("/escalations/{ticket_id}/resolve", response_model=ResolveTicketResponse)
 def resolve_escalation(
-    ticket_id: int, payload: ResolveTicketRequest, db: Session = Depends(get_db)
+    ticket_id: int,
+    payload: ResolveTicketRequest,
+    db: Session = Depends(get_db),
+    actor: CurrentActor = Depends(get_current_actor),
 ) -> ResolveTicketResponse:
+    """[RBAC] issue #190: `can_handle_escalation()` — a real ACT
+    permission, distinct from `can_view_escalation_queue()`'s read-only
+    grant (a Manager can see this ticket but not resolve it)."""
+    if not can_handle_escalation(actor):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
@@ -136,8 +177,15 @@ def resolve_escalation(
 
 @router.post("/escalations/{ticket_id}/assign", response_model=TicketOut)
 def assign_escalation(
-    ticket_id: int, payload: AssignTicketRequest, db: Session = Depends(get_db)
+    ticket_id: int,
+    payload: AssignTicketRequest,
+    db: Session = Depends(get_db),
+    actor: CurrentActor = Depends(get_current_actor),
 ) -> TicketOut:
+    """[RBAC] issue #190: `can_handle_escalation()` — the same real ACT
+    permission `resolve_escalation()` requires."""
+    if not can_handle_escalation(actor):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
@@ -161,7 +209,15 @@ def assign_escalation(
 
 
 @router.post("/escalations/{ticket_id}/close", response_model=TicketOut)
-def close_escalation(ticket_id: int, db: Session = Depends(get_db)) -> TicketOut:
+def close_escalation(
+    ticket_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> TicketOut:
+    """[RBAC]: not explicitly named by any single issue, but the same
+    real class of action `resolve`/`assign` are (an escalation-queue
+    write) — gated with the same `can_handle_escalation()` check for
+    consistency rather than left as an obvious, unguarded gap."""
+    if not can_handle_escalation(actor):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")

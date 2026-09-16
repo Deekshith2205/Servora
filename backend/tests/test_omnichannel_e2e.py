@@ -29,6 +29,11 @@ from app.agents.verification import VerificationResult
 from app.db.database import SessionLocal
 from app.main import app
 from app.services.channel_adapters import route_channel_message
+from tests.rbac_headers import staff_headers
+
+# [RBAC]: Investigation detail and Analytics summary are both
+# permission-gated now (issues #187/#193) — the Inbox endpoint (#136)
+# is untouched by the RBAC batch and stays open.
 
 _MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 
@@ -64,6 +69,9 @@ def _run_channel_message_via_real_db(channel_key, payload):
 
 def test_whatsapp_conversation_agrees_across_inbox_investigation_and_analytics(monkeypatch):
     _mock_resolved_path(monkeypatch)
+    db = SessionLocal()
+    headers = staff_headers(db, "administrator")
+    db.close()
 
     payload = {"from": "15557778888", "id": "wamid.E2E_WHATSAPP", "text": {"body": "Where is my order?"}}
     result = _run_channel_message_via_real_db("whatsapp", payload)
@@ -78,7 +86,7 @@ def test_whatsapp_conversation_agrees_across_inbox_investigation_and_analytics(m
     assert inbox_row["channel_key"] == "whatsapp"
 
     # Surface 2: Investigation detail — same channel, same ticket.
-    inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}")
+    inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
     assert inv_resp.status_code == 200
     assert inv_resp.json()["channel"] == "whatsapp"
     assert inv_resp.json()["ticket_id"] == ticket_id
@@ -86,7 +94,7 @@ def test_whatsapp_conversation_agrees_across_inbox_investigation_and_analytics(m
     # Surface 3: Analytics channel_metrics (#158) — the real count
     # includes this conversation (>=1, since other tests/seed data may
     # also contribute whatsapp tickets in the same shared test DB).
-    analytics_resp = client.get("/api/analytics/summary")
+    analytics_resp = client.get("/api/analytics/summary", headers=headers)
     assert analytics_resp.status_code == 200
     channel_metrics = {m["channel"]: m for m in analytics_resp.json()["channel_metrics"]}
     assert "whatsapp" in channel_metrics
@@ -95,6 +103,9 @@ def test_whatsapp_conversation_agrees_across_inbox_investigation_and_analytics(m
 
 def test_email_conversation_agrees_across_inbox_investigation_and_analytics(monkeypatch):
     _mock_resolved_path(monkeypatch)
+    db = SessionLocal()
+    headers = staff_headers(db, "administrator")
+    db.close()
 
     payload = {
         "from": "e2e-email-test@example.com",
@@ -112,11 +123,11 @@ def test_email_conversation_agrees_across_inbox_investigation_and_analytics(monk
     assert inbox_row is not None
     assert inbox_row["channel_key"] == "email"
 
-    inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}")
+    inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
     assert inv_resp.status_code == 200
     assert inv_resp.json()["channel"] == "email"
 
-    analytics_resp = client.get("/api/analytics/summary")
+    analytics_resp = client.get("/api/analytics/summary", headers=headers)
     channel_metrics = {m["channel"]: m for m in analytics_resp.json()["channel_metrics"]}
     assert "email" in channel_metrics
     assert channel_metrics["email"]["total"] >= 1
