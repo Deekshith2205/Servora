@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.database import get_db
-from app.db.models import Customer, Ticket
+from app.db.models import Customer, Ticket, Channel
 
 router = APIRouter(prefix="/api", tags=["analytics"])
 
@@ -68,21 +68,39 @@ def compute_churn_signals(db: Session, cutoff: datetime) -> list[dict]:
     return signals
 
 
-def compute_trend(db: Session, now: datetime, cutoff: datetime, days: int) -> list[dict]:
+def compute_trend(db: Session, now: datetime, cutoff: datetime, days: int, include_channel_breakdown: bool = False) -> list[dict]:
     """Daily ticket volume over the lookback window, zero-padded so every
     day in the range appears (a real chart needs a continuous x-axis —
     padding with true zeros isn't fabricating data, it's just not omitting
     the days nothing happened)."""
     tickets_in_period = db.query(Ticket).filter(Ticket.created_at >= cutoff).all()
     counts: dict[str, int] = {}
+    channel_counts: dict[str, dict[str, int]] = {}
+    
+    official_channels = []
+    if include_channel_breakdown:
+        official_channels = [c.key for c in db.query(Channel).all()]
+    
     for t in tickets_in_period:
         day = t.created_at.date().isoformat()
         counts[day] = counts.get(day, 0) + 1
+        
+        if include_channel_breakdown:
+            if day not in channel_counts:
+                channel_counts[day] = {ch: 0 for ch in official_channels}
+            ch = t.channel_key or "live_chat"
+            # If a ticket has a channel that isn't in official_channels, add it ad-hoc
+            if ch not in channel_counts[day]:
+                channel_counts[day][ch] = 0
+            channel_counts[day][ch] += 1
 
     trend = []
     for i in range(days - 1, -1, -1):
         day = (now - timedelta(days=i)).date().isoformat()
-        trend.append({"date": day, "count": counts.get(day, 0)})
+        base_item = {"date": day, "count": counts.get(day, 0)}
+        if include_channel_breakdown:
+            base_item["channels"] = channel_counts.get(day, {ch: 0 for ch in official_channels})
+        trend.append(base_item)
     return trend
 
 
@@ -306,6 +324,7 @@ def analytics_summary(db: Session = Depends(get_db)) -> dict:
 
     churn_signals = compute_churn_signals(db, cutoff)
     trend = compute_trend(db, now, cutoff, days=30)
+    channel_trend = compute_trend(db, now, cutoff, days=30, include_channel_breakdown=True)
     rates = compute_resolution_and_escalation_rates(db, cutoff)
     sentiment_trend = compute_sentiment_trend(db, now, cutoff, days=30)
     confidence_distribution = compute_confidence_distribution(db, cutoff)
@@ -317,6 +336,7 @@ def analytics_summary(db: Session = Depends(get_db)) -> dict:
         "recurring_issues": recurring_issues,
         "churn_signals": churn_signals,
         "trend": trend,
+        "channel_trend": channel_trend,
         "resolution_rate": rates["resolution_rate"],
         "escalation_rate": rates["escalation_rate"],
         "sentiment_trend": sentiment_trend,
