@@ -30,6 +30,17 @@ function formatRelativeTime(dateString) {
   return `${diffDays}d ago`;
 }
 
+function truncatePreview(text, maxLength = 80) {
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  const truncated = text.slice(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(" ");
+  if (lastSpace > 0) {
+    return truncated.slice(0, lastSpace) + "...";
+  }
+  return truncated + "...";
+}
+
 function ConversationListItem({ item, isSelected, onClick }) {
   const timeStr = formatRelativeTime(item.updated_at);
 
@@ -48,7 +59,7 @@ function ConversationListItem({ item, isSelected, onClick }) {
         <StatusBadge status={item.status} />
       </div>
       <div className="inbox-row-subject">{item.subject}</div>
-      <div className="inbox-row-preview">{item.preview}</div>
+      <div className="inbox-row-preview">{truncatePreview(item.preview)}</div>
     </button>
   );
 }
