@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { fetchInbox, fetchInboxDetail } from "../api/client";
+import React, { useState, useEffect, useRef } from "react";
+import { fetchInbox, fetchInboxDetail, fetchChannels } from "../api/client";
 import "./Inbox.css";
 
 function StatusBadge({ status }) {
@@ -21,9 +21,9 @@ function ChannelBadge({ channel }) {
 
 function ConversationRow({ item, isSelected, onClick }) {
   const timeStr = new Date(item.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  
+
   return (
-    <button 
+    <button
       className={`inbox-row ${isSelected ? 'selected' : ''}`}
       onClick={() => onClick(item.id)}
       aria-label={`Conversation with ${item.customer.name}`}
@@ -43,30 +43,79 @@ function ConversationRow({ item, isSelected, onClick }) {
 }
 
 export default function Inbox() {
+  const [channels, setChannels] = useState([]);
+  const [selectedChannelKey, setSelectedChannelKey] = useState(null);
+  const [channelCounts, setChannelCounts] = useState({});
+  const [totalCount, setTotalCount] = useState(0);
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
-  
+
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
 
+  const requestRef = useRef(0);
+
   useEffect(() => {
-    loadInbox();
+    let isMounted = true;
+    const init = async () => {
+      try {
+        const chans = await fetchChannels();
+        if (!isMounted) return;
+        setChannels(chans);
+
+        const counts = {};
+
+        fetchInbox().then(data => {
+          if (isMounted) setTotalCount(data.length);
+        }).catch(err => console.error("Failed to load total count", err));
+
+        await Promise.all(chans.map(async (c) => {
+          try {
+            const data = await fetchInbox(c.key);
+            if (isMounted) counts[c.key] = data.length;
+          } catch (err) {
+            console.error(`Failed to load count for ${c.key}`, err);
+            if (isMounted) counts[c.key] = 0;
+          }
+        }));
+
+        if (isMounted) {
+          setChannelCounts(counts);
+        }
+      } catch (err) {
+        console.error("Failed to load channels/counts", err);
+      }
+    };
+    init();
+    loadInbox(null);
+    return () => { isMounted = false; };
   }, []);
 
-  const loadInbox = async () => {
+  const loadInbox = async (channelKey) => {
+    const currentReq = ++requestRef.current;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchInbox();
-      setConversations(data);
+      const data = await fetchInbox(channelKey);
+      if (currentReq === requestRef.current) {
+        setConversations(data);
+        setLoading(false);
+      }
     } catch (err) {
-      setError(err.message || "Failed to load conversations.");
-    } finally {
-      setLoading(false);
+      if (currentReq === requestRef.current) {
+        setError(err.message || "Failed to load conversations.");
+        setLoading(false);
+      }
     }
+  };
+
+  const handleChannelSelect = (channelKey) => {
+    setSelectedChannelKey(channelKey);
+    setSelectedId(null);
+    loadInbox(channelKey);
   };
 
   useEffect(() => {
@@ -74,7 +123,7 @@ export default function Inbox() {
       setDetail(null);
       return;
     }
-    
+
     let isMounted = true;
     const loadDetail = async () => {
       setDetailLoading(true);
@@ -88,14 +137,35 @@ export default function Inbox() {
         if (isMounted) setDetailLoading(false);
       }
     };
-    
+
     loadDetail();
-    
+
     return () => { isMounted = false; };
   }, [selectedId]);
 
   return (
     <div className="inbox-container">
+      <div className="inbox-channels-sidebar">
+        <button
+          className={`channel-tab ${selectedChannelKey === null ? 'active' : ''}`}
+          onClick={() => handleChannelSelect(null)}
+        >
+          All
+          {totalCount > 0 && <span className="channel-count">{totalCount}</span>}
+        </button>
+        {channels.map(ch => (
+          <button
+            key={ch.key}
+            className={`channel-tab ${selectedChannelKey === ch.key ? 'active' : ''}`}
+            onClick={() => handleChannelSelect(ch.key)}
+          >
+            {ch.display_name || ch.key}
+            {channelCounts[ch.key] !== undefined && channelCounts[ch.key] > 0 && (
+              <span className="channel-count">{channelCounts[ch.key]}</span>
+            )}
+          </button>
+        ))}
+      </div>
       <div className={`inbox-list-panel ${selectedId ? 'hide-on-mobile' : ''}`}>
         {loading ? (
           <div className="inbox-loading skeleton">Loading conversations...</div>
@@ -109,17 +179,17 @@ export default function Inbox() {
         ) : (
           <div className="inbox-list">
             {conversations.map(conv => (
-              <ConversationRow 
-                key={conv.id} 
-                item={conv} 
+              <ConversationRow
+                key={conv.id}
+                item={conv}
                 isSelected={selectedId === conv.id}
-                onClick={setSelectedId} 
+                onClick={setSelectedId}
               />
             ))}
           </div>
         )}
       </div>
-      
+
       <div className={`inbox-detail-panel ${selectedId ? 'open' : ''}`}>
         {!selectedId ? (
           <div className="inbox-empty-detail">Select a conversation to view details.</div>
@@ -139,7 +209,7 @@ export default function Inbox() {
               <h2>{detail.customer.name}</h2>
               <div className="inbox-detail-email">{detail.customer.email}</div>
             </div>
-            
+
             <div className="inbox-detail-meta summary-card">
               <div className="detail-meta-row">
                 <span className="meta-label">Channel:</span>
@@ -164,7 +234,7 @@ export default function Inbox() {
                 </div>
               )}
             </div>
-            
+
             <div className="inbox-detail-message summary-card">
               <h3>Message</h3>
               <p className="message-body">{detail.message}</p>

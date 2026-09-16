@@ -64,8 +64,13 @@ export function fetchEscalations() {
   return request("/api/escalations");
 }
 
-export function fetchInbox() {
-  return request("/api/inbox");
+export function fetchInbox(channel = null) {
+  const url = channel ? `/api/inbox?channel=${encodeURIComponent(channel)}` : "/api/inbox";
+  return request(url);
+}
+
+export function fetchChannels() {
+  return request("/api/channels");
 }
 
 export function fetchInboxDetail(ticketId) {
