@@ -1,0 +1,106 @@
+.crh-container {
+  padding: 2rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.crh-subtitle {
+  color: var(--app-text-muted);
+  margin-bottom: 2rem;
+}
+.crh-ticket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.crh-ticket-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.crh-ticket-header {
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  background: var(--app-surface);
+  transition: background 0.15s ease;
+}
+.crh-ticket-header:hover {
+  background: var(--app-bg);
+}
+.crh-ticket-main h4 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  color: var(--app-text-primary);
+}
+.crh-ticket-date {
+  font-size: 0.8rem;
+  color: var(--app-text-muted);
+}
+.crh-ticket-status {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.crh-chevron {
+  transition: transform 0.2s ease;
+  color: var(--app-text-muted);
+}
+.crh-chevron.expanded {
+  transform: rotate(180deg);
+}
+.crh-ticket-details {
+  padding: 1.5rem;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-bg);
+}
+.crh-ticket-message {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--app-surface);
+  border-radius: 6px;
+  border: 1px solid var(--app-border);
+  font-size: 0.9rem;
+}
+.crh-ticket-message p {
+  margin: 0 0 0.5rem 0;
+}
+.crh-ticket-message p:last-child {
+  margin: 0;
+}
+.crh-resolution-box {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.crh-resolution-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.crh-resolution-field strong {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  color: var(--app-text-secondary);
+  letter-spacing: 0.05em;
+}
+.crh-resolution-field p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--app-text-primary);
+}
+.crh-loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--app-text-muted);
+}
+.crh-error {
+  color: var(--app-danger-text);
+  padding: 1rem;
+  background: #fee2e2;
+  border-radius: 6px;
+  border: 1px solid #fca5a5;
+}

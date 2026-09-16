@@ -1,6 +1,7 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolvedHistory, resolveEscalation, assignEscalation, closeEscalation } from "../api/client";
 import BookingsPanel from "./BookingsPanel";
+import Can from "../auth/Can";
 import InvestigationTimeline from "../components/InvestigationTimeline";
 import ExplainableAIPanel from "../components/ExplainableAIPanel";
 import { ChannelBadge } from "../components/channelMeta";
@@ -740,58 +741,60 @@ export default function StaffDashboard() {
                 </>
               ) : null}
 
-              <div className="drawer-section">
-                <div className="drawer-section-title">Staff Actions</div>
-                <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
-                  
-                  <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                    <label style={{fontSize: '0.85rem', fontWeight: 600, color: 'var(--app-text-secondary)'}}>Assigned to</label>
-                    <div style={{display: 'flex', gap: '0.5rem'}}>
-                      <input 
-                        type="text" 
-                        value={assignmentInput} 
-                        onChange={(e) => setAssignmentInput(e.target.value)} 
-                        placeholder="Unassigned"
-                        disabled={assigning}
-                        className="app-input"
-                        style={{flex: 1}}
-                      />
-                      <button 
-                        className="app-btn-secondary" 
-                        onClick={handleAssign} 
-                        disabled={assigning || (assignmentInput.trim() === (selectedEscalation.assigned_to || ""))}
-                      >
-                        {assigning ? 'Assigning...' : 'Assign'}
-                      </button>
-                    </div>
-                    {assignError && <div style={{color: 'var(--app-danger-text)', fontSize: '0.8rem'}}>{assignError}</div>}
-                  </div>
-
-                  <div style={{display: 'flex', gap: '0.75rem'}}>
-                    <button 
-                      className="app-btn-danger" 
-                      onClick={() => setShowCloseConfirm(true)}
-                      disabled={closing || selectedEscalation.status === 'closed' || selectedEscalation.status === 'resolved'}
-                      style={{flex: 1}}
-                    >
-                      Close case
-                    </button>
-                  </div>
-                  
-                  {showCloseConfirm && (
-                    <div style={{background: '#fee2e2', border: '1px solid #fca5a5', padding: '1rem', borderRadius: '8px', fontSize: '0.85rem'}}>
-                      <p style={{margin: '0 0 0.75rem', color: '#991b1b', fontWeight: 500}}>Close this escalation? It will leave the active support queue without running the resolution workflow.</p>
+              <Can permission="handle_escalations">
+                <div className="drawer-section">
+                  <div className="drawer-section-title">Staff Actions</div>
+                  <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+                    
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                      <label style={{fontSize: '0.85rem', fontWeight: 600, color: 'var(--app-text-secondary)'}}>Assigned to</label>
                       <div style={{display: 'flex', gap: '0.5rem'}}>
-                        <button className="app-btn-secondary" onClick={() => setShowCloseConfirm(false)} disabled={closing}>Cancel</button>
-                        <button className="app-btn-danger" onClick={handleClose} disabled={closing}>
-                          {closing ? 'Closing...' : 'Close case'}
+                        <input 
+                          type="text" 
+                          value={assignmentInput} 
+                          onChange={(e) => setAssignmentInput(e.target.value)} 
+                          placeholder="Unassigned"
+                          disabled={assigning}
+                          className="app-input"
+                          style={{flex: 1}}
+                        />
+                        <button 
+                          className="app-btn-secondary" 
+                          onClick={handleAssign} 
+                          disabled={assigning || (assignmentInput.trim() === (selectedEscalation.assigned_to || ""))}
+                        >
+                          {assigning ? 'Assigning...' : 'Assign'}
                         </button>
                       </div>
-                      {closeError && <div style={{color: '#991b1b', fontSize: '0.8rem', marginTop: '0.5rem'}}>{closeError}</div>}
+                      {assignError && <div style={{color: 'var(--app-danger-text)', fontSize: '0.8rem'}}>{assignError}</div>}
                     </div>
-                  )}
+
+                    <div style={{display: 'flex', gap: '0.75rem'}}>
+                      <button 
+                        className="app-btn-danger" 
+                        onClick={() => setShowCloseConfirm(true)}
+                        disabled={closing || selectedEscalation.status === 'closed' || selectedEscalation.status === 'resolved'}
+                        style={{flex: 1}}
+                      >
+                        Close case
+                      </button>
+                    </div>
+                    
+                    {showCloseConfirm && (
+                      <div style={{background: '#fee2e2', border: '1px solid #fca5a5', padding: '1rem', borderRadius: '8px', fontSize: '0.85rem'}}>
+                        <p style={{margin: '0 0 0.75rem', color: '#991b1b', fontWeight: 500}}>Close this escalation? It will leave the active support queue without running the resolution workflow.</p>
+                        <div style={{display: 'flex', gap: '0.5rem'}}>
+                          <button className="app-btn-secondary" onClick={() => setShowCloseConfirm(false)} disabled={closing}>Cancel</button>
+                          <button className="app-btn-danger" onClick={handleClose} disabled={closing}>
+                            {closing ? 'Closing...' : 'Close case'}
+                          </button>
+                        </div>
+                        {closeError && <div style={{color: '#991b1b', fontSize: '0.8rem', marginTop: '0.5rem'}}>{closeError}</div>}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              </Can>
 
               {/* Issue #17: resolve this escalation, then let the Learning
                   Agent suggest a KB article for a human to approve. */}
@@ -832,22 +835,24 @@ export default function StaffDashboard() {
                             </div>
                           )}
                           {kbApproveError && <p className="error" style={{fontSize: "0.8rem"}}>{kbApproveError}</p>}
-                          <div style={{display: "flex", gap: "0.5rem"}}>
-                            <button
-                              onClick={handleApproveKB}
-                              disabled={kbApproving}
-                              style={{background: "var(--app-primary)", color: "#fff", border: "none", padding: "0.4rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem"}}
-                            >
-                              {kbApproving ? "Adding…" : "Approve"}
-                            </button>
-                            <button
-                              onClick={() => setKbSuggestion({ ...kbSuggestion, should_add: false })}
-                              disabled={kbApproving}
-                              style={{background: "var(--app-surface)", border: "1px solid var(--app-border)", padding: "0.4rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem"}}
-                            >
-                              Dismiss
-                            </button>
-                          </div>
+                          <Can permission="manage_knowledge_base">
+                            <div style={{display: "flex", gap: "0.5rem"}}>
+                              <button
+                                onClick={handleApproveKB}
+                                disabled={kbApproving}
+                                style={{background: "var(--app-primary)", color: "#fff", border: "none", padding: "0.4rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem"}}
+                              >
+                                {kbApproving ? "Adding…" : "Approve"}
+                              </button>
+                              <button
+                                onClick={() => setKbSuggestion({ ...kbSuggestion, should_add: false })}
+                                disabled={kbApproving}
+                                style={{background: "var(--app-surface)", border: "1px solid var(--app-border)", padding: "0.4rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem"}}
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          </Can>
                         </div>
                       )
                     ) : (
@@ -862,26 +867,28 @@ export default function StaffDashboard() {
                     This escalation is marked resolved.
                   </p>
                 ) : (
-                  <div style={{display: "flex", flexDirection: "column", gap: "0.6rem"}}>
-                    <label style={{fontSize: "0.8rem", fontWeight: 600, color: "var(--app-text-secondary)"}}>
-                      How was this resolved? (optional, but helps the KB suggestion)
-                    </label>
-                    <textarea
-                      value={resolveNotes}
-                      onChange={(e) => setResolveNotes(e.target.value)}
-                      placeholder="e.g. Manually migrated the customer off the legacy billing plan, then issued the refund."
-                      rows={3}
-                      style={{width: "100%", padding: "0.5rem", borderRadius: "6px", border: "1px solid var(--app-border)", fontFamily: "inherit", fontSize: "0.85rem", resize: "vertical"}}
-                    />
-                    {resolveError && <p className="error" style={{fontSize: "0.8rem"}}>{resolveError}</p>}
-                    <button
-                      onClick={handleResolve}
-                      disabled={resolving}
-                      style={{alignSelf: "flex-start", background: "var(--app-primary)", color: "#fff", border: "none", padding: "0.5rem 1.2rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem"}}
-                    >
-                      {resolving ? "Resolving…" : "Mark Resolved"}
-                    </button>
-                  </div>
+                  <Can permission="handle_escalations">
+                    <div style={{display: "flex", flexDirection: "column", gap: "0.6rem"}}>
+                      <label style={{fontSize: "0.8rem", fontWeight: 600, color: "var(--app-text-secondary)"}}>
+                        How was this resolved? (optional, but helps the KB suggestion)
+                      </label>
+                      <textarea
+                        value={resolveNotes}
+                        onChange={(e) => setResolveNotes(e.target.value)}
+                        placeholder="e.g. Manually migrated the customer off the legacy billing plan, then issued the refund."
+                        rows={3}
+                        style={{width: "100%", padding: "0.5rem", borderRadius: "6px", border: "1px solid var(--app-border)", fontFamily: "inherit", fontSize: "0.85rem", resize: "vertical"}}
+                      />
+                      {resolveError && <p className="error" style={{fontSize: "0.8rem"}}>{resolveError}</p>}
+                      <button
+                        onClick={handleResolve}
+                        disabled={resolving}
+                        style={{alignSelf: "flex-start", background: "var(--app-primary)", color: "#fff", border: "none", padding: "0.5rem 1.2rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem"}}
+                      >
+                        {resolving ? "Resolving…" : "Mark Resolved"}
+                      </button>
+                    </div>
+                  </Can>
                 )}
               </div>
 

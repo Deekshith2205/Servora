@@ -1,9 +1,19 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function request(path, options = {}) {
+  const role = localStorage.getItem("servoraRole");
+  const userId = localStorage.getItem("servoraUserId");
+  const customerId = localStorage.getItem("servoraCustomerId");
+
+  const headers = { "Content-Type": "application/json", ...options.headers };
+  
+  if (role) headers["X-Servora-Role"] = role;
+  if (userId) headers["X-Servora-User-Id"] = userId;
+  if (customerId) headers["X-Servora-Customer-Id"] = customerId;
+
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers,
   });
   if (!res.ok) {
     // FastAPI's HTTPException bodies carry a "detail" string (e.g. issue
@@ -20,6 +30,14 @@ async function request(path, options = {}) {
     throw new Error(detail || `Request to ${path} failed: ${res.status}`);
   }
   return res.json();
+}
+
+export function fetchPermissions() {
+  return request("/api/auth/permissions");
+}
+
+export function fetchAuthMe() {
+  return request("/api/auth/me");
 }
 
 export function sendChatMessage(customerId, message, streamKey = null) {
@@ -81,6 +99,10 @@ export function fetchChannels() {
 
 export function fetchInboxDetail(ticketId) {
   return request(`/api/inbox/${ticketId}`);
+}
+
+export function fetchMyTickets() {
+  return request("/api/tickets/mine");
 }
 
 export function fetchResolvedHistory() {
