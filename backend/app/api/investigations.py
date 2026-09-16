@@ -50,6 +50,7 @@ def _to_investigation_out(investigation: Investigation) -> InvestigationOut:
         resolution=investigation.resolution,
         status=investigation.status,
         channel_metadata=investigation.channel_metadata,
+        channel=investigation.channel_key,
         timeline=[
             InvestigationStepOut(
                 step_number=s.step_number,
@@ -117,6 +118,8 @@ def list_investigations(limit: int = 50, db: Session = Depends(get_db)) -> list[
             root_cause=inv.root_cause,
             confidence=inv.confidence_score,
             started_at=inv.started_at.isoformat(),
+            channel=inv.channel_key,
+            channel_metadata=inv.channel_metadata,
         )
         for inv in investigations
     ]
