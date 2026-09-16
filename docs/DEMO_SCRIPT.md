@@ -158,6 +158,16 @@ specialist's first answer. Issue #109/#110.
    for free from the existing cross-investigation aggregate, no new
    dashboard needed.
 
+## Scenario 6 — The Multi-Channel Journey
+
+**What it shows:** the agent maintaining context across different channels, and the Staff Dashboard displaying a unified view of the customer's cross-channel interactions. Issue #163.
+
+1. In **Customer Chat**, start a conversation to create a ticket (e.g., "I need help with my recent order"). This defaults to Live Chat (or Email if selected in the demo harness). Wait for the resolution or escalation.
+2. Using the backend test data or demo harness, simulate the customer reaching out again regarding the same or a new issue, but this time via **WhatsApp** (or another channel). Note that the agent is fully aware of the prior interaction and seamlessly continues the context.
+3. Switch to the **Staff Dashboard** and open an escalation (or just view the customer profile from the Evidence Explorer). 
+4. Scroll down to the **Customer Profile** section in the drawer. Point out the **Channels Used** badge list — a visual summary proving the customer has interacted across multiple distinct channels.
+5. Look at the **Conversation History** list directly below it. Point out that the previous tickets are listed newest-first, and each ticket has a distinct **channel badge** (e.g., Live Chat, WhatsApp) right next to the Ticket ID. This demonstrates a true omnichannel history without requiring the agent or staff to check different systems.
+
 ## Optional bonus material (if time allows)
 
 These aren't part of the required 3-scenario script but are worth a
