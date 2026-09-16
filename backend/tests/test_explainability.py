@@ -323,6 +323,7 @@ def test_explanation_endpoint_for_a_resolved_investigation():
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "resolved"
+    assert body["channel"] == "live_chat"
 
     # [EXPLAIN] #90: overall + per-agent breakdown, only for agents that
     # actually produced a confidence value.

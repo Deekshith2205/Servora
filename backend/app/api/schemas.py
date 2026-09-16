@@ -479,6 +479,7 @@ class ExplanationOut(BaseModel):
 
     investigation_id: int
     status: str
+    channel: str = "live_chat"
     confidence: ConfidenceOut
     evidence: list[str] = []
     evidence_refs: list[EvidenceRefOut] = []

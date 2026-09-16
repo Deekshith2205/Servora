@@ -5,6 +5,7 @@ import {
   fetchInvestigations,
 } from "../api/client";
 import { AgentIcon, ConfidenceBadge, agentLabel } from "../components/agentMeta";
+import { ChannelBadge } from "../components/channelMeta";
 import EvidenceCard from "../components/explainability/EvidenceCard.jsx";
 import ExplainabilityDrawer from "../components/explainability/ExplainabilityDrawer.jsx";
 import { dedupeEvidence, flattenEvidence, unstructuredEvidence } from "../utils/investigationEvidence.js";
@@ -42,11 +43,12 @@ const STATUS_CLASS = {
 // -------------------------------------------------------------------------
 // A. Investigation Status
 // -------------------------------------------------------------------------
-function StatusBanner({ status }) {
+function StatusBanner({ status, channelKey }) {
   const label = STATUS_LABELS[status] || status;
   const cls = STATUS_CLASS[status] || "status-investigating";
   return (
     <div className={`ib-status-banner ${cls}`}>
+      {channelKey && <ChannelBadge channelKey={channelKey} />}
       <span className="ib-status-dot"></span>
       <span className="ib-status-label">{label}</span>
     </div>
@@ -141,7 +143,7 @@ function InvestigationChecklistTimeline({ steps, revealedCount }) {
 // instead of the old plain-text prose list. Clicking a card opens the
 // Explainability Drawer for exactly that evidence item.
 // -------------------------------------------------------------------------
-function EvidencePanel({ timeline, activeEvidenceId, onSelectEvidence }) {
+function EvidencePanel({ timeline, activeEvidenceId, onSelectEvidence, investigationChannel }) {
   const structured = useMemo(() => dedupeEvidence(flattenEvidence(timeline)), [timeline]);
   const prose = useMemo(() => unstructuredEvidence(timeline), [timeline]);
 
@@ -155,7 +157,10 @@ function EvidencePanel({ timeline, activeEvidenceId, onSelectEvidence }) {
   }
   return (
     <div className="ib-section">
-      <div className="ib-section-title">Evidence Collected</div>
+      <div className="ib-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Evidence Collected</span>
+        {investigationChannel && <ChannelBadge channelKey={investigationChannel} />}
+      </div>
       <div className="ib-evidence-grid">
         {structured.map((item) => (
           <EvidenceCard
@@ -439,9 +444,12 @@ export default function InvestigationBoard() {
                   onClick={() => setSelectedId(inv.id)}
                 >
                   <div className="ib-list-item-top">
-                    <span className={`app-badge ${inv.status === "escalated" ? "badge-warning" : "badge-success"}`}>
-                      {STATUS_LABELS[inv.status] || inv.status}
-                    </span>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <ChannelBadge channelKey={inv.channel} />
+                      <span className={`app-badge ${inv.status === "escalated" ? "badge-warning" : "badge-success"}`}>
+                        {STATUS_LABELS[inv.status] || inv.status}
+                      </span>
+                    </div>
                     <ConfidenceBadge value={inv.confidence} />
                   </div>
                   <div className="ib-list-item-cause">{inv.root_cause || "Root cause not yet determined."}</div>
@@ -463,7 +471,7 @@ export default function InvestigationBoard() {
             </div>
           ) : (
             <>
-              <StatusBanner status={isFullyRevealed ? detail.status : "investigating"} />
+              <StatusBanner status={isFullyRevealed ? detail.status : "investigating"} channelKey={detail.channel} />
               <AgentActivityFeed steps={detail.timeline} revealedCount={revealedCount} />
               <InvestigationChecklistTimeline steps={detail.timeline} revealedCount={revealedCount} />
               {isFullyRevealed && (
@@ -472,6 +480,7 @@ export default function InvestigationBoard() {
                     timeline={detail.timeline}
                     activeEvidenceId={activeEvidenceId}
                     onSelectEvidence={setActiveEvidenceId}
+                    investigationChannel={detail.channel}
                   />
                   <RootCauseCard rootCause={detail.root_cause} confidence={detail.confidence} />
                   <ResolutionCard resolution={detail.resolution} confidence={detail.confidence} status={detail.status} />
@@ -492,6 +501,7 @@ export default function InvestigationBoard() {
           investigationId={detail.id}
           evidenceId={activeEvidenceId}
           allEvidence={allEvidence}
+          investigationChannel={detail.channel}
           onClose={() => setActiveEvidenceId(null)}
           onSelectEvidence={setActiveEvidenceId}
         />

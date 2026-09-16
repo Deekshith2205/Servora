@@ -143,12 +143,13 @@ def _decision_rationale(investigation: Investigation, db: Session) -> str:
 
 @router.get("/{investigation_id}/explanation", response_model=ExplanationOut)
 def get_explanation(investigation_id: int, db: Session = Depends(get_db)) -> ExplanationOut:
-    """The Explainable AI Panel's single source of data."""
+    """The Explainability Panel's single source of data."""
     investigation = _get_investigation(investigation_id, db)
     evidence = _evidence(investigation)
     return ExplanationOut(
         investigation_id=investigation.id,
         status=investigation.status,
+        channel=investigation.channel_key,
         confidence=_confidence_breakdown(investigation),
         evidence=evidence.evidence,
         evidence_refs=evidence.evidence_refs,

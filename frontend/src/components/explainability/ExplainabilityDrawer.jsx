@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { fetchEvidenceDetail } from "../../api/client";
 import { agentLabel, agentType, AgentIcon, ConfidenceBadge } from "../agentMeta.jsx";
+import { ChannelBadge } from "../channelMeta.jsx";
 import EvidenceTimeline from "./EvidenceTimeline.jsx";
 import SourceRecordViewer from "./SourceRecordViewer.jsx";
 import ToolExecutionPanel from "./ToolExecutionPanel.jsx";
@@ -18,7 +19,7 @@ function formatTimestamp(isoString) {
   }
 }
 
-export default function ExplainabilityDrawer({ investigationId, evidenceId, allEvidence, onClose, onSelectEvidence }) {
+export default function ExplainabilityDrawer({ investigationId, evidenceId, allEvidence, investigationChannel, onClose, onSelectEvidence }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -46,7 +47,10 @@ export default function ExplainabilityDrawer({ investigationId, evidenceId, allE
       <div className="expl-drawer" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Evidence details">
         <div className="expl-drawer-header">
           <div>
-            <div className="expl-drawer-eyebrow">Evidence Detail</div>
+            <div className="expl-drawer-eyebrow" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span>Evidence Detail</span>
+              {investigationChannel && <ChannelBadge channelKey={investigationChannel} />}
+            </div>
             <h3 className="expl-drawer-title">{detail ? detail.title : "Loading…"}</h3>
           </div>
           <button className="expl-drawer-close" onClick={onClose} aria-label="Close">
