@@ -5,7 +5,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.db.models import Ticket, Customer, Investigation
+from sqlalchemy.pool import StaticPool
+
+from app.db.models import Ticket, Customer, Investigation, Channel
 from app.db.database import SessionLocal, Base, get_db
 from app.main import app
 
@@ -210,3 +212,117 @@ def test_inbox_channel_filtering():
         app.dependency_overrides.clear()
         db.close()
 
+
+def _setup_isolated_db_for_search():
+    engine = create_engine(
+        "sqlite://", 
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
+    Base.metadata.create_all(bind=engine)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = TestingSessionLocal()
+    
+    channels = [
+        Channel(key="whatsapp", display_name="WhatsApp", status="active"),
+        Channel(key="email", display_name="Email", status="active"),
+    ]
+    db.add_all(channels)
+    
+    c1 = Customer(name="Alice Smith", email="alice@example.com")
+    c2 = Customer(name="Bob Jones", email="bob@test.com")
+    db.add_all([c1, c2])
+    db.commit()
+    
+    now = datetime.utcnow()
+    t1 = Ticket(customer_id=c1.id, subject="T1", message="Help me with login", channel_key="whatsapp", status="open", created_at=now - timedelta(days=2))
+    t2 = Ticket(customer_id=c2.id, subject="T2", message="Billing issue ALICE related", channel_key="email", status="resolved", created_at=now - timedelta(days=1))
+    t3 = Ticket(customer_id=c1.id, subject="T3", message="Another question", channel_key="email", status="escalated", created_at=now)
+    db.add_all([t1, t2, t3])
+    db.commit()
+    db.close()
+    
+    def override_get_db():
+        try:
+            session = TestingSessionLocal()
+            yield session
+        finally:
+            session.close()
+            
+    return override_get_db
+
+
+def test_inbox_search_and_filter():
+    app.dependency_overrides[get_db] = _setup_isolated_db_for_search()
+    try:
+        # no filters equals current unfiltered behavior
+        r = client.get("/api/inbox")
+        assert r.status_code == 200
+        assert len(r.json()) == 3
+        # newest first
+        assert r.json()[0]["subject"] == "T3"
+
+        # whitespace-only q
+        r = client.get("/api/inbox?q=   ")
+        assert len(r.json()) == 3
+
+        # customer-name search
+        r = client.get("/api/inbox?q=Alice")
+        assert len(r.json()) == 3 # T1 and T3 match name, T2 matches message text "ALICE"
+
+        r = client.get("/api/inbox?q=bob") # case-insensitive
+        assert len(r.json()) == 1
+        assert r.json()[0]["subject"] == "T2"
+
+        # customer-email search
+        r = client.get("/api/inbox?q=test.com")
+        assert len(r.json()) == 1
+
+        # message-text search
+        r = client.get("/api/inbox?q=login")
+        assert len(r.json()) == 1
+        assert r.json()[0]["subject"] == "T1"
+
+        # no-match
+        r = client.get("/api/inbox?q=xyzzzzz")
+        assert len(r.json()) == 0
+
+        # each supported status
+        r = client.get("/api/inbox?status=open")
+        assert len(r.json()) == 1
+        r = client.get("/api/inbox?status=resolved")
+        assert len(r.json()) == 1
+        r = client.get("/api/inbox?status=escalated")
+        assert len(r.json()) == 1
+
+        # invalid status behavior
+        r = client.get("/api/inbox?status=invalid")
+        assert r.status_code == 400
+
+        # channel + q
+        r = client.get("/api/inbox?channel=whatsapp&q=alice")
+        assert len(r.json()) == 1 # Only T1
+
+        # channel + status
+        r = client.get("/api/inbox?channel=email&status=resolved")
+        assert len(r.json()) == 1 # T2
+
+        # q + status
+        r = client.get("/api/inbox?q=alice&status=escalated")
+        assert len(r.json()) == 1 # T3
+
+        # channel + q + status
+        r = client.get("/api/inbox?channel=email&q=alice&status=resolved")
+        assert len(r.json()) == 1 # T2 (matches q="alice" via message, channel=email, status=resolved)
+
+        # one-row-per-ticket remains true
+        inv = Investigation(ticket_id=1, customer_id=1, status="investigating")
+        db = next(_setup_isolated_db_for_search()())
+        db.add(inv)
+        db.commit()
+        db.close()
+        r = client.get("/api/inbox")
+        assert len(r.json()) == 3
+
+    finally:
+        app.dependency_overrides.clear()

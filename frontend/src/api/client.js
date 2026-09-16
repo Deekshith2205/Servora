@@ -64,8 +64,14 @@ export function fetchEscalations() {
   return request("/api/escalations");
 }
 
-export function fetchInbox(channel = null) {
-  const url = channel ? `/api/inbox?channel=${encodeURIComponent(channel)}` : "/api/inbox";
+export function fetchInbox(channel = null, q = null, status = null) {
+  const params = new URLSearchParams();
+  if (channel) params.append("channel", channel);
+  if (q) params.append("q", q);
+  if (status && status !== "all") params.append("status", status);
+  
+  const queryStr = params.toString();
+  const url = queryStr ? `/api/inbox?${queryStr}` : "/api/inbox";
   return request(url);
 }
 

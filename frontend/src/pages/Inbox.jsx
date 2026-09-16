@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { fetchInbox, fetchInboxDetail, fetchChannels } from "../api/client";
+import { ChannelBadge } from "../components/channelMeta";
 import "./Inbox.css";
 
 function StatusBadge({ status }) {
@@ -14,13 +15,34 @@ function StatusBadge({ status }) {
   return <span className={className}>{status}</span>;
 }
 
-function ChannelBadge({ channel }) {
-  const display = channel === "live_chat" ? "Live Chat" : channel;
-  return <span className="inbox-channel-badge">{display}</span>;
+function formatRelativeTime(dateString) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffSecs = Math.floor((now - date) / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return "yesterday";
+  return `${diffDays}d ago`;
 }
 
-function ConversationRow({ item, isSelected, onClick }) {
-  const timeStr = new Date(item.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function truncatePreview(text, maxLength = 80) {
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  const truncated = text.slice(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(" ");
+  if (lastSpace > 0) {
+    return truncated.slice(0, lastSpace) + "...";
+  }
+  return truncated + "...";
+}
+
+function ConversationListItem({ item, isSelected, onClick }) {
+  const timeStr = formatRelativeTime(item.updated_at);
 
   return (
     <button
@@ -33,20 +55,25 @@ function ConversationRow({ item, isSelected, onClick }) {
         <span className="inbox-row-time">{timeStr}</span>
       </div>
       <div className="inbox-row-meta">
-        <ChannelBadge channel={item.channel_key} />
+        <ChannelBadge channelKey={item.channel_key} />
         <StatusBadge status={item.status} />
       </div>
       <div className="inbox-row-subject">{item.subject}</div>
-      <div className="inbox-row-preview">{item.preview}</div>
+      <div className="inbox-row-preview">{truncatePreview(item.preview)}</div>
     </button>
   );
 }
 
 export default function Inbox() {
   const [channels, setChannels] = useState([]);
-  const [selectedChannelKey, setSelectedChannelKey] = useState(null);
   const [channelCounts, setChannelCounts] = useState({});
   const [totalCount, setTotalCount] = useState(0);
+
+  const [selectedChannelKey, setSelectedChannelKey] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -59,6 +86,13 @@ export default function Inbox() {
   const requestRef = useRef(0);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
     let isMounted = true;
     const init = async () => {
       try {
@@ -67,7 +101,6 @@ export default function Inbox() {
         setChannels(chans);
 
         const counts = {};
-
         fetchInbox().then(data => {
           if (isMounted) setTotalCount(data.length);
         }).catch(err => console.error("Failed to load total count", err));
@@ -90,33 +123,35 @@ export default function Inbox() {
       }
     };
     init();
-    loadInbox(null);
     return () => { isMounted = false; };
   }, []);
 
-  const loadInbox = async (channelKey) => {
+  useEffect(() => {
     const currentReq = ++requestRef.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchInbox(channelKey);
-      if (currentReq === requestRef.current) {
-        setConversations(data);
-        setLoading(false);
+    
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await fetchInbox(selectedChannelKey, debouncedSearch, statusFilter);
+        if (currentReq === requestRef.current) {
+          setConversations(data);
+          setLoading(false);
+          setSelectedId(curr => {
+            if (curr && !data.some(c => c.id === curr)) return null;
+            return curr;
+          });
+        }
+      } catch (err) {
+        if (currentReq === requestRef.current) {
+          setError(err.message || "Failed to load conversations.");
+          setLoading(false);
+        }
       }
-    } catch (err) {
-      if (currentReq === requestRef.current) {
-        setError(err.message || "Failed to load conversations.");
-        setLoading(false);
-      }
-    }
-  };
-
-  const handleChannelSelect = (channelKey) => {
-    setSelectedChannelKey(channelKey);
-    setSelectedId(null);
-    loadInbox(channelKey);
-  };
+    };
+    
+    loadData();
+  }, [selectedChannelKey, debouncedSearch, statusFilter]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -139,7 +174,6 @@ export default function Inbox() {
     };
 
     loadDetail();
-
     return () => { isMounted = false; };
   }, [selectedId]);
 
@@ -148,7 +182,7 @@ export default function Inbox() {
       <div className="inbox-channels-sidebar">
         <button
           className={`channel-tab ${selectedChannelKey === null ? 'active' : ''}`}
-          onClick={() => handleChannelSelect(null)}
+          onClick={() => setSelectedChannelKey(null)}
         >
           All
           {totalCount > 0 && <span className="channel-count">{totalCount}</span>}
@@ -157,7 +191,7 @@ export default function Inbox() {
           <button
             key={ch.key}
             className={`channel-tab ${selectedChannelKey === ch.key ? 'active' : ''}`}
-            onClick={() => handleChannelSelect(ch.key)}
+            onClick={() => setSelectedChannelKey(ch.key)}
           >
             {ch.display_name || ch.key}
             {channelCounts[ch.key] !== undefined && channelCounts[ch.key] > 0 && (
@@ -167,19 +201,39 @@ export default function Inbox() {
         ))}
       </div>
       <div className={`inbox-list-panel ${selectedId ? 'hide-on-mobile' : ''}`}>
+        <div className="inbox-filters">
+          <input
+            type="text"
+            className="inbox-search-input"
+            placeholder="Search customers or messages..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <select
+            className="inbox-status-select"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="all">All Statuses</option>
+            <option value="open">Open</option>
+            <option value="resolved">Resolved</option>
+            <option value="escalated">Escalated</option>
+          </select>
+        </div>
+
         {loading ? (
           <div className="inbox-loading skeleton">Loading conversations...</div>
         ) : error ? (
           <div className="inbox-error">
             <p>{error}</p>
-            <button className="app-btn-primary" onClick={loadInbox}>Retry</button>
+            <button className="app-btn-primary" onClick={() => setSelectedChannelKey(selectedChannelKey)}>Retry</button>
           </div>
         ) : conversations.length === 0 ? (
-          <div className="inbox-empty">Your inbox is clear.</div>
+          <div className="inbox-empty">No conversations found.</div>
         ) : (
           <div className="inbox-list">
             {conversations.map(conv => (
-              <ConversationRow
+              <ConversationListItem
                 key={conv.id}
                 item={conv}
                 isSelected={selectedId === conv.id}
@@ -213,7 +267,7 @@ export default function Inbox() {
             <div className="inbox-detail-meta summary-card">
               <div className="detail-meta-row">
                 <span className="meta-label">Channel:</span>
-                <ChannelBadge channel={detail.channel_key} />
+                <ChannelBadge channelKey={detail.channel_key} />
               </div>
               <div className="detail-meta-row">
                 <span className="meta-label">Status:</span>
