@@ -52,7 +52,7 @@ export default function RoleSwitcher() {
   const currentName = currentUser?.name || "Unknown";
 
   return (
-    <div style={{ position: "relative", marginLeft: "auto", marginRight: "1rem" }}>
+    <div style={{ position: "relative" }}>
       <button 
         onClick={() => setIsOpen(!isOpen)}
         style={{
