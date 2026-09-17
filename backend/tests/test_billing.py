@@ -6,9 +6,9 @@ from app.tools.mock_tools import check_payment_issue, issue_refund
 
 @pytest.fixture
 def db_session():
-    db = SessionLocal()
-    yield db
-    db.close()
+    with SessionLocal() as db:
+        yield db
+        db.close()
 
 
 def test_payment_detection_duplicate(db_session):

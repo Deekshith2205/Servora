@@ -45,19 +45,19 @@ def _headers_for(role: str, db, customer_id: int) -> dict:
 
 @pytest.fixture(scope="module")
 def matrix_customer():
-    db = SessionLocal()
-    customer = Customer(name="Matrix Test Customer", email="rbac-matrix@example.com", tier="standard")
-    db.add(customer)
-    db.commit()
-    db.refresh(customer)
-    order = Order(customer_id=customer.id, product="Matrix Widget", amount=10.0, status="shipped", payment_status="paid")
-    db.add(order)
-    ticket = Ticket(customer_id=customer.id, category="order", subject="Matrix ticket", message="m", status="open")
-    db.add(ticket)
-    db.commit()
-    db.refresh(order)
-    db.refresh(ticket)
-    return {"customer_id": customer.id, "order_id": order.id, "ticket_id": ticket.id}
+    with SessionLocal() as db:
+        customer = Customer(name="Matrix Test Customer", email="rbac-matrix@example.com", tier="standard")
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
+        order = Order(customer_id=customer.id, product="Matrix Widget", amount=10.0, status="shipped", payment_status="paid")
+        db.add(order)
+        ticket = Ticket(customer_id=customer.id, category="order", subject="Matrix ticket", message="m", status="open")
+        db.add(ticket)
+        db.commit()
+        db.refresh(order)
+        db.refresh(ticket)
+        return {"customer_id": customer.id, "order_id": order.id, "ticket_id": ticket.id}
 
 
 @pytest.fixture(scope="module")
@@ -84,51 +84,51 @@ def matrix_investigation(matrix_customer):
     # `InvestigationStep.investigation_id` is NOT NULL, so the orphaned
     # steps must be deleted before their parent Investigation row — the
     # default relationship cascade tries to SET NULL there instead.
-    cleanup_db = SessionLocal()
-    real_ticket_ids = {row[0] for row in cleanup_db.query(Ticket.id).all()}
-    orphan_ids = [
-        inv.id for inv in cleanup_db.query(Investigation).all() if inv.ticket_id not in real_ticket_ids
-    ]
-    if orphan_ids:
-        cleanup_db.query(InvestigationStep).filter(InvestigationStep.investigation_id.in_(orphan_ids)).delete(
-            synchronize_session=False
-        )
-        cleanup_db.query(Investigation).filter(Investigation.id.in_(orphan_ids)).delete(synchronize_session=False)
-        cleanup_db.commit()
-    cleanup_db.close()
+    with SessionLocal() as cleanup_db:
+        real_ticket_ids = {row[0] for row in cleanup_db.query(Ticket.id).all()}
+        orphan_ids = [
+            inv.id for inv in cleanup_db.query(Investigation).all() if inv.ticket_id not in real_ticket_ids
+        ]
+        if orphan_ids:
+            cleanup_db.query(InvestigationStep).filter(InvestigationStep.investigation_id.in_(orphan_ids)).delete(
+                synchronize_session=False
+            )
+            cleanup_db.query(Investigation).filter(Investigation.id.in_(orphan_ids)).delete(synchronize_session=False)
+            cleanup_db.commit()
+        cleanup_db.close()
 
-    with patch("app.orchestrator.classify", return_value=ClassificationResult(
-        category="order", sentiment="neutral", urgency=3, reasoning="routine", confidence=0.8
-    )):
-        with patch("app.orchestrator.plan", return_value=PlanDecision(
-            action="resolve", target_agent="order", reasoning="order can handle it"
+        with patch("app.orchestrator.classify", return_value=ClassificationResult(
+            category="order", sentiment="neutral", urgency=3, reasoning="routine", confidence=0.8
         )):
-            with patch("app.orchestrator.SPECIALISTS", {
-                "order": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
-                    reply="Your order is on its way.", used_tools=["get_customer_orders"], confidence=0.6,
-                ),
-                "technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="n/a"),
-            }):
-                with patch("app.orchestrator.verify", return_value=VerificationResult(approved=True, reasoning="grounded")):
-                    with patch("app.orchestrator.critique", return_value=_MOCK_CRITIC_REVIEW):
-                        with patch("app.orchestrator.extract_facts", return_value=[]):
-                            resp = client.post("/api/chat", json={
-                                "customer_id": matrix_customer["customer_id"], "message": "Where is my order?",
-                            })
-    assert resp.status_code == 200
-    ticket_id = resp.json()["ticket_id"]
+            with patch("app.orchestrator.plan", return_value=PlanDecision(
+                action="resolve", target_agent="order", reasoning="order can handle it"
+            )):
+                with patch("app.orchestrator.SPECIALISTS", {
+                    "order": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
+                        reply="Your order is on its way.", used_tools=["get_customer_orders"], confidence=0.6,
+                    ),
+                    "technical": lambda db, customer_id, message, channel="live_chat": SpecialistResponse(reply="n/a"),
+                }):
+                    with patch("app.orchestrator.verify", return_value=VerificationResult(approved=True, reasoning="grounded")):
+                        with patch("app.orchestrator.critique", return_value=_MOCK_CRITIC_REVIEW):
+                            with patch("app.orchestrator.extract_facts", return_value=[]):
+                                resp = client.post("/api/chat", json={
+                                    "customer_id": matrix_customer["customer_id"], "message": "Where is my order?",
+                                })
+        assert resp.status_code == 200
+        ticket_id = resp.json()["ticket_id"]
 
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    inv = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
-    assert inv.status_code == 200
-    return inv.json()["id"]
+        db = SessionLocal()
+        headers = staff_headers(db, "administrator")
+        inv = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
+        assert inv.status_code == 200
+        return inv.json()["id"]
 
 
-# --------------------------------------------------------------------- #
-# Non-resource-dependent: permission checked with no row lookup at all,
-# so any role's response reflects ONLY the permission gate.
-# --------------------------------------------------------------------- #
+    # --------------------------------------------------------------------- #
+    # Non-resource-dependent: permission checked with no row lookup at all,
+    # so any role's response reflects ONLY the permission gate.
+    # --------------------------------------------------------------------- #
 
 NON_RESOURCE_MATRIX = [
     # Administrator's permission set is the real UNION of every other
@@ -148,35 +148,35 @@ NON_RESOURCE_MATRIX = [
 
 @pytest.mark.parametrize("path,allowed_roles", NON_RESOURCE_MATRIX)
 def test_permission_gate_matrix(path, allowed_roles, matrix_customer):
-    db = SessionLocal()
-    for role in ALL_ROLES:
-        headers = _headers_for(role, db, matrix_customer["customer_id"])
-        resp = client.get(path, headers=headers)
-        if role in allowed_roles:
-            assert resp.status_code != 403, f"{role} should be allowed at {path}, got {resp.status_code}"
-        else:
-            assert resp.status_code == 403, f"{role} should be forbidden at {path}, got {resp.status_code}"
+    with SessionLocal() as db:
+        for role in ALL_ROLES:
+            headers = _headers_for(role, db, matrix_customer["customer_id"])
+            resp = client.get(path, headers=headers)
+            if role in allowed_roles:
+                assert resp.status_code != 403, f"{role} should be allowed at {path}, got {resp.status_code}"
+            else:
+                assert resp.status_code == 403, f"{role} should be forbidden at {path}, got {resp.status_code}"
 
 
-# --------------------------------------------------------------------- #
-# Resource-dependent: the row genuinely exists, so a 403 vs. non-403
-# response is a clean signal of the permission check alone.
-# --------------------------------------------------------------------- #
+    # --------------------------------------------------------------------- #
+    # Resource-dependent: the row genuinely exists, so a 403 vs. non-403
+    # response is a clean signal of the permission check alone.
+    # --------------------------------------------------------------------- #
 
 
 def test_permission_gate_matrix_investigation_detail(matrix_customer, matrix_investigation):
     """`matrix_customer` genuinely owns `matrix_investigation`, so the
     "customer" role slot is also allowed here — a real, positive proof
     of #217's ownership rule, not just the staff-permission rule."""
-    db = SessionLocal()
-    allowed_roles = {"customer", "support_agent", "administrator"}
-    for role in ALL_ROLES:
-        headers = _headers_for(role, db, matrix_customer["customer_id"])
-        resp = client.get(f"/api/investigations/{matrix_investigation}", headers=headers)
-        if role in allowed_roles:
-            assert resp.status_code == 200, f"{role} should see the investigation, got {resp.status_code}"
-        else:
-            assert resp.status_code == 403, f"{role} should be forbidden, got {resp.status_code}"
+    with SessionLocal() as db:
+        allowed_roles = {"customer", "support_agent", "administrator"}
+        for role in ALL_ROLES:
+            headers = _headers_for(role, db, matrix_customer["customer_id"])
+            resp = client.get(f"/api/investigations/{matrix_investigation}", headers=headers)
+            if role in allowed_roles:
+                assert resp.status_code == 200, f"{role} should see the investigation, got {resp.status_code}"
+            else:
+                assert resp.status_code == 403, f"{role} should be forbidden, got {resp.status_code}"
 
 
 def test_permission_gate_matrix_explanation_and_confidence(matrix_customer, matrix_investigation):
@@ -185,16 +185,16 @@ def test_permission_gate_matrix_explanation_and_confidence(matrix_customer, matr
     staff holding `view_explainability` (support_agent, administrator)
     can. Manager has neither `view_investigation_board` nor
     `view_explainability`, so is forbidden too."""
-    db = SessionLocal()
-    allowed_roles = {"support_agent", "administrator"}
-    for role in ALL_ROLES:
-        headers = _headers_for(role, db, matrix_customer["customer_id"])
-        for suffix in ("explanation", "confidence"):
-            resp = client.get(f"/api/investigations/{matrix_investigation}/{suffix}", headers=headers)
-            if role in allowed_roles:
-                assert resp.status_code == 200, f"{role} should see /{suffix}, got {resp.status_code}"
-            else:
-                assert resp.status_code == 403, f"{role} should be forbidden from /{suffix}, got {resp.status_code}"
+    with SessionLocal() as db:
+        allowed_roles = {"support_agent", "administrator"}
+        for role in ALL_ROLES:
+            headers = _headers_for(role, db, matrix_customer["customer_id"])
+            for suffix in ("explanation", "confidence"):
+                resp = client.get(f"/api/investigations/{matrix_investigation}/{suffix}", headers=headers)
+                if role in allowed_roles:
+                    assert resp.status_code == 200, f"{role} should see /{suffix}, got {resp.status_code}"
+                else:
+                    assert resp.status_code == 403, f"{role} should be forbidden from /{suffix}, got {resp.status_code}"
 
 
 def test_permission_gate_matrix_records(matrix_customer):
@@ -203,15 +203,15 @@ def test_permission_gate_matrix_records(matrix_customer):
     ONLY their own — proven here since `matrix_customer` IS the order's
     real owner. Manager holds neither `view_evidence` nor ownership, so
     stays forbidden."""
-    db = SessionLocal()
-    allowed_staff = {"support_agent", "administrator"}
-    for role in ALL_ROLES:
-        headers = _headers_for(role, db, matrix_customer["customer_id"])
-        resp = client.get(f"/api/records/orders/{matrix_customer['order_id']}", headers=headers)
-        if role in allowed_staff or role == "customer":
-            assert resp.status_code == 200, f"{role} should see their own order, got {resp.status_code}"
-        else:
-            assert resp.status_code == 403, f"{role} should be forbidden, got {resp.status_code}"
+    with SessionLocal() as db:
+        allowed_staff = {"support_agent", "administrator"}
+        for role in ALL_ROLES:
+            headers = _headers_for(role, db, matrix_customer["customer_id"])
+            resp = client.get(f"/api/records/orders/{matrix_customer['order_id']}", headers=headers)
+            if role in allowed_staff or role == "customer":
+                assert resp.status_code == 200, f"{role} should see their own order, got {resp.status_code}"
+            else:
+                assert resp.status_code == 403, f"{role} should be forbidden, got {resp.status_code}"
 
 
 def test_administrator_permission_set_is_the_real_union_of_every_other_role(matrix_customer, matrix_investigation):
@@ -230,8 +230,8 @@ def test_administrator_permission_set_is_the_real_union_of_every_other_role(matr
 
     # And a real, live confirmation: administrator can reach every
     # staff-gated surface in the matrix above.
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    for path, _ in NON_RESOURCE_MATRIX:
-        resp = client.get(path, headers=headers)
-        assert resp.status_code != 403, f"administrator should reach {path}, got {resp.status_code}"
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        for path, _ in NON_RESOURCE_MATRIX:
+            resp = client.get(path, headers=headers)
+            assert resp.status_code != 403, f"administrator should reach {path}, got {resp.status_code}"

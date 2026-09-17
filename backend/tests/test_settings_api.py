@@ -13,10 +13,10 @@ client = TestClient(app)
 
 
 def _admin_headers():
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    db.close()
-    return headers
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        db.close()
+        return headers
 
 
 def test_list_settings_returns_the_real_seeded_rows():
@@ -27,10 +27,10 @@ def test_list_settings_returns_the_real_seeded_rows():
 
 
 def test_list_settings_without_permission_is_a_real_403():
-    db = SessionLocal()
-    headers = staff_headers(db, "manager")
-    resp = client.get("/api/settings", headers=headers)
-    assert resp.status_code == 403
+    with SessionLocal() as db:
+        headers = staff_headers(db, "manager")
+        resp = client.get("/api/settings", headers=headers)
+        assert resp.status_code == 403
 
 
 def test_update_setting_changes_the_real_value():
@@ -50,13 +50,13 @@ def test_update_setting_404_for_unknown_key():
 
 
 def test_update_setting_without_permission_is_a_real_403():
-    db = SessionLocal()
-    headers = staff_headers(db, "support_agent")
-    resp = client.patch("/api/settings/demo_mode", json={"value": "false"}, headers=headers)
-    assert resp.status_code == 403
+    with SessionLocal() as db:
+        headers = staff_headers(db, "support_agent")
+        resp = client.patch("/api/settings/demo_mode", json={"value": "false"}, headers=headers)
+        assert resp.status_code == 403
 
-    # Confirmed unchanged.
-    admin_headers = staff_headers(db, "administrator")
-    current = client.get("/api/settings", headers=admin_headers).json()
-    demo_mode = next(s for s in current if s["key"] == "demo_mode")
-    assert demo_mode["value"] == "true"
+        # Confirmed unchanged.
+        admin_headers = staff_headers(db, "administrator")
+        current = client.get("/api/settings", headers=admin_headers).json()
+        demo_mode = next(s for s in current if s["key"] == "demo_mode")
+        assert demo_mode["value"] == "true"

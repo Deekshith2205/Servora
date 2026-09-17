@@ -15,9 +15,9 @@ client = TestClient(app)
 
 @pytest.fixture
 def db_session():
-    db = SessionLocal()
-    yield db
-    db.close()
+    with SessionLocal() as db:
+        yield db
+        db.close()
 
 def test_inbox_list_all_tickets_with_customer_and_sorting(db_session):
     """

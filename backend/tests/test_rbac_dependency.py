@@ -40,17 +40,17 @@ def test_customer_role_with_a_nonexistent_customer_id_resolves_to_anonymous():
 
 
 def test_customer_role_with_a_real_customer_id_resolves_correctly():
-    db = SessionLocal()
-    customer = Customer(name="Dependency Test Customer", email="dep-test-customer@example.com")
-    db.add(customer)
-    db.commit()
-    db.refresh(customer)
+    with SessionLocal() as db:
+        customer = Customer(name="Dependency Test Customer", email="dep-test-customer@example.com")
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
 
-    resp = client.get("/api/auth/me", headers=customer_headers(customer.id))
-    body = resp.json()
-    assert body["role"] == "customer"
-    assert body["customer_id"] == customer.id
-    assert body["user_id"] is None
+        resp = client.get("/api/auth/me", headers=customer_headers(customer.id))
+        body = resp.json()
+        assert body["role"] == "customer"
+        assert body["customer_id"] == customer.id
+        assert body["user_id"] is None
 
 
 def test_staff_role_with_no_user_id_header_resolves_to_anonymous():
@@ -69,17 +69,17 @@ def test_staff_role_header_claim_is_never_trusted_over_the_real_user_row():
     `X-Servora-Role` header's claim — a Support Agent's real user_id
     cannot escalate to administrator just by sending a different role
     header alongside the same, real user_id."""
-    db = SessionLocal()
-    user = db.query(User).filter(User.role == "support_agent").first()
-    assert user is not None  # seeded
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.role == "support_agent").first()
+        assert user is not None  # seeded
 
-    resp = client.get("/api/auth/me", headers={
-        "X-Servora-Role": "administrator",  # a spoofed claim
-        "X-Servora-User-Id": str(user.id),  # but a real support_agent's id
-    })
-    body = resp.json()
-    assert body["role"] == "support_agent"  # the real row wins, not the header
-    assert body["user_id"] == user.id
+        resp = client.get("/api/auth/me", headers={
+            "X-Servora-Role": "administrator",  # a spoofed claim
+            "X-Servora-User-Id": str(user.id),  # but a real support_agent's id
+        })
+        body = resp.json()
+        assert body["role"] == "support_agent"  # the real row wins, not the header
+        assert body["user_id"] == user.id
 
 
 def test_a_valid_staff_role_string_routes_to_the_staff_lookup_even_if_it_understates_the_real_role():
@@ -88,15 +88,15 @@ def test_a_valid_staff_role_string_routes_to_the_staff_lookup_even_if_it_underst
     always the resolved row's own role, confirmed the other direction
     too (an Administrator's real user_id, claimed as `support_agent`,
     still resolves as administrator)."""
-    db = SessionLocal()
-    user = db.query(User).filter(User.role == "administrator").first()
-    assert user is not None
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.role == "administrator").first()
+        assert user is not None
 
-    resp = client.get("/api/auth/me", headers={
-        "X-Servora-Role": "support_agent",
-        "X-Servora-User-Id": str(user.id),
-    })
-    assert resp.json()["role"] == "administrator"
+        resp = client.get("/api/auth/me", headers={
+            "X-Servora-Role": "support_agent",
+            "X-Servora-User-Id": str(user.id),
+        })
+        assert resp.json()["role"] == "administrator"
 
 
 def test_get_permissions_is_public_reference_data_not_gated():
@@ -124,17 +124,17 @@ def test_require_any_permission_grants_access_if_any_one_permission_matches():
     """[RBAC] issue #194: a Manager reaches
     /api/investigations/metrics/agents via `view_analytics` alone, even
     without `view_investigation_board`."""
-    db = SessionLocal()
-    headers = staff_headers(db, "manager")
-    resp = client.get("/api/investigations/metrics/agents", headers=headers)
-    assert resp.status_code == 200
+    with SessionLocal() as db:
+        headers = staff_headers(db, "manager")
+        resp = client.get("/api/investigations/metrics/agents", headers=headers)
+        assert resp.status_code == 200
 
 
 def test_require_any_permission_also_grants_access_via_the_other_permission():
-    db = SessionLocal()
-    headers = staff_headers(db, "support_agent")  # has view_investigation_board, not view_analytics — still passes
-    resp = client.get("/api/investigations/metrics/agents", headers=headers)
-    assert resp.status_code == 200
+    with SessionLocal() as db:
+        headers = staff_headers(db, "support_agent")  # has view_investigation_board, not view_analytics — still passes
+        resp = client.get("/api/investigations/metrics/agents", headers=headers)
+        assert resp.status_code == 200
 
 
 def test_require_any_permission_403s_if_neither_permission_matches():

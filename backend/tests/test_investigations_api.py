@@ -81,29 +81,29 @@ def _escalate_via_chat(client, customer_id):
 
 
 def test_get_investigation_by_id_for_a_resolved_conversation():
-    db = SessionLocal()
-    customer = _seed_customer(db)
-    headers = staff_headers(db, "administrator")
+    with SessionLocal() as db:
+        customer = _seed_customer(db)
+        headers = staff_headers(db, "administrator")
 
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        assert chat_resp.status_code == 200
-        ticket_id = chat_resp.json()["ticket_id"]
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            assert chat_resp.status_code == 200
+            ticket_id = chat_resp.json()["ticket_id"]
 
-        by_ticket = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
-        assert by_ticket.status_code == 200
-        investigation_id = by_ticket.json()["id"]
+            by_ticket = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
+            assert by_ticket.status_code == 200
+            investigation_id = by_ticket.json()["id"]
 
-        resp = client.get(f"/api/investigations/{investigation_id}", headers=headers)
+            resp = client.get(f"/api/investigations/{investigation_id}", headers=headers)
 
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["ticket_id"] == ticket_id
-    assert body["status"] == "resolved"
-    assert body["confidence"] == 0.6
-    agent_names = [step["agent_name"] for step in body["timeline"]]
-    assert agent_names == ["classifier", "planner", "order_specialist", "critic", "verification", "memory"]
-    assert "Retrieved 1 order(s) for customer #1: #1." in body["evidence"]
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ticket_id"] == ticket_id
+        assert body["status"] == "resolved"
+        assert body["confidence"] == 0.6
+        agent_names = [step["agent_name"] for step in body["timeline"]]
+        assert agent_names == ["classifier", "planner", "order_specialist", "critic", "verification", "memory"]
+        assert "Retrieved 1 order(s) for customer #1: #1." in body["evidence"]
 
 
 def test_get_investigation_404_for_unknown_id():
@@ -119,37 +119,37 @@ def test_get_investigation_by_ticket_404_when_no_investigation_exists():
 
 
 def test_list_investigations_includes_recent_ones():
-    db = SessionLocal()
-    customer = _seed_customer(db)
-    headers = staff_headers(db, "administrator")
+    with SessionLocal() as db:
+        customer = _seed_customer(db)
+        headers = staff_headers(db, "administrator")
 
-    with TestClient(app) as client:
-        chat_resp = _escalate_via_chat(client, customer.id)
-        ticket_id = chat_resp.json()["ticket_id"]
+        with TestClient(app) as client:
+            chat_resp = _escalate_via_chat(client, customer.id)
+            ticket_id = chat_resp.json()["ticket_id"]
 
-        resp = client.get("/api/investigations", headers=headers)
+            resp = client.get("/api/investigations", headers=headers)
 
-    assert resp.status_code == 200
-    ticket_ids = [row["ticket_id"] for row in resp.json()]
-    assert ticket_id in ticket_ids
-    matching = next(row for row in resp.json() if row["ticket_id"] == ticket_id)
-    assert matching["status"] == "escalated"
-    assert matching["root_cause"] == "policy exception needed"
+        assert resp.status_code == 200
+        ticket_ids = [row["ticket_id"] for row in resp.json()]
+        assert ticket_id in ticket_ids
+        matching = next(row for row in resp.json() if row["ticket_id"] == ticket_id)
+        assert matching["status"] == "escalated"
+        assert matching["root_cause"] == "policy exception needed"
 
 
 def test_agent_performance_metrics_reflects_recorded_steps():
-    db = SessionLocal()
-    customer = _seed_customer(db)
-    headers = staff_headers(db, "administrator")
+    with SessionLocal() as db:
+        customer = _seed_customer(db)
+        headers = staff_headers(db, "administrator")
 
-    with TestClient(app) as client:
-        _resolve_via_chat(client, customer.id)
-        resp = client.get("/api/investigations/metrics/agents", headers=headers)
+        with TestClient(app) as client:
+            _resolve_via_chat(client, customer.id)
+            resp = client.get("/api/investigations/metrics/agents", headers=headers)
 
-    assert resp.status_code == 200
-    agent_names = {row["agent_name"] for row in resp.json()["agents"]}
-    assert "classifier" in agent_names
-    assert "order_specialist" in agent_names
-    for row in resp.json()["agents"]:
-        assert row["total_steps"] >= 1
-        assert row["avg_duration_ms"] >= 0
+        assert resp.status_code == 200
+        agent_names = {row["agent_name"] for row in resp.json()["agents"]}
+        assert "classifier" in agent_names
+        assert "order_specialist" in agent_names
+        for row in resp.json()["agents"]:
+            assert row["total_steps"] >= 1
+            assert row["avg_duration_ms"] >= 0

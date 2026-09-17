@@ -59,75 +59,75 @@ def _mock_resolved_path(monkeypatch):
 
 
 def _run_channel_message_via_real_db(channel_key, payload):
-    db = SessionLocal()
-    try:
-        result = route_channel_message(db, channel_key, payload)
-        return result
-    finally:
-        db.close()
+    with SessionLocal() as db:
+        try:
+            result = route_channel_message(db, channel_key, payload)
+            return result
+        finally:
+            db.close()
 
 
 def test_whatsapp_conversation_agrees_across_inbox_investigation_and_analytics(monkeypatch):
     _mock_resolved_path(monkeypatch)
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    db.close()
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        db.close()
 
-    payload = {"from": "15557778888", "id": "wamid.E2E_WHATSAPP", "text": {"body": "Where is my order?"}}
-    result = _run_channel_message_via_real_db("whatsapp", payload)
-    ticket_id = result.ticket_id
-    assert ticket_id is not None
+        payload = {"from": "15557778888", "id": "wamid.E2E_WHATSAPP", "text": {"body": "Where is my order?"}}
+        result = _run_channel_message_via_real_db("whatsapp", payload)
+        ticket_id = result.ticket_id
+        assert ticket_id is not None
 
-    # Surface 1: Inbox (#136) — the ticket shows up, correctly tagged.
-    inbox_resp = client.get("/api/inbox", params={"channel": "whatsapp"})
-    assert inbox_resp.status_code == 200
-    inbox_row = next((r for r in inbox_resp.json() if r["id"] == ticket_id), None)
-    assert inbox_row is not None
-    assert inbox_row["channel_key"] == "whatsapp"
+        # Surface 1: Inbox (#136) — the ticket shows up, correctly tagged.
+        inbox_resp = client.get("/api/inbox", params={"channel": "whatsapp"})
+        assert inbox_resp.status_code == 200
+        inbox_row = next((r for r in inbox_resp.json() if r["id"] == ticket_id), None)
+        assert inbox_row is not None
+        assert inbox_row["channel_key"] == "whatsapp"
 
-    # Surface 2: Investigation detail — same channel, same ticket.
-    inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
-    assert inv_resp.status_code == 200
-    assert inv_resp.json()["channel"] == "whatsapp"
-    assert inv_resp.json()["ticket_id"] == ticket_id
+        # Surface 2: Investigation detail — same channel, same ticket.
+        inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
+        assert inv_resp.status_code == 200
+        assert inv_resp.json()["channel"] == "whatsapp"
+        assert inv_resp.json()["ticket_id"] == ticket_id
 
-    # Surface 3: Analytics channel_metrics (#158) — the real count
-    # includes this conversation (>=1, since other tests/seed data may
-    # also contribute whatsapp tickets in the same shared test DB).
-    analytics_resp = client.get("/api/analytics/summary", headers=headers)
-    assert analytics_resp.status_code == 200
-    channel_metrics = {m["channel"]: m for m in analytics_resp.json()["channel_metrics"]}
-    assert "whatsapp" in channel_metrics
-    assert channel_metrics["whatsapp"]["total"] >= 1
+        # Surface 3: Analytics channel_metrics (#158) — the real count
+        # includes this conversation (>=1, since other tests/seed data may
+        # also contribute whatsapp tickets in the same shared test DB).
+        analytics_resp = client.get("/api/analytics/summary", headers=headers)
+        assert analytics_resp.status_code == 200
+        channel_metrics = {m["channel"]: m for m in analytics_resp.json()["channel_metrics"]}
+        assert "whatsapp" in channel_metrics
+        assert channel_metrics["whatsapp"]["total"] >= 1
 
 
 def test_email_conversation_agrees_across_inbox_investigation_and_analytics(monkeypatch):
     _mock_resolved_path(monkeypatch)
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    db.close()
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        db.close()
 
-    payload = {
-        "from": "e2e-email-test@example.com",
-        "subject": "Order question",
-        "body": "Where is my order?",
-        "message_id": "<e2e-test@mail.example.com>",
-    }
-    result = _run_channel_message_via_real_db("email", payload)
-    ticket_id = result.ticket_id
-    assert ticket_id is not None
+        payload = {
+            "from": "e2e-email-test@example.com",
+            "subject": "Order question",
+            "body": "Where is my order?",
+            "message_id": "<e2e-test@mail.example.com>",
+        }
+        result = _run_channel_message_via_real_db("email", payload)
+        ticket_id = result.ticket_id
+        assert ticket_id is not None
 
-    inbox_resp = client.get("/api/inbox", params={"channel": "email"})
-    assert inbox_resp.status_code == 200
-    inbox_row = next((r for r in inbox_resp.json() if r["id"] == ticket_id), None)
-    assert inbox_row is not None
-    assert inbox_row["channel_key"] == "email"
+        inbox_resp = client.get("/api/inbox", params={"channel": "email"})
+        assert inbox_resp.status_code == 200
+        inbox_row = next((r for r in inbox_resp.json() if r["id"] == ticket_id), None)
+        assert inbox_row is not None
+        assert inbox_row["channel_key"] == "email"
 
-    inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
-    assert inv_resp.status_code == 200
-    assert inv_resp.json()["channel"] == "email"
+        inv_resp = client.get(f"/api/investigations/by-ticket/{ticket_id}", headers=headers)
+        assert inv_resp.status_code == 200
+        assert inv_resp.json()["channel"] == "email"
 
-    analytics_resp = client.get("/api/analytics/summary", headers=headers)
-    channel_metrics = {m["channel"]: m for m in analytics_resp.json()["channel_metrics"]}
-    assert "email" in channel_metrics
-    assert channel_metrics["email"]["total"] >= 1
+        analytics_resp = client.get("/api/analytics/summary", headers=headers)
+        channel_metrics = {m["channel"]: m for m in analytics_resp.json()["channel_metrics"]}
+        assert "email" in channel_metrics
+        assert channel_metrics["email"]["total"] >= 1

@@ -58,36 +58,36 @@ def test_unexpected_exception_becomes_a_consistent_500_json_body(monkeypatch):
     """Not a 502/LLMError shape (that's a different, already-handled
     case) — a genuinely unexpected error, e.g. a bug somewhere in the
     pipeline that isn't LLMError at all."""
-    db = SessionLocal()
-    customer = _seed_customer(db)
+    with SessionLocal() as db:
+        customer = _seed_customer(db)
 
-    def _boom(message):
-        raise RuntimeError("a secret internal detail that must never reach the client")
+        def _boom(message):
+            raise RuntimeError("a secret internal detail that must never reach the client")
 
-    monkeypatch.setattr("app.orchestrator.classify", _boom)
+        monkeypatch.setattr("app.orchestrator.classify", _boom)
 
-    # See this module's docstring: ServerErrorMiddleware re-raises after
-    # sending the response, by design — opt out of TestClient's default
-    # re-raise so we can inspect the response it already sent.
-    with TestClient(app, raise_server_exceptions=False) as client:
-        resp = client.post(
-            "/api/chat",
-            json={"customer_id": customer.id, "message": "hello"},
-            headers={"origin": "http://localhost:5173"},
-        )
+        # See this module's docstring: ServerErrorMiddleware re-raises after
+        # sending the response, by design — opt out of TestClient's default
+        # re-raise so we can inspect the response it already sent.
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.post(
+                "/api/chat",
+                json={"customer_id": customer.id, "message": "hello"},
+                headers={"origin": "http://localhost:5173"},
+            )
 
-    assert resp.status_code == 500
-    body = resp.json()
-    # Consistent shape: the same "detail" key every HTTPException-based
-    # error response in this codebase already uses.
-    assert set(body.keys()) == {"detail"}
-    assert body["detail"] == "An unexpected error occurred. Please try again."
+        assert resp.status_code == 500
+        body = resp.json()
+        # Consistent shape: the same "detail" key every HTTPException-based
+        # error response in this codebase already uses.
+        assert set(body.keys()) == {"detail"}
+        assert body["detail"] == "An unexpected error occurred. Please try again."
 
-    # The actual exception text/type must never reach the client.
-    raw_text = resp.text
-    assert "RuntimeError" not in raw_text
-    assert "a secret internal detail" not in raw_text
-    assert "Traceback" not in raw_text
+        # The actual exception text/type must never reach the client.
+        raw_text = resp.text
+        assert "RuntimeError" not in raw_text
+        assert "a secret internal detail" not in raw_text
+        assert "Traceback" not in raw_text
 
 
 def test_unexpected_exception_response_still_carries_cors_headers(monkeypatch):
@@ -96,32 +96,11 @@ def test_unexpected_exception_response_still_carries_cors_headers(monkeypatch):
     browser's fetch() can't even read (no Access-Control-Allow-Origin
     header) — it shows up as a bare "Failed to fetch", not a readable
     error. This must not happen anymore."""
-    db = SessionLocal()
-    customer = _seed_customer(db)
+    with SessionLocal() as db:
+        customer = _seed_customer(db)
 
-    monkeypatch.setattr("app.orchestrator.classify", lambda message: (_ for _ in ()).throw(RuntimeError("boom")))
+        monkeypatch.setattr("app.orchestrator.classify", lambda message: (_ for _ in ()).throw(RuntimeError("boom")))
 
-    with TestClient(app, raise_server_exceptions=False) as client:
-        resp = client.post(
-            "/api/chat",
-            json={"customer_id": customer.id, "message": "hello"},
-            headers={"origin": "http://localhost:5173"},
-        )
-
-    assert resp.status_code == 500
-    assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
-
-
-def test_unexpected_exception_is_logged_server_side(monkeypatch, caplog):
-    db = SessionLocal()
-    customer = _seed_customer(db)
-
-    monkeypatch.setattr(
-        "app.orchestrator.classify",
-        lambda message: (_ for _ in ()).throw(RuntimeError("only visible in the server log, never in the response")),
-    )
-
-    with caplog.at_level(logging.ERROR, logger="app.main"):
         with TestClient(app, raise_server_exceptions=False) as client:
             resp = client.post(
                 "/api/chat",
@@ -129,9 +108,30 @@ def test_unexpected_exception_is_logged_server_side(monkeypatch, caplog):
                 headers={"origin": "http://localhost:5173"},
             )
 
-    assert resp.status_code == 500
-    assert any("Unhandled exception" in record.message for record in caplog.records)
-    assert any("only visible in the server log" in record.exc_text for record in caplog.records if record.exc_text)
+        assert resp.status_code == 500
+        assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_unexpected_exception_is_logged_server_side(monkeypatch, caplog):
+    with SessionLocal() as db:
+        customer = _seed_customer(db)
+
+        monkeypatch.setattr(
+            "app.orchestrator.classify",
+            lambda message: (_ for _ in ()).throw(RuntimeError("only visible in the server log, never in the response")),
+        )
+
+        with caplog.at_level(logging.ERROR, logger="app.main"):
+            with TestClient(app, raise_server_exceptions=False) as client:
+                resp = client.post(
+                    "/api/chat",
+                    json={"customer_id": customer.id, "message": "hello"},
+                    headers={"origin": "http://localhost:5173"},
+                )
+
+        assert resp.status_code == 500
+        assert any("Unhandled exception" in record.message for record in caplog.records)
+        assert any("only visible in the server log" in record.exc_text for record in caplog.records if record.exc_text)
 
 
 def test_http_exception_behavior_is_unchanged_by_the_new_handler():

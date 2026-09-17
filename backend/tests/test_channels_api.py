@@ -36,62 +36,62 @@ def test_list_channels_reports_real_status_values():
 
 
 def test_cannot_activate_a_not_configured_channel():
-    db = SessionLocal()
-    whatsapp_id = db.query(Channel).filter(Channel.key == "whatsapp").first().id
-    headers = staff_headers(db, "administrator")
-    db.close()
+    with SessionLocal() as db:
+        whatsapp_id = db.query(Channel).filter(Channel.key == "whatsapp").first().id
+        headers = staff_headers(db, "administrator")
+        db.close()
 
-    resp = client.patch(f"/api/channels/{whatsapp_id}", json={"status": "active"}, headers=headers)
-    assert resp.status_code == 400
-    assert "not been configured" in resp.json()["detail"]
+        resp = client.patch(f"/api/channels/{whatsapp_id}", json={"status": "active"}, headers=headers)
+        assert resp.status_code == 400
+        assert "not been configured" in resp.json()["detail"]
 
-    # Confirmed unchanged, not silently left in some in-between state.
-    db = SessionLocal()
-    assert db.get(Channel, whatsapp_id).status == "not_configured"
-    db.close()
+        # Confirmed unchanged, not silently left in some in-between state.
+        db = SessionLocal()
+        assert db.get(Channel, whatsapp_id).status == "not_configured"
+        db.close()
 
 
 def test_can_toggle_an_already_configured_channel_inactive_and_back():
-    db = SessionLocal()
-    live_chat_id = db.query(Channel).filter(Channel.key == "live_chat").first().id
-    headers = staff_headers(db, "administrator")
-    db.close()
+    with SessionLocal() as db:
+        live_chat_id = db.query(Channel).filter(Channel.key == "live_chat").first().id
+        headers = staff_headers(db, "administrator")
+        db.close()
 
-    resp = client.patch(f"/api/channels/{live_chat_id}", json={"status": "inactive"}, headers=headers)
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "inactive"
+        resp = client.patch(f"/api/channels/{live_chat_id}", json={"status": "inactive"}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "inactive"
 
-    resp = client.patch(f"/api/channels/{live_chat_id}", json={"status": "active"}, headers=headers)
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "active"
+        resp = client.patch(f"/api/channels/{live_chat_id}", json={"status": "active"}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "active"
 
 
 def test_rejects_an_invalid_status_value():
-    db = SessionLocal()
-    live_chat_id = db.query(Channel).filter(Channel.key == "live_chat").first().id
-    headers = staff_headers(db, "administrator")
-    db.close()
+    with SessionLocal() as db:
+        live_chat_id = db.query(Channel).filter(Channel.key == "live_chat").first().id
+        headers = staff_headers(db, "administrator")
+        db.close()
 
-    resp = client.patch(f"/api/channels/{live_chat_id}", json={"status": "bogus"}, headers=headers)
-    assert resp.status_code == 400
+        resp = client.patch(f"/api/channels/{live_chat_id}", json={"status": "bogus"}, headers=headers)
+        assert resp.status_code == 400
 
 
 def test_returns_404_for_an_unknown_channel_id():
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    db.close()
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        db.close()
 
-    resp = client.patch("/api/channels/999999", json={"status": "inactive"}, headers=headers)
-    assert resp.status_code == 404
+        resp = client.patch("/api/channels/999999", json={"status": "inactive"}, headers=headers)
+        assert resp.status_code == 404
 
 
 def test_patch_without_permission_is_a_real_403():
     """[RBAC] issue #202: a Support Agent (no `manage_integrations`)
     gets a real 403 attempting to change a channel's status."""
-    db = SessionLocal()
-    live_chat_id = db.query(Channel).filter(Channel.key == "live_chat").first().id
-    headers = staff_headers(db, "support_agent")
-    db.close()
+    with SessionLocal() as db:
+        live_chat_id = db.query(Channel).filter(Channel.key == "live_chat").first().id
+        headers = staff_headers(db, "support_agent")
+        db.close()
 
-    resp = client.patch(f"/api/channels/{live_chat_id}", json={"status": "inactive"}, headers=headers)
-    assert resp.status_code == 403
+        resp = client.patch(f"/api/channels/{live_chat_id}", json={"status": "inactive"}, headers=headers)
+        assert resp.status_code == 403

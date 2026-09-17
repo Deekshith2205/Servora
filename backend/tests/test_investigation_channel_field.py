@@ -42,10 +42,10 @@ def _mock_resolved_path(monkeypatch):
 
 
 def _admin_headers():
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    db.close()
-    return headers
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        db.close()
+        return headers
 
 
 def test_get_investigation_by_ticket_exposes_real_channel(monkeypatch):
