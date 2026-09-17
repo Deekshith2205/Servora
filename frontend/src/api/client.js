@@ -155,6 +155,8 @@ export function approveKBArticle(draft) {
   });
 }
 
+
+
 export function sendBookingMessage(customerId, messages) {
   return request("/api/booking", {
     method: "POST",

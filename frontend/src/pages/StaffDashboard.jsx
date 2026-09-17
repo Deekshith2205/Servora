@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolvedHistory, resolveEscalation, assignEscalation, closeEscalation } from "../api/client";
+import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolvedHistory, resolveEscalation, assignEscalation, closeEscalation, fetchCustomerRecord } from "../api/client";
 import BookingsPanel from "./BookingsPanel";
 import Can from "../auth/Can";
 import InvestigationTimeline from "../components/InvestigationTimeline";
@@ -80,6 +80,9 @@ export default function StaffDashboard() {
   const [closeError, setCloseError] = useState(null);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
+  const [lookupId, setLookupId] = useState("");
+  const [lookupError, setLookupError] = useState(null);
+
   const doFetch = () => {
     Promise.all([
       fetchEscalations().then((data) => {
@@ -159,6 +162,36 @@ export default function StaffDashboard() {
           }
           return curr;
         });
+      });
+  };
+
+  const handleCustomerLookup = (e) => {
+    e.preventDefault();
+    if (!lookupId) return;
+    setLookupError(null);
+    const stubTicket = {
+      id: "Lookup",
+      subject: `Direct Lookup (Customer #${lookupId})`,
+      category: "N/A",
+      status: "N/A",
+      sentiment: "neutral",
+      urgency: 0,
+      confidence: null,
+      customer_id: lookupId
+    };
+    setSelectedEscalation(stubTicket);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+
+    fetchCustomerRecord(lookupId)
+      .then(res => {
+        setDetail({ customer: res, trace: [], handoff_packet: null });
+        setDetailLoading(false);
+      })
+      .catch(err => {
+        setDetailError(err.message || "Failed to load customer profile");
+        setDetailLoading(false);
       });
   };
 
@@ -337,6 +370,34 @@ export default function StaffDashboard() {
             </button>
           </div>
         )}
+
+        <Can permission="view_customer_conversations">
+          <div className="app-panel-fit" style={{marginTop: '2rem'}}>
+            <div className="app-panel-header">
+              <h3>Customer Lookup</h3>
+            </div>
+            <div style={{padding: '1.5rem', display: 'flex', alignItems: 'flex-start', gap: '1rem'}}>
+              <form onSubmit={handleCustomerLookup} style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                <input
+                  type="number"
+                  placeholder="Customer ID"
+                  value={lookupId}
+                  onChange={e => setLookupId(e.target.value)}
+                  style={{padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--app-border)', fontFamily: 'inherit', fontSize: '0.9rem'}}
+                  min="1"
+                />
+                <button
+                  type="submit"
+                  disabled={!lookupId}
+                  className="app-btn-primary"
+                >
+                  Lookup History
+                </button>
+              </form>
+              {lookupError && <span className="app-error-text" style={{margin: '0.5rem 0 0 0'}}>{lookupError}</span>}
+            </div>
+          </div>
+        </Can>
         
         {loading ? (
           <div className="app-panel-fit">
@@ -741,9 +802,10 @@ export default function StaffDashboard() {
                 </>
               ) : null}
 
-              <Can permission="handle_escalations">
-                <div className="drawer-section">
-                  <div className="drawer-section-title">Staff Actions</div>
+              {selectedEscalation.id !== "Lookup" && (
+                <Can permission="handle_escalations">
+                  <div className="drawer-section">
+                    <div className="drawer-section-title">Staff Actions</div>
                   <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
                     
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
@@ -795,6 +857,7 @@ export default function StaffDashboard() {
                   </div>
                 </div>
               </Can>
+              )}
 
               {/* Issue #17: resolve this escalation, then let the Learning
                   Agent suggest a KB article for a human to approve. */}
