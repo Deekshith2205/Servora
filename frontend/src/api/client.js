@@ -1,15 +1,9 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function request(path, options = {}) {
-  const role = localStorage.getItem("servoraRole");
-  const userId = localStorage.getItem("servoraUserId");
-  const customerId = localStorage.getItem("servoraCustomerId");
-
+  const token = localStorage.getItem("servoraToken");
   const headers = { "Content-Type": "application/json", ...options.headers };
-  
-  if (role) headers["X-Servora-Role"] = role;
-  if (userId) headers["X-Servora-User-Id"] = userId;
-  if (customerId) headers["X-Servora-Customer-Id"] = customerId;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -49,6 +43,31 @@ export function fetchPermissions() {
 
 export function fetchAuthMe() {
   return request("/api/auth/me");
+}
+
+export function loginRequest(email, password) {
+  return request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function registerRequest(name, email, password) {
+  return request("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ name, email, password }),
+  });
+}
+
+export function logoutRequest() {
+  return request("/api/auth/logout", { method: "POST" });
+}
+
+export function createUser(payload) {
+  return request("/api/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function sendChatMessage(customerId, message, streamKey = null) {

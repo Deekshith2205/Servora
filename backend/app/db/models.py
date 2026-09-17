@@ -9,7 +9,7 @@ these directly.
 import json
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -419,22 +419,20 @@ class Channel(Base):
 
 
 class User(Base):
-    """[RBAC] issue #172 — a minimal, honest staff-identity table.
+    """[RBAC] issue #172 — a minimal staff-identity table.
 
-    Deliberately NOT a real login system — see app/auth/roles.py and the
-    RBAC epic's own explanation for why: this codebase has no
-    authentication anywhere (no password hashing, no session, no JWT),
-    and building one would itself be an architecture redesign the RBAC
-    epic's own instructions forbid. A staff member's real identity here
-    is asserted via the frontend's Role Switcher (a demo-appropriate
-    mechanism, matching this codebase's own pre-existing
-    `DEMO_CUSTOMER_ID = 1` convention), not a credential — so there is no
-    password/credential field at all, matching this table's own honest
-    scope.
+    Originally deliberately NOT a real login system (no password
+    hashing, no session, no JWT) — real auth has since been added (see
+    `Credential`/`AuthSession` below and `app/auth/password.py`) rather
+    than kept out forever. The identity row itself is unchanged: a
+    staff member's real password lives in `Credential`, not a column
+    here, so an existing `User` row (and every seeded/admin-created one)
+    never needed a schema change to grow real credentials.
 
     Customers do NOT get a row here — an existing `Customer` row already
     IS "the customer role" (see app/auth/dependency.py::get_current_actor()),
-    so no new customer-identity table exists either.
+    so no new customer-identity table exists either; `Credential`/
+    `AuthSession` reference a `Customer.id` the same way for that case.
     """
 
     __tablename__ = "users"
@@ -447,6 +445,54 @@ class User(Base):
     # every other fixed-vocabulary column in this file already uses.
     role: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Credential(Base):
+    """Real login credential — one row per Customer or staff User that
+    has ever set a password. A NEW table, not a `password_hash` column
+    added to `Customer`/`User` directly: this repo has no migration
+    tool (`Base.metadata.create_all()` only creates missing tables, it
+    doesn't ALTER an existing one — see the standing note in
+    CLAUDE.md), and this app's real deployment is a persistent Postgres
+    database where "just delete the file and reseed" isn't an option.
+    A brand-new table sidesteps that entirely: `create_all()` adds it
+    cleanly to an existing database, dev or prod, no migration needed.
+
+    `actor_type` + `actor_id` (not a single FK) because the referenced
+    row lives in one of two different tables depending on the type —
+    the same reason `Investigation.channel_metadata`-style polymorphic-
+    reference columns already exist elsewhere in this file; a real FK
+    can't point at "whichever table this row happens to belong to."
+    """
+
+    __tablename__ = "credentials"
+    __table_args__ = (UniqueConstraint("actor_type", "actor_id", name="uq_credential_actor"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor_type: Mapped[str] = mapped_column(String)  # "customer" | "staff"
+    actor_id: Mapped[int] = mapped_column(Integer)
+    password_hash: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AuthSession(Base):
+    """A real, server-side, revocable login session — the opaque bearer
+    token `POST /api/auth/login`/`/register` hands back, and the ONLY
+    thing `get_current_actor()` trusts to resolve identity now (see its
+    own docstring). Deliberately a DB table instead of a signed/stateless
+    JWT: no new crypto dependency, and logging out (or an admin revoking
+    a session) is a real `DELETE`, not "wait for the token to expire" —
+    genuinely revocable, matching how a real login system should behave,
+    not just look like one."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String, unique=True, index=True)
+    actor_type: Mapped[str] = mapped_column(String)  # "customer" | "staff"
+    actor_id: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
 
 
 class SystemSetting(Base):

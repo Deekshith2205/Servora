@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import CreateUserRequest, UpdateUserRequest, UserOut
 from app.auth.dependency import require_permission
+from app.auth.password import hash_password
 from app.auth.roles import STAFF_ROLES
 from app.db.database import get_db
-from app.db.models import User
+from app.db.models import Credential, User
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -32,6 +33,9 @@ def create_user(
 
     user = User(name=payload.name, email=payload.email, role=payload.role)
     db.add(user)
+    db.flush()  # need user.id before the Credential row can reference it
+
+    db.add(Credential(actor_type="staff", actor_id=user.id, password_hash=hash_password(payload.password)))
     db.commit()
     db.refresh(user)
     return user

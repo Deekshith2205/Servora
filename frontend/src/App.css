@@ -741,6 +741,56 @@
   white-space: pre-wrap;
 }
 
+/* Buttons + form inputs — used across Staff Dashboard, User Management,
+   Admin Settings, and Inbox, but never actually defined until now (every
+   one of those buttons/inputs was silently falling back to unstyled
+   browser defaults). */
+.app-btn-primary,
+.app-btn-secondary {
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--app-radius-md);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.app-btn-primary {
+  background: var(--app-primary);
+  color: #FFFFFF;
+  border: none;
+}
+.app-btn-primary:hover:not(:disabled) {
+  background: var(--app-primary-hover);
+}
+
+.app-btn-secondary {
+  background: var(--app-surface);
+  color: var(--app-text-primary);
+  border: 1px solid var(--app-border);
+}
+.app-btn-secondary:hover:not(:disabled) {
+  background: var(--app-surface-hover);
+  border-color: var(--app-border-hover);
+}
+
+.app-btn-primary:disabled,
+.app-btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.app-input {
+  font-size: 0.9rem;
+  color: var(--app-text-primary);
+  background: var(--app-surface);
+}
+.app-input:focus {
+  outline: none;
+  border-color: var(--app-primary) !important;
+  box-shadow: 0 0 0 3px var(--app-primary-soft);
+}
+
 /* Utilities */
 .app-error-banner {
   background: var(--app-danger-bg);

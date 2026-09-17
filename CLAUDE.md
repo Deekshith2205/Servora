@@ -2090,6 +2090,119 @@ not touched here.
 before this pass, no new ones). Backend suite untouched and re-run
 anyway: 458 passed, 1 skipped — this was a frontend-only change.
 
+### 2026-09-17 (continued) — Real authentication: real passwords, real
+sessions, real database-backed login — the demo role-switcher is gone
+
+The long-standing "not real auth" gap (flagged since `User`'s own
+docstring in issue #172, and repeated in every RBAC entry since) is
+closed. Explicit user choice: real login fully REPLACES the one-click
+demo role picker (no quick-swap buttons anywhere anymore); both
+customers and staff get real accounts; the 5 pre-existing demo
+identities were backfilled with a shared, documented demo password
+rather than left passwordless.
+
+**New tables, not altered ones** — `Credential` (`actor_type` +
+`actor_id` + `password_hash`, one row per Customer or staff User that
+has a password) and `AuthSession` (an opaque bearer token + expiry, a
+real revocable server-side session). Both are brand-new tables
+specifically so `Base.metadata.create_all()` can add them cleanly to
+the app's real deployment — a **persistent Neon Postgres database**,
+not a local file — with zero migration tool and zero risk to existing
+`Customer`/`User` rows. (Confirmed the hard way: `backend/.env`'s
+`DATABASE_URL` points at Neon, not sqlite — the local
+`servora.db` file this project's own convention says to "delete and
+reseed" is unused dead weight for the real dev server. Worth a
+`CONTRIBUTING.md`/README correction later.)
+
+- **`app/auth/password.py`** — PBKDF2-HMAC-SHA256 hashing, stdlib only
+  (no bcrypt/passlib dependency), a per-password random salt, a high
+  iteration count, `hmac.compare_digest` on verify. `verify_password()`
+  never raises on a malformed stored hash — treated as a wrong password,
+  not a 500.
+- **`app/auth/session.py`** — `create_session()`/`resolve_session()`/
+  `invalidate_session()` against `AuthSession`. Deliberately a DB table,
+  not a JWT: no new crypto dependency, and logging out is a real
+  `DELETE`, genuinely revocable (an admin could later force-expire any
+  session), not "wait for a signed token to expire on its own."
+- **`app/auth/dependency.py::get_current_actor()`** — a real
+  `Authorization: Bearer <token>` header, when present, is now the ONLY
+  thing consulted (resolved via `AuthSession`, never a client-supplied
+  role/id claim) — and takes strict priority: if presented at all, the
+  legacy `X-Servora-*` demo headers are ignored entirely for that
+  request, even if they claim a different identity (locked in by
+  `test_authorization_header_takes_priority_over_legacy_demo_headers`).
+  Those older headers are kept ONLY as a fallback when no Authorization
+  header is sent at all — purely so this repo's existing 90+-test RBAC
+  suite (built against that header shape) keeps working without a
+  mechanical rewrite. The real frontend, as of this change, never sends
+  them — `RoleSwitcher.jsx`'s old one-click "Switch Role"/"Switch
+  Identity" buttons are gone.
+- **`app/api/auth.py`** — `POST /register` (customer self-service only —
+  no public staff sign-up, since anyone could otherwise register as
+  "administrator"), `POST /login` (same generic 401 whether the email
+  doesn't exist, has no password set, or the password's just wrong —
+  standard practice, no enumeration), `POST /logout` (best-effort,
+  always 200). `POST /api/users` (existing admin-only staff creation)
+  now requires a real `password` (min 8 chars) and creates the matching
+  `Credential` row — the actual way a NEW staff login gets provisioned
+  now that self-service staff sign-up isn't a thing.
+- **Frontend**: `AuthContext.jsx`'s `switchIdentity()` replaced with
+  real `login()`/`register()`/`logout()`, storing a single
+  `servoraToken` in `localStorage` (the old `servoraRole`/
+  `servoraUserId`/`servoraCustomerId` keys are gone).
+  `api/client.js`'s `request()` now sends
+  `Authorization: Bearer <token>` exclusively — no more reading/writing
+  the three old identity keys at all. `Login.jsx` rewritten as a real
+  sign-in/sign-up form (email/password, a sign-up sub-form for
+  customers only) with a plainly-labeled "Demo accounts" hint box
+  (emails + the one shared demo password) so a judge can still try
+  every role without an out-of-band credential handoff — no click-to-
+  fill button, so it's a real typed login even for the demo path.
+  `UserManagement.jsx` gained a real "Add Staff Member" form (name/
+  email/role/password) — the admin-facing side of staff provisioning
+  that had no UI at all before this (the backend endpoint existed,
+  nothing called it).
+- **A real, separate bug found and fixed along the way**: `.app-btn-
+  primary`/`.app-btn-secondary`/`.app-input` were referenced by
+  StaffDashboard/AdminSettings/Inbox/UserManagement's own JSX but never
+  actually defined in any CSS file — every one of those buttons/inputs
+  had been silently rendering as unstyled browser defaults. Defined for
+  real in `App.css`, needed anyway for the new Add Staff Member form to
+  render correctly.
+- **One-time data backfill, not a migration**: `scripts/
+  backfill_demo_credentials.py` — `seed_if_empty()` only ever runs
+  against a genuinely empty database, so it could never retroactively
+  give the 5 pre-existing demo rows (already populated in the real
+  Neon Postgres DB from many prior sessions' testing) a password. This
+  script does that one-time, idempotent backfill directly; already run
+  once against the real dev/demo database as part of this session's own
+  verification (confirmed via a live login as each of the 5 accounts
+  after running it).
+
+**Verified live end-to-end against the real Neon Postgres database, not
+mocked**: wrong password on a real account → genuine 401 with a
+readable error in the UI; correct password → real session, chip reads
+"SIGNED IN AS customer · Alice Rao"; customer self-registration → a
+brand-new real `Customer` + `Credential` row, auto-logged-in
+immediately; Sign Out → session actually invalidated server-side,
+returns to the real Login screen; Administrator creating a new staff
+account through the new Add Staff Member form → a real `User` +
+`Credential` row; signing in as that BRAND NEW account with the
+password just set → succeeds, resolves the correct role, RBAC
+correctly still 403s pages that role can't reach. Session persistence
+confirmed across a full page reload (the bearer token round-trips
+through `localStorage` correctly) and in a completely fresh browser
+tab with zero console errors.
+
+18 new backend tests (`tests/test_real_auth.py`): password hash/verify
+roundtrip + real per-call salting, malformed-hash handling, register/
+login/logout happy paths, duplicate email, short password, wrong
+password, unknown email, admin-created-staff login, the
+Authorization-vs-legacy-header priority boundary, and an explicit
+regression test proving the old X-Servora-* path still works untouched
+when no Authorization header is sent. Full backend suite: **476
+passed** (458 + 18), 1 skipped. `npm run build`/`npm run lint`: clean.
+
 ## Next up (in priority order)
 
 1. ~~Confirm `call_llm()` against a real Anthropic API key~~ — **done,
@@ -2185,11 +2298,25 @@ anyway: 458 passed, 1 skipped — this was a frontend-only change.
   manual delete for SQLite** — moot for the actual deployed demo DB
   (Neon Postgres, since 2026-09-16), but still real for anyone running
   fully offline against the local SQLite fallback.
-- **Staff-identity is still demo-appropriate, not real authentication**
-  — no passwords, sessions, or JWTs, even though Track B's real Role
-  Switcher UI (2026-09-16/17) now makes it feel like a real login. #63's
-  own free-text `assigned_to` limitation (not a real FK to `User`) is
-  unchanged by this and still worth a real decision if picked up.
+- ~~Staff-identity is still demo-appropriate, not real authentication~~
+  — **done, 2026-09-17**: real passwords (`Credential`), real revocable
+  sessions (`AuthSession`), a real `Authorization: Bearer` token as the
+  only thing the backend trusts once presented. See that day's
+  progress-log entry. The demo role-switcher UI is gone; a plainly-
+  labeled "Demo accounts" hint on the real Login screen is what lets a
+  judge try every role now. #63's own free-text `assigned_to` limitation
+  (not a real FK to `User`) is unrelated and still open if picked up.
+- **The real deployed database is Neon Postgres, not the local
+  `backend/servora.db` file** — confirmed directly while building real
+  auth (`backend/.env`'s `DATABASE_URL` points at Neon). The project's
+  own "delete servora.db and reseed after a schema change" convention
+  only ever applied to a fully-offline local run; it does nothing for
+  the real dev/demo server. New tables are safe either way
+  (`create_all()` adds them cleanly to Postgres too), but a genuine
+  column-level schema change against the real Postgres DB would need an
+  actual migration — there still isn't one, and this project still has
+  no migration tool. Worth a real decision if a future change needs to
+  ALTER an existing table rather than add a new one.
 - **No public deployment URL, no recorded backup demo video** — see
   Next up #9. Neither is fixable by writing code; both are real,
   outstanding risks for judging.

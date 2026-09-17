@@ -687,6 +687,35 @@ class CreateUserRequest(BaseModel):
     name: str
     email: str
     role: str
+    # Real auth: an Administrator sets a new staff member's initial
+    # password directly (there's no public staff sign-up — see
+    # app/api/auth.py's own module docstring for why that split exists).
+    password: str = Field(min_length=8)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    """Public self-registration — customers only, see app/api/auth.py."""
+
+    name: str
+    email: str
+    password: str = Field(min_length=8)
+
+
+class AuthTokenOut(BaseModel):
+    """POST /api/auth/login|register|me-after-register response — enough
+    for the frontend to both store the session token and immediately
+    know who it belongs to, without a second round-trip to /auth/me."""
+
+    token: str
+    role: str
+    user_id: int | None = None
+    customer_id: int | None = None
+    name: str
 
 
 class UpdateUserRequest(BaseModel):
