@@ -224,3 +224,31 @@ def test_get_kb_article_404_for_unknown_id():
     with TestClient(app) as client:
         resp = client.get("/api/kb-articles/999999")
     assert resp.status_code == 404
+
+
+def test_support_agent_customer_history():
+    """[RBAC] issue #191: Support Agent has view_customer_conversations/view_evidence and can fetch ANY customer profile + history."""
+    db = SessionLocal()
+    customer = _seed_customer(db)
+    
+    # Add a ticket to ensure history populates correctly
+    t1 = Ticket(
+        customer_id=customer.id, category="billing", subject="Support Test",
+        message="test msg", sentiment="neutral", urgency=5, status="resolved",
+    )
+    db.add(t1)
+    db.commit()
+    
+    headers = staff_headers(db, "support_agent")
+
+    with TestClient(app) as client:
+        resp = client.get(f"/api/records/customers/{customer.id}", headers=headers)
+    
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == customer.id
+    
+    # Verify history is present
+    history = body.get("conversation_history", [])
+    assert len(history) == 1
+    assert history[0]["id"] == t1.id
