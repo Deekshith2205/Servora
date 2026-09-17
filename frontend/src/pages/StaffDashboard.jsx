@@ -371,7 +371,7 @@ export default function StaffDashboard() {
           </div>
         )}
 
-        <Can permission="view_customer_conversations">
+        
           <div className="app-panel-fit" style={{marginTop: '2rem'}}>
             <div className="app-panel-header">
               <h3>Customer Lookup</h3>
@@ -397,7 +397,6 @@ export default function StaffDashboard() {
               {lookupError && <span className="app-error-text" style={{margin: '0.5rem 0 0 0'}}>{lookupError}</span>}
             </div>
           </div>
-        </Can>
         
         {loading ? (
           <div className="app-panel-fit">
