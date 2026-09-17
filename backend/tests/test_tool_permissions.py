@@ -376,3 +376,33 @@ def test_unauthorized_tool_would_have_worked_if_authorized_control_case(db_sessi
 def test_build_filtered_tool_registry_rejects_unknown_specialist(db_session):
     with pytest.raises(ValueError, match="Unknown specialist"):
         build_filtered_tool_registry(db_session, "not_a_real_specialist")
+
+
+def test_shopify_lookup_disabled_by_toggle(db_session, monkeypatch):
+    """[RBAC] issue #205: Shopify tool aborts when feature_shopify_lookup_enabled=false."""
+    from app.db.models import SystemSetting
+    from app.tools.tool_registry import build_tool_registry
+    
+    db_session.add(SystemSetting(key="feature_shopify_lookup_enabled", value="false"))
+    db_session.commit()
+    
+    schemas, handlers = build_tool_registry(db_session)
+    result = handlers["lookup_shopify_order"]({"order_id": 1002})
+    assert result == {"error": "Shopify lookups are currently disabled by an administrator."}
+
+
+def test_shopify_lookup_enabled_by_toggle(db_session, monkeypatch):
+    """[RBAC] issue #205: Shopify tool executes when feature_shopify_lookup_enabled=true."""
+    from app.db.models import SystemSetting
+    from app.tools.tool_registry import build_tool_registry
+    
+    db_session.add(SystemSetting(key="feature_shopify_lookup_enabled", value="true"))
+    db_session.commit()
+    
+    def mock_get_order(db, order_id):
+        return {"id": order_id, "status": "fake_success"}
+    monkeypatch.setattr("app.services.shopify_service.get_order", mock_get_order)
+    
+    schemas, handlers = build_tool_registry(db_session)
+    result = handlers["lookup_shopify_order"]({"order_id": 1002})
+    assert result == {"id": 1002, "status": "fake_success"}

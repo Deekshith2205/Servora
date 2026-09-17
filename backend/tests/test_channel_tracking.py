@@ -279,12 +279,12 @@ def test_chat_endpoint_defaults_channel_to_live_chat_when_omitted(monkeypatch):
     ticket_id = resp.json()["ticket_id"]
 
     from app.db.database import SessionLocal
-    real_db = SessionLocal()
-    try:
-        ticket = real_db.get(Ticket, ticket_id)
-        assert ticket.channel_key == "live_chat"
-    finally:
-        real_db.close()
+    with SessionLocal() as real_db:
+        try:
+            ticket = real_db.get(Ticket, ticket_id)
+            assert ticket.channel_key == "live_chat"
+        finally:
+            real_db.close()
 
 
 def test_chat_endpoint_persists_a_real_channel_from_the_request_body(monkeypatch):
@@ -306,12 +306,12 @@ def test_chat_endpoint_persists_a_real_channel_from_the_request_body(monkeypatch
     ticket_id = resp.json()["ticket_id"]
 
     from app.db.database import SessionLocal
-    real_db = SessionLocal()
-    try:
-        ticket = real_db.get(Ticket, ticket_id)
-        assert ticket.channel_key == "whatsapp"
+    with SessionLocal() as real_db:
+        try:
+            ticket = real_db.get(Ticket, ticket_id)
+            assert ticket.channel_key == "whatsapp"
 
-        investigation = real_db.query(Investigation).filter(Investigation.ticket_id == ticket_id).first()
-        assert investigation.channel_key == "whatsapp"
-    finally:
-        real_db.close()
+            investigation = real_db.query(Investigation).filter(Investigation.ticket_id == ticket_id).first()
+            assert investigation.channel_key == "whatsapp"
+        finally:
+            real_db.close()

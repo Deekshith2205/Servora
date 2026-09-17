@@ -250,3 +250,25 @@ export function fetchShopifyOrderRecord(orderId) {
 export function fetchShopifyCustomerRecord(customerId) {
   return request(`/api/records/shopify-customers/${customerId}`);
 }
+
+export function fetchUsers() {
+  return request("/api/users");
+}
+
+export function updateUserRole(userId, role) {
+  return request(`/api/users/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export function fetchSettings() {
+  return request("/api/settings");
+}
+
+export function updateSetting(key, value) {
+  return request(`/api/settings/${key}`, {
+    method: "PATCH",
+    body: JSON.stringify({ value }),
+  });
+}

@@ -14,10 +14,10 @@ client = TestClient(app)
 
 
 def _admin_headers():
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    db.close()
-    return headers
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        db.close()
+        return headers
 
 
 def test_list_users_returns_real_seeded_staff():
@@ -30,10 +30,10 @@ def test_list_users_returns_real_seeded_staff():
 
 
 def test_list_users_without_permission_is_a_real_403():
-    db = SessionLocal()
-    headers = staff_headers(db, "support_agent")
-    resp = client.get("/api/users", headers=headers)
-    assert resp.status_code == 403
+    with SessionLocal() as db:
+        headers = staff_headers(db, "support_agent")
+        resp = client.get("/api/users", headers=headers)
+        assert resp.status_code == 403
 
 
 def test_create_user_inserts_a_real_row():
@@ -73,15 +73,15 @@ def test_create_user_rejects_a_duplicate_email():
 
 
 def test_create_user_without_permission_is_a_real_403():
-    db = SessionLocal()
-    headers = staff_headers(db, "manager")
-    resp = client.post("/api/users", json={
-        "name": "Nope", "email": "nope-user@example.com", "role": "support_agent",
-    }, headers=headers)
-    assert resp.status_code == 403
+    with SessionLocal() as db:
+        headers = staff_headers(db, "manager")
+        resp = client.post("/api/users", json={
+            "name": "Nope", "email": "nope-user@example.com", "role": "support_agent",
+        }, headers=headers)
+        assert resp.status_code == 403
 
-    # And confirmed no row was actually inserted.
-    assert db.query(User).filter(User.email == "nope-user@example.com").first() is None
+        # And confirmed no row was actually inserted.
+        assert db.query(User).filter(User.email == "nope-user@example.com").first() is None
 
 
 def test_update_user_changes_name_and_role():
@@ -104,7 +104,7 @@ def test_update_user_404_for_unknown_id():
 
 
 def test_update_user_without_permission_is_a_real_403():
-    db = SessionLocal()
-    headers = staff_headers(db, "support_agent")
-    resp = client.patch("/api/users/1", json={"name": "x"}, headers=headers)
-    assert resp.status_code == 403
+    with SessionLocal() as db:
+        headers = staff_headers(db, "support_agent")
+        resp = client.patch("/api/users/1", json={"name": "x"}, headers=headers)
+        assert resp.status_code == 403

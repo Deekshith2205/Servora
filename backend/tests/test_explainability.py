@@ -278,92 +278,92 @@ def _investigation_id_for(client, ticket_id, headers):
 
 
 def test_investigation_detail_includes_a_correct_execution_graph():
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        resp = client.get(f"/api/investigations/{investigation_id}", headers=headers)
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            resp = client.get(f"/api/investigations/{investigation_id}", headers=headers)
 
-    body = resp.json()
-    graph = body["graph"]
-    # classifier(1) -> planner(2) -> billing_specialist(3) -> {critic(4),
-    # verification(5)} -> memory(6, depends on verification only). Critic
-    # and verification both branch directly off the specialist (#110) —
-    # this is no longer a flat chain, so edges are checked as a set of
-    # (from, to) pairs rather than assuming index-to-index.
-    assert len(graph["nodes"]) == 6
-    edge_pairs = {(e["from_step"], e["to_step"]) for e in graph["edges"]}
-    assert edge_pairs == {(1, 2), (2, 3), (3, 4), (3, 5), (5, 6)}
+        body = resp.json()
+        graph = body["graph"]
+        # classifier(1) -> planner(2) -> billing_specialist(3) -> {critic(4),
+        # verification(5)} -> memory(6, depends on verification only). Critic
+        # and verification both branch directly off the specialist (#110) —
+        # this is no longer a flat chain, so edges are checked as a set of
+        # (from, to) pairs rather than assuming index-to-index.
+        assert len(graph["nodes"]) == 6
+        edge_pairs = {(e["from_step"], e["to_step"]) for e in graph["edges"]}
+        assert edge_pairs == {(1, 2), (2, 3), (3, 4), (3, 5), (5, 6)}
 
 
 def test_critic_review_round_trips_through_the_investigation_api():
     """[CRITIC] issue #111/#113: critic_review is populated ONLY on the
     critic's own step, null everywhere else."""
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        resp = client.get(f"/api/investigations/{investigation_id}", headers=headers)
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            resp = client.get(f"/api/investigations/{investigation_id}", headers=headers)
 
-    body = resp.json()
-    by_agent = {s["agent_name"]: s for s in body["timeline"]}
+        body = resp.json()
+        by_agent = {s["agent_name"]: s for s in body["timeline"]}
 
-    critic_review = by_agent["critic"]["critic_review"]
-    assert critic_review is not None
-    assert critic_review["agrees"] == _MOCK_CRITIC_REVIEW.agrees
-    assert critic_review["confidence"] == _MOCK_CRITIC_REVIEW.confidence
-    assert critic_review["reasoning"] == _MOCK_CRITIC_REVIEW.reasoning
+        critic_review = by_agent["critic"]["critic_review"]
+        assert critic_review is not None
+        assert critic_review["agrees"] == _MOCK_CRITIC_REVIEW.agrees
+        assert critic_review["confidence"] == _MOCK_CRITIC_REVIEW.confidence
+        assert critic_review["reasoning"] == _MOCK_CRITIC_REVIEW.reasoning
 
-    assert by_agent["billing_specialist"]["critic_review"] is None
-    assert by_agent["verification"]["critic_review"] is None
+        assert by_agent["billing_specialist"]["critic_review"] is None
+        assert by_agent["verification"]["critic_review"] is None
 
 
 def test_explanation_endpoint_for_a_resolved_investigation():
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        resp = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers)
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            resp = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers)
 
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "resolved"
-    assert body["channel"] == "live_chat"
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "resolved"
+        assert body["channel"] == "live_chat"
 
-    # [EXPLAIN] #90: overall + per-agent breakdown, only for agents that
-    # actually produced a confidence value.
-    assert body["confidence"]["overall"] == 0.9
-    breakdown_agents = {row["agent_name"] for row in body["confidence"]["by_agent"]}
-    assert "classifier" in breakdown_agents
-    assert "billing_specialist" in breakdown_agents
-    assert "planner" not in breakdown_agents  # planner never produces a confidence value
+        # [EXPLAIN] #90: overall + per-agent breakdown, only for agents that
+        # actually produced a confidence value.
+        assert body["confidence"]["overall"] == 0.9
+        breakdown_agents = {row["agent_name"] for row in body["confidence"]["by_agent"]}
+        assert "classifier" in breakdown_agents
+        assert "billing_specialist" in breakdown_agents
+        assert "planner" not in breakdown_agents  # planner never produces a confidence value
 
-    # [EXPLAIN] #91: evidence vs. policy_references split correctly.
-    assert any(r["type"] == "order" for r in body["evidence_refs"])
-    assert all(r["type"] == "kb_article" for r in body["policy_references"])
-    assert {"type": "kb_article", "ref_id": 2, "label": "Billing Policy"} in body["policy_references"]
+        # [EXPLAIN] #91: evidence vs. policy_references split correctly.
+        assert any(r["type"] == "order" for r in body["evidence_refs"])
+        assert all(r["type"] == "kb_article" for r in body["policy_references"])
+        assert {"type": "kb_article", "ref_id": 2, "label": "Billing Policy"} in body["policy_references"]
 
-    # [EXPLAIN] #89: the real alternative the planner rejected.
-    assert body["alternatives_considered"] == [
-        {"action": "escalate", "rejected_because": "confidence sufficient to resolve automatically"}
-    ]
+        # [EXPLAIN] #89: the real alternative the planner rejected.
+        assert body["alternatives_considered"] == [
+            {"action": "escalate", "rejected_because": "confidence sufficient to resolve automatically"}
+        ]
 
-    # [EXPLAIN] #96: the chosen action is reported separately from (and
-    # never equal to) any rejected alternative.
-    assert body["chosen_action"] == "resolve"
-    assert not any(a["action"] == body["chosen_action"] for a in body["alternatives_considered"])
+        # [EXPLAIN] #96: the chosen action is reported separately from (and
+        # never equal to) any rejected alternative.
+        assert body["chosen_action"] == "resolve"
+        assert not any(a["action"] == body["chosen_action"] for a in body["alternatives_considered"])
 
-    # [EXPLAIN] #92: agents_consulted + a non-empty, composed rationale.
-    consulted = {row["agent_name"] for row in body["agents_consulted"]}
-    assert {"classifier", "planner", "billing_specialist", "verification", "memory"} <= consulted
-    assert "Duplicate transaction detected." in body["decision_rationale"]
-    assert "Refund conditions satisfied." in body["decision_rationale"]
+        # [EXPLAIN] #92: agents_consulted + a non-empty, composed rationale.
+        consulted = {row["agent_name"] for row in body["agents_consulted"]}
+        assert {"classifier", "planner", "billing_specialist", "verification", "memory"} <= consulted
+        assert "Duplicate transaction detected." in body["decision_rationale"]
+        assert "Refund conditions satisfied." in body["decision_rationale"]
 
 
 def test_explanation_endpoint_for_an_escalated_investigation_falls_back_to_the_handoff_packet():
@@ -372,174 +372,174 @@ def test_explanation_endpoint_for_an_escalated_investigation_falls_back_to_the_h
     could use — decision_rationale must fall back to the persisted
     HandoffPacket, and the confidence breakdown must not fabricate a
     specialist entry that never ran."""
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _escalate_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        resp = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers)
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _escalate_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            resp = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers)
 
-    body = resp.json()
-    assert body["status"] == "escalated"
-    breakdown_agents = {row["agent_name"] for row in body["confidence"]["by_agent"]}
-    assert "billing_specialist" not in breakdown_agents
-    assert "technical_specialist" not in breakdown_agents
+        body = resp.json()
+        assert body["status"] == "escalated"
+        breakdown_agents = {row["agent_name"] for row in body["confidence"]["by_agent"]}
+        assert "billing_specialist" not in breakdown_agents
+        assert "technical_specialist" not in breakdown_agents
 
-    assert "Requires authority the AI doesn't have." in body["decision_rationale"]
-    assert "Have a human review the request." in body["decision_rationale"]
-    assert body["alternatives_considered"] == [
-        {"action": "resolve", "rejected_because": "no specialist can grant a policy exception"}
-    ]
-    # [EXPLAIN] #96: the direct-escalate branch's chosen action is
-    # "escalate", not fabricated as "resolve".
-    assert body["chosen_action"] == "escalate"
+        assert "Requires authority the AI doesn't have." in body["decision_rationale"]
+        assert "Have a human review the request." in body["decision_rationale"]
+        assert body["alternatives_considered"] == [
+            {"action": "resolve", "rejected_because": "no specialist can grant a policy exception"}
+        ]
+        # [EXPLAIN] #96: the direct-escalate branch's chosen action is
+        # "escalate", not fabricated as "resolve".
+        assert body["chosen_action"] == "escalate"
 
 
 def test_evidence_endpoint_matches_the_explanation_endpoints_evidence():
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        explanation = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers).json()
-        evidence = client.get(f"/api/investigations/{investigation_id}/evidence", headers=headers).json()
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            explanation = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers).json()
+            evidence = client.get(f"/api/investigations/{investigation_id}/evidence", headers=headers).json()
 
-    assert evidence["evidence"] == explanation["evidence"]
-    assert evidence["evidence_refs"] == explanation["evidence_refs"]
-    assert evidence["policy_references"] == explanation["policy_references"]
+        assert evidence["evidence"] == explanation["evidence"]
+        assert evidence["evidence_refs"] == explanation["evidence_refs"]
+        assert evidence["policy_references"] == explanation["policy_references"]
 
 
 def test_confidence_endpoint_matches_the_explanation_endpoints_confidence():
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        explanation = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers).json()
-        confidence = client.get(f"/api/investigations/{investigation_id}/confidence", headers=headers).json()
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            explanation = client.get(f"/api/investigations/{investigation_id}/explanation", headers=headers).json()
+            confidence = client.get(f"/api/investigations/{investigation_id}/confidence", headers=headers).json()
 
-    assert confidence == explanation["confidence"]
+        assert confidence == explanation["confidence"]
 
 
 def test_explanation_404_for_unknown_investigation():
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        resp = client.get("/api/investigations/999999/explanation", headers=headers)
-    assert resp.status_code == 404
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            resp = client.get("/api/investigations/999999/explanation", headers=headers)
+        assert resp.status_code == 404
 
 
-# --------------------------------------------------------------------- #
-# [Explainability #123/#126]: GET /{id}/evidence/{evidenceId} — the
-# Explainability Drawer's data source.
-# --------------------------------------------------------------------- #
+    # --------------------------------------------------------------------- #
+    # [Explainability #123/#126]: GET /{id}/evidence/{evidenceId} — the
+    # Explainability Drawer's data source.
+    # --------------------------------------------------------------------- #
 
 
 def test_evidence_detail_for_a_real_order_ref():
     """billing_specialist is step 3 (classifier=1, planner=2), and its
     first evidence_refs entry ("3:0") is the real order it looked up —
     see _resolve_via_chat above."""
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:0", headers=headers)
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:0", headers=headers)
 
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["investigation_id"] == investigation_id
-    assert body["evidence_id"] == "3:0"
-    assert body["step_number"] == 3
-    assert body["title"] == "Order #5"
-    assert body["agent_name"] == "billing_specialist"
-    assert body["confidence"] == 0.9
-    assert body["evidence_ref"] == {"type": "order", "ref_id": 5, "label": "Order #5"}
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["investigation_id"] == investigation_id
+        assert body["evidence_id"] == "3:0"
+        assert body["step_number"] == 3
+        assert body["title"] == "Order #5"
+        assert body["agent_name"] == "billing_specialist"
+        assert body["confidence"] == 0.9
+        assert body["evidence_ref"] == {"type": "order", "ref_id": 5, "label": "Order #5"}
 
-    # Real reasoning_text was recorded for this step (planner-level
-    # reasoning is separate) — not the deterministic fallback.
-    assert body["reasoning"]
+        # Real reasoning_text was recorded for this step (planner-level
+        # reasoning is separate) — not the deterministic fallback.
+        assert body["reasoning"]
 
-    # Both tools the step actually called are listed, each attributed the
-    # SAME step-level duration/records-returned (documented approximation
-    # — see ToolExecutionOut's docstring).
-    tool_names = {t["tool_name"] for t in body["tools"]}
-    assert tool_names == {"get_customer_orders", "issue_refund"}
-    durations = {t["duration_ms"] for t in body["tools"]}
-    assert len(durations) == 1  # identical across tools, by design
+        # Both tools the step actually called are listed, each attributed the
+        # SAME step-level duration/records-returned (documented approximation
+        # — see ToolExecutionOut's docstring).
+        tool_names = {t["tool_name"] for t in body["tools"]}
+        assert tool_names == {"get_customer_orders", "issue_refund"}
+        durations = {t["duration_ms"] for t in body["tools"]}
+        assert len(durations) == 1  # identical across tools, by design
 
-    # Confidence breakdown: three real sub-scores, each in [0, 1].
-    breakdown = body["confidence_breakdown"]
-    for key in ("evidence_quality", "data_freshness", "source_reliability"):
-        assert 0.0 <= breakdown[key] <= 1.0
-    # An "order" ref's source_reliability is higher than a "kb_article"
-    # ref's — checked against the second evidence item below.
+        # Confidence breakdown: three real sub-scores, each in [0, 1].
+        breakdown = body["confidence_breakdown"]
+        for key in ("evidence_quality", "data_freshness", "source_reliability"):
+            assert 0.0 <= breakdown[key] <= 1.0
+        # An "order" ref's source_reliability is higher than a "kb_article"
+        # ref's — checked against the second evidence item below.
 
-    assert "Duplicate transaction detected." in body["impact"]
+        assert "Duplicate transaction detected." in body["impact"]
 
 
 def test_evidence_detail_for_a_kb_article_ref_has_lower_source_reliability_than_the_order_ref():
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        order_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:0", headers=headers).json()
-        kb_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:1", headers=headers).json()
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            order_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:0", headers=headers).json()
+            kb_evidence = client.get(f"/api/investigations/{investigation_id}/evidence/3:1", headers=headers).json()
 
-    assert kb_evidence["title"] == "Billing Policy"
-    assert kb_evidence["evidence_ref"]["type"] == "kb_article"
-    assert (
-        kb_evidence["confidence_breakdown"]["source_reliability"]
-        < order_evidence["confidence_breakdown"]["source_reliability"]
-    )
+        assert kb_evidence["title"] == "Billing Policy"
+        assert kb_evidence["evidence_ref"]["type"] == "kb_article"
+        assert (
+            kb_evidence["confidence_breakdown"]["source_reliability"]
+            < order_evidence["confidence_breakdown"]["source_reliability"]
+        )
 
 
 def test_evidence_detail_malformed_id_is_a_400_not_a_500():
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/not-a-valid-id", headers=headers)
-    assert resp.status_code == 400
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            resp = client.get(f"/api/investigations/{investigation_id}/evidence/not-a-valid-id", headers=headers)
+        assert resp.status_code == 400
 
 
 def test_evidence_detail_out_of_range_index_is_404():
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        # Step 3 only has 2 evidence_refs (indices 0-1).
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:99", headers=headers)
-    assert resp.status_code == 404
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            # Step 3 only has 2 evidence_refs (indices 0-1).
+            resp = client.get(f"/api/investigations/{investigation_id}/evidence/3:99", headers=headers)
+        assert resp.status_code == 404
 
 
 def test_evidence_detail_unknown_step_is_404():
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _resolve_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/999:0", headers=headers)
-    assert resp.status_code == 404
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _resolve_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            resp = client.get(f"/api/investigations/{investigation_id}/evidence/999:0", headers=headers)
+        assert resp.status_code == 404
 
 
 def test_evidence_detail_404_for_unknown_investigation():
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        resp = client.get("/api/investigations/999999/evidence/1:0", headers=headers)
-    assert resp.status_code == 404
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            resp = client.get("/api/investigations/999999/evidence/1:0", headers=headers)
+        assert resp.status_code == 404
 
 
 def test_evidence_detail_on_escalation_reports_escalation_impact():
@@ -547,22 +547,22 @@ def test_evidence_detail_on_escalation_reports_escalation_impact():
     runs a specialist, so its evidence (if any) comes from the escalation
     step itself — impact text must say "escalate", never fabricate a
     root-cause-style sentence that branch never produced."""
-    db = SessionLocal()
-    customer = _seed_api_customer(db)
-    headers = staff_headers(db, "administrator")
-    with TestClient(app) as client:
-        chat_resp = _escalate_via_chat(client, customer.id)
-        investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
-        detail = client.get(f"/api/investigations/{investigation_id}", headers=headers)
-        # Find any step on this investigation that actually has an
-        # evidence ref to drill into — the escalation step itself may or
-        # may not, so search rather than assume step_number.
-        step_with_ref = next(
-            (s for s in detail.json()["timeline"] if s["evidence_refs"]), None
-        )
-        if step_with_ref is None:
-            pytest.skip("this escalation path recorded no structured evidence refs to drill into")
-        resp = client.get(f"/api/investigations/{investigation_id}/evidence/{step_with_ref['step_number']}:0", headers=headers)
+    with SessionLocal() as db:
+        customer = _seed_api_customer(db)
+        headers = staff_headers(db, "administrator")
+        with TestClient(app) as client:
+            chat_resp = _escalate_via_chat(client, customer.id)
+            investigation_id = _investigation_id_for(client, chat_resp.json()["ticket_id"], headers)
+            detail = client.get(f"/api/investigations/{investigation_id}", headers=headers)
+            # Find any step on this investigation that actually has an
+            # evidence ref to drill into — the escalation step itself may or
+            # may not, so search rather than assume step_number.
+            step_with_ref = next(
+                (s for s in detail.json()["timeline"] if s["evidence_refs"]), None
+            )
+            if step_with_ref is None:
+                pytest.skip("this escalation path recorded no structured evidence refs to drill into")
+            resp = client.get(f"/api/investigations/{investigation_id}/evidence/{step_with_ref['step_number']}:0", headers=headers)
 
-    assert resp.status_code == 200
-    assert "escalate" in resp.json()["impact"].lower()
+        assert resp.status_code == 200
+        assert "escalate" in resp.json()["impact"].lower()

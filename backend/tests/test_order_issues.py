@@ -11,9 +11,9 @@ from app.db.database import SessionLocal
 
 @pytest.fixture
 def db_session():
-    db = SessionLocal()
-    yield db
-    db.close()
+    with SessionLocal() as db:
+        yield db
+        db.close()
 
 
 def test_check_order_issue_cancelled(db_session):

@@ -27,10 +27,10 @@ client = TestClient(app)
 
 
 def _admin_headers():
-    db = SessionLocal()
-    headers = staff_headers(db, "administrator")
-    db.close()
-    return headers
+    with SessionLocal() as db:
+        headers = staff_headers(db, "administrator")
+        db.close()
+        return headers
 
 
 def test_escalation_detail_404_for_missing_ticket():
@@ -41,18 +41,18 @@ def test_escalation_detail_404_for_missing_ticket():
 def test_escalation_detail_for_a_ticket_with_no_trace_has_none_for_both():
     # A ticket that never went through /api/chat (e.g. created directly,
     # like the seeded demo tickets) has no trace_json/handoff_packet_json.
-    db = SessionLocal()
-    ticket = Ticket(customer_id=1, category="order", subject="no-trace ticket", message="m", status="open")
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
-    headers = staff_headers(db, "administrator")
+    with SessionLocal() as db:
+        ticket = Ticket(customer_id=1, category="order", subject="no-trace ticket", message="m", status="open")
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        headers = staff_headers(db, "administrator")
 
-    resp = client.get(f"/api/escalations/{ticket.id}", headers=headers)
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["trace"] is None
-    assert body["handoff_packet"] is None
+        resp = client.get(f"/api/escalations/{ticket.id}", headers=headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["trace"] is None
+        assert body["handoff_packet"] is None
 
 
 def test_escalation_detail_for_a_real_escalation_has_trace_and_packet(monkeypatch):
@@ -96,33 +96,33 @@ def test_escalation_detail_for_a_real_escalation_has_trace_and_packet(monkeypatc
 
 
 def test_list_resolved_tickets_excludes_open_and_escalated():
-    db = SessionLocal()
-    ticket_resolved = Ticket(customer_id=1, category="order", subject="resolved ticket", message="m", status="resolved")
-    ticket_open = Ticket(customer_id=1, category="order", subject="open ticket", message="m", status="open")
-    ticket_escalated = Ticket(customer_id=1, category="order", subject="escalated ticket", message="m", status="escalated")
-    db.add_all([ticket_resolved, ticket_open, ticket_escalated])
-    db.commit()
+    with SessionLocal() as db:
+        ticket_resolved = Ticket(customer_id=1, category="order", subject="resolved ticket", message="m", status="resolved")
+        ticket_open = Ticket(customer_id=1, category="order", subject="open ticket", message="m", status="open")
+        ticket_escalated = Ticket(customer_id=1, category="order", subject="escalated ticket", message="m", status="escalated")
+        db.add_all([ticket_resolved, ticket_open, ticket_escalated])
+        db.commit()
 
-    # GET /api/tickets/resolved is not permission-gated — untouched by RBAC.
-    resp = client.get("/api/tickets/resolved")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body) >= 1
-    assert any(t["subject"] == "resolved ticket" for t in body)
-    assert all(t["status"] == "resolved" for t in body)
+        # GET /api/tickets/resolved is not permission-gated — untouched by RBAC.
+        resp = client.get("/api/tickets/resolved")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body) >= 1
+        assert any(t["subject"] == "resolved ticket" for t in body)
+        assert all(t["status"] == "resolved" for t in body)
 
 def test_list_escalations_excludes_resolved_and_closed():
-    db = SessionLocal()
-    ticket_resolved = Ticket(customer_id=1, category="order", subject="res", message="m", status="resolved")
-    ticket_closed = Ticket(customer_id=1, category="order", subject="cls", message="m", status="closed")
-    db.add_all([ticket_resolved, ticket_closed])
-    db.commit()
-    headers = staff_headers(db, "administrator")
+    with SessionLocal() as db:
+        ticket_resolved = Ticket(customer_id=1, category="order", subject="res", message="m", status="resolved")
+        ticket_closed = Ticket(customer_id=1, category="order", subject="cls", message="m", status="closed")
+        db.add_all([ticket_resolved, ticket_closed])
+        db.commit()
+        headers = staff_headers(db, "administrator")
 
-    resp = client.get("/api/escalations", headers=headers)
-    assert resp.status_code == 200
-    body = resp.json()
-    assert not any(t["status"] in ["resolved", "closed"] for t in body)
+        resp = client.get("/api/escalations", headers=headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert not any(t["status"] in ["resolved", "closed"] for t in body)
 
 
 def test_list_escalations_without_permission_is_a_real_403():
@@ -133,110 +133,110 @@ def test_list_escalations_without_permission_is_a_real_403():
 
 
 def test_escalation_detail_includes_customer_and_history():
-    db = SessionLocal()
-    from app.db.models import Customer
-    customer = Customer(name="Test Customer", email="test@example.com", phone="123", tier="vip")
-    db.add(customer)
-    db.commit()
-    db.refresh(customer)
+    with SessionLocal() as db:
+        from app.db.models import Customer
+        customer = Customer(name="Test Customer", email="test@example.com", phone="123", tier="vip")
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
 
-    ticket1 = Ticket(customer_id=customer.id, category="order", subject="Past 1", message="m", status="resolved")
-    ticket2 = Ticket(customer_id=customer.id, category="order", subject="Past 2", message="m", status="closed")
-    ticket_main = Ticket(customer_id=customer.id, category="account", subject="Current", message="m", status="open")
+        ticket1 = Ticket(customer_id=customer.id, category="order", subject="Past 1", message="m", status="resolved")
+        ticket2 = Ticket(customer_id=customer.id, category="order", subject="Past 2", message="m", status="closed")
+        ticket_main = Ticket(customer_id=customer.id, category="account", subject="Current", message="m", status="open")
 
-    db.add_all([ticket1, ticket2, ticket_main])
-    db.commit()
-    db.refresh(ticket_main)
-    headers = staff_headers(db, "administrator")
+        db.add_all([ticket1, ticket2, ticket_main])
+        db.commit()
+        db.refresh(ticket_main)
+        headers = staff_headers(db, "administrator")
 
-    resp = client.get(f"/api/escalations/{ticket_main.id}", headers=headers)
-    assert resp.status_code == 200
-    body = resp.json()
+        resp = client.get(f"/api/escalations/{ticket_main.id}", headers=headers)
+        assert resp.status_code == 200
+        body = resp.json()
 
-    assert body["customer"] is not None
-    assert body["customer"]["name"] == "Test Customer"
-    assert body["customer"]["tier"] == "vip"
+        assert body["customer"] is not None
+        assert body["customer"]["name"] == "Test Customer"
+        assert body["customer"]["tier"] == "vip"
 
-    history = body["customer_history"]
-    assert history is not None
-    assert len(history) == 2
-    # Ensure current ticket is not in history
-    assert not any(h["id"] == ticket_main.id for h in history)
+        history = body["customer_history"]
+        assert history is not None
+        assert len(history) == 2
+        # Ensure current ticket is not in history
+        assert not any(h["id"] == ticket_main.id for h in history)
 
 
 def test_assign_escalation():
-    db = SessionLocal()
-    ticket = Ticket(customer_id=1, category="order", subject="Assign test", message="m", status="open")
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
-    headers = staff_headers(db, "administrator")
+    with SessionLocal() as db:
+        ticket = Ticket(customer_id=1, category="order", subject="Assign test", message="m", status="open")
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        headers = staff_headers(db, "administrator")
 
-    # Assign
-    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": "Asha"}, headers=headers)
-    assert resp.status_code == 200
-    assert resp.json()["assigned_to"] == "Asha"
+        # Assign
+        resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": "Asha"}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["assigned_to"] == "Asha"
 
-    # Unassign
-    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": None}, headers=headers)
-    assert resp.status_code == 200
-    assert resp.json()["assigned_to"] is None
+        # Unassign
+        resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": None}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["assigned_to"] is None
 
 
 def test_assign_escalation_validation():
-    db = SessionLocal()
-    ticket_resolved = Ticket(customer_id=1, category="order", subject="Assign valid", message="m", status="resolved")
-    db.add(ticket_resolved)
-    db.commit()
-    db.refresh(ticket_resolved)
-    headers = staff_headers(db, "administrator")
+    with SessionLocal() as db:
+        ticket_resolved = Ticket(customer_id=1, category="order", subject="Assign valid", message="m", status="resolved")
+        db.add(ticket_resolved)
+        db.commit()
+        db.refresh(ticket_resolved)
+        headers = staff_headers(db, "administrator")
 
-    # Cannot assign resolved
-    resp = client.post(f"/api/escalations/{ticket_resolved.id}/assign", json={"assigned_to": "Asha"}, headers=headers)
-    assert resp.status_code == 400
+        # Cannot assign resolved
+        resp = client.post(f"/api/escalations/{ticket_resolved.id}/assign", json={"assigned_to": "Asha"}, headers=headers)
+        assert resp.status_code == 400
 
-    ticket_open = Ticket(customer_id=1, category="order", subject="Assign valid", message="m", status="open")
-    db.add(ticket_open)
-    db.commit()
-    db.refresh(ticket_open)
+        ticket_open = Ticket(customer_id=1, category="order", subject="Assign valid", message="m", status="open")
+        db.add(ticket_open)
+        db.commit()
+        db.refresh(ticket_open)
 
-    # Empty string
-    resp = client.post(f"/api/escalations/{ticket_open.id}/assign", json={"assigned_to": "   "}, headers=headers)
-    assert resp.status_code == 400
+        # Empty string
+        resp = client.post(f"/api/escalations/{ticket_open.id}/assign", json={"assigned_to": "   "}, headers=headers)
+        assert resp.status_code == 400
 
 
 def test_assign_escalation_without_permission_is_a_real_403():
-    db = SessionLocal()
-    ticket = Ticket(customer_id=1, category="order", subject="Assign test perm", message="m", status="open")
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
-    headers = staff_headers(db, "manager")  # can view the queue, but not act on it
+    with SessionLocal() as db:
+        ticket = Ticket(customer_id=1, category="order", subject="Assign test perm", message="m", status="open")
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        headers = staff_headers(db, "manager")  # can view the queue, but not act on it
 
-    resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": "Asha"}, headers=headers)
-    assert resp.status_code == 403
+        resp = client.post(f"/api/escalations/{ticket.id}/assign", json={"assigned_to": "Asha"}, headers=headers)
+        assert resp.status_code == 403
 
 
 def test_close_escalation():
-    db = SessionLocal()
-    ticket = Ticket(customer_id=1, category="order", subject="Close test", message="m", status="open")
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
-    headers = staff_headers(db, "administrator")
+    with SessionLocal() as db:
+        ticket = Ticket(customer_id=1, category="order", subject="Close test", message="m", status="open")
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        headers = staff_headers(db, "administrator")
 
-    resp = client.post(f"/api/escalations/{ticket.id}/close", headers=headers)
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "closed"
+        resp = client.post(f"/api/escalations/{ticket.id}/close", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "closed"
 
 
 def test_close_escalation_validation():
-    db = SessionLocal()
-    ticket = Ticket(customer_id=1, category="order", subject="Close test 2", message="m", status="resolved")
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
-    headers = staff_headers(db, "administrator")
+    with SessionLocal() as db:
+        ticket = Ticket(customer_id=1, category="order", subject="Close test 2", message="m", status="resolved")
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        headers = staff_headers(db, "administrator")
 
-    resp = client.post(f"/api/escalations/{ticket.id}/close", headers=headers)
-    assert resp.status_code == 400
+        resp = client.post(f"/api/escalations/{ticket.id}/close", headers=headers)
+        assert resp.status_code == 400

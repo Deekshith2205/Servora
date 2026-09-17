@@ -758,4 +758,3 @@ def test_tool_exception_returns_sanitized_message_not_raw_exception():
     assert "OperationalError" not in err_block["content"]
     # Must contain the safe generic message
     assert "Tool execution failed" in err_block["content"]
-

@@ -49,7 +49,7 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Customer, KBArticle, Order, Room, Ticket
+from app.db.models import Customer, KBArticle, Order, Room, Ticket, SystemSetting
 from app.services import shopify_service
 from app.services.shopify_service import ShopifyAPIError, ShopifyNotConnectedError
 from app.tools import mock_tools
@@ -121,7 +121,7 @@ def serialize_tool_result(result: Any) -> str:
     return json.dumps(_serialize(result), default=str)
 
 
-def _call_shopify(fn: Callable[[], Any]) -> Any:
+def _call_shopify(db: Session, fn: Callable[[], Any]) -> Any:
     """Every Shopify-backed tool handler goes through this: turns "not
     connected" / "a real API call failed" into a plain, honest result
     dict instead of letting either propagate as a raw exception into
@@ -136,6 +136,10 @@ def _call_shopify(fn: Callable[[], Any]) -> Any:
     programming bug here should still surface loudly, the same way an
     unrelated bug in mock_tools.py would.
     """
+    setting = db.get(SystemSetting, "feature_shopify_lookup_enabled")
+    if setting and setting.value == "false":
+        return {"error": "Shopify lookups are currently disabled by an administrator."}
+
     try:
         return fn()
     except ShopifyNotConnectedError as exc:
@@ -420,15 +424,15 @@ def build_tool_registry(
         ),
         _BoundTool(
             schema=TOOL_SCHEMAS[8],  # lookup_shopify_order
-            handler=lambda args: _call_shopify(lambda: shopify_service.get_order(db, args["order_id"])),
+            handler=lambda args: _call_shopify(db, lambda: shopify_service.get_order(db, args["order_id"])),
         ),
         _BoundTool(
             schema=TOOL_SCHEMAS[9],  # lookup_shopify_customer
-            handler=lambda args: _call_shopify(lambda: _lookup_shopify_customer(db, args)),
+            handler=lambda args: _call_shopify(db, lambda: _lookup_shopify_customer(db, args)),
         ),
         _BoundTool(
             schema=TOOL_SCHEMAS[10],  # lookup_shopify_fulfillment
-            handler=lambda args: _call_shopify(lambda: shopify_service.get_fulfillment_status(db, args["order_id"])),
+            handler=lambda args: _call_shopify(db, lambda: shopify_service.get_fulfillment_status(db, args["order_id"])),
         ),
     ]
 
