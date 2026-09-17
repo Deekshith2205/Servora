@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { fetchAuthMe, fetchPermissions, loginRequest, logoutRequest, registerRequest } from "../api/client";
+import { fetchAuthMe, fetchPermissions, googleSignInRequest, loginRequest, logoutRequest, registerRequest } from "../api/client";
 import { setPermissionsCache } from "./roles";
 
 const AuthContext = createContext(null);
@@ -43,6 +43,15 @@ export function AuthProvider({ children }) {
     return result;
   };
 
+  // credential is the ID token Google Identity Services' JS client
+  // returns — verified server-side, see app/api/auth.py::google_sign_in().
+  const loginWithGoogle = async (credential) => {
+    const result = await googleSignInRequest(credential);
+    localStorage.setItem("servoraToken", result.token);
+    await refreshIdentity();
+    return result;
+  };
+
   const logout = async () => {
     try {
       await logoutRequest();
@@ -66,7 +75,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ currentRole, currentUser, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ currentRole, currentUser, loading, login, register, logout, loginWithGoogle }}>
       {children}
     </AuthContext.Provider>
   );

@@ -706,6 +706,15 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
+class GoogleSignInRequest(BaseModel):
+    """The ID token Google Identity Services' JS client returns after a
+    successful "Sign in with Google" — a signed JWT, verified server-side
+    against Google's own public keys in app/api/auth.py::google_sign_in().
+    Never a password, never an authorization code."""
+
+    credential: str
+
+
 class AuthTokenOut(BaseModel):
     """POST /api/auth/login|register|me-after-register response — enough
     for the frontend to both store the session token and immediately

@@ -2203,6 +2203,137 @@ regression test proving the old X-Servora-* path still works untouched
 when no Authorization header is sent. Full backend suite: **476
 passed** (458 + 18), 1 skipped. `npm run build`/`npm run lint`: clean.
 
+### 2026-09-17 (continued) — Split-screen login redesign + real "Sign in
+with Google", modeled on a reference video the user provided
+
+The user attached a ~13s reference video (a "Scrumball" marketing SaaS
+login page) and asked for the same layout — split-screen, auto-rotating
+gradient showcase on the right — with the showcase's own images
+replaced by something customer-support-appropriate, plus real Google
+Sign-In, plus a way to show which account type is signing in. No
+`ffmpeg` on this machine — extracted 10 sample frames from the `.mp4`
+directly via a throwaway `opencv-python-headless` install in the
+backend venv (uninstalled again immediately after, not a real
+dependency) to see the actual design rather than guessing from the
+description.
+
+**Two decisions confirmed with the user before building** (both
+touched things only they could decide): the one-click demo role picker
+is gone for good, replaced entirely by real credentials (no coexistence
+option); and "who are you logging in as" means an upfront "Customer /
+Staff member" toggle on the login form itself, framing-only — the
+backend still always resolves the real role from the account, the
+toggle never gates auth.
+
+**Real "Sign in with Google"** — the user provided a real Google OAuth
+Client ID directly (a screenshot from Google Cloud Console, which also
+showed the client SECRET — deliberately never used or stored anywhere
+in this app; only the Client ID went into `.env`, since the flow this
+app uses only ever needs that):
+
+- `app/auth/password.py`/`session.py` untouched — Google sign-in is a
+  parallel path, not a replacement. New `POST /api/auth/google`
+  (`app/api/auth.py::google_sign_in()`) takes the ID token Google
+  Identity Services' JS client hands back, verifies it server-side via
+  `google.oauth2.id_token.verify_oauth2_token()` against Google's own
+  public keys (new dependency: `google-auth==2.58.0` — pinned to that
+  version specifically because `google-genai` already requires
+  `google-auth>=2.56.0`; a naive `pip install` without checking picked
+  2.35.0 first and broke that). Resolves the SAME way `login()` does —
+  existing Customer or staff User row matched by email, no password
+  check, a verified Google identity substitutes for one — or creates a
+  brand-new self-service Customer for an unrecognized email (same
+  customer-only policy as `/register`), with no `Credential` row at all
+  since no password was ever set.
+- **Deliberately the ID-token flow, not the authorization-code-exchange
+  one** — the reason the client secret is never needed anywhere in this
+  app. `GOOGLE_CLIENT_ID` added to `app/config.py`/`.env`/`.env.example`
+  (backend) and `VITE_GOOGLE_CLIENT_ID` (frontend) — both `.env` files
+  confirmed already gitignored and untracked before writing either
+  value in.
+- **New `frontend/src/auth/GoogleSignInButton.jsx`** — loads
+  `accounts.google.com/gsi/client` once (module-level promise, so
+  re-mounting the component doesn't reload the script), renders
+  Google's own button (required by their branding terms — a hand-drawn
+  look-alike isn't allowed), shows a plain "not configured" notice if
+  `VITE_GOOGLE_CLIENT_ID` is unset — matching this app's own convention
+  for an unconfigured integration (see the Shopify card in
+  Integrations.jsx). **A real responsiveness bug found and fixed
+  live**: Google's `renderButton()` bakes in a fixed pixel width at
+  render time and never reflows on its own — resizing the window (or a
+  real device rotation) after the initial render left the button
+  overflowing its now-narrower container. Fixed with a `ResizeObserver`
+  that re-renders the button on real size changes; confirmed fixed by
+  reproducing the overflow, then confirming it stayed correctly sized
+  after the fix. A genuinely fresh page load at mobile width (not a
+  post-load resize) was never actually broken — worth being precise
+  about, since this bug window was narrower than it first looked.
+
+**New `frontend/src/auth/AuthShowcase.jsx`** — the right-panel
+showcase: 3 auto-rotating slides (5s interval, hover-reveal prev/next
+arrows, click-through dot navigation, matching the reference video's
+own interaction pattern), each illustrating something Servora's real
+pipeline actually does — **deliberately no invented numbers or
+percentages anywhere on it** (the reference itself used fabricated
+stats like "ROI Boost x4.8" as decorative marketing flourish; this
+project's own standing rule against fabricated stats/testimonials,
+established for the landing page and repeated for the Omnichannel
+Dashboard redesign, applies here too even though it's just a login-page
+illustration a viewer could still reasonably misread as a real claim):
+"Every channel, one AI core" (the 5 real channel icons flowing into a
+central hub, reusing the Omnichannel Dashboard's own visual metaphor),
+"Investigations that explain themselves" (the real pipeline —
+Classifier → Planner → Specialist → Verification → Resolution — as a
+plain icon sequence, no numbers), "Escalates only when it matters" (a
+message → confidence-check → human-handoff icon sequence). All inline
+SVG/Lucide-icon composition, no external image files or stock photos —
+deliberately, since a photorealistic "support agent" stock photo (the
+reference's own middle slide used one) would read as a fabricated
+testimonial/fake person in a way an abstract icon illustration doesn't.
+
+**`Login.jsx` rewritten** to the split-screen layout: left panel
+(Servora logo, headline, the Customer/Staff-member toggle, the Google
+button, a divider, email/password fields with a real show/hide eye
+toggle, a "Forgot password?" link that shows an honest inline note —
+"contact your administrator/support to reset your password" — rather
+than a dead link or a fake reset flow this app has no email-delivery
+system to back, the existing "demo accounts" hint block, and a
+sign-up sub-form gated behind Customer mode only); right panel is
+`AuthShowcase`, hidden below the `lg` breakpoint. Reference page's
+fake "Privacy Policy · Terms of Service" footer links were deliberately
+NOT copied — no such pages exist in this app, and a dead link is worse
+than no link.
+
+**Verified live**: a real password sign-in (Alice) still works
+end-to-end unchanged after the full page rewrite; the Customer/Staff
+toggle correctly swaps the footer copy (sign-up link vs. "contact your
+Administrator") without touching which credentials are actually
+accepted; the Google button renders live (confirmed it's wired to a
+real client ID, not the "not configured" state) and correctly opens a
+real Google OAuth popup attempt when clicked (blocked by the browser-
+automation sandbox itself, as expected — completing a real Google login
+needs a human with a real Google account, left for the user to verify
+directly); mobile layout (375px, fresh load) reflows correctly with the
+showcase panel hidden and the Google button properly sized; zero
+console errors in a fresh tab. 7 new backend tests
+(`tests/test_real_auth.py`'s Google section): not-configured 503, new-
+customer creation with no spurious Credential row, existing-customer
+resolution with no duplicate row and the account's own name preserved
+over Google's claim, existing-staff resolution, unverified-email
+rejection, invalid-token rejection, and a full round-trip proving the
+issued token actually works on `/api/auth/me`. Full backend suite:
+**483 passed** (476 + 7), 1 skipped. `npm run build`/`npm run lint`:
+clean.
+
+**Real, external follow-up flagged for the user, not fixable here**:
+the Google Cloud OAuth consent screen is currently in "Testing" status
+(visible in the user's own screenshot), meaning Google Sign-In will
+only work for Google accounts explicitly added as test users in that
+project's OAuth consent screen — anyone else attempting it will see a
+real "access blocked" error from Google, not a bug in this app. Worth
+adding the team's own Google accounts as test users, or publishing the
+OAuth consent screen, before relying on this in a live demo.
+
 ## Next up (in priority order)
 
 1. ~~Confirm `call_llm()` against a real Anthropic API key~~ — **done,

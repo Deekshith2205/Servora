@@ -4,6 +4,8 @@ lifecycle. See app/auth/dependency.py's own docstring for exactly how a
 bearer token and the legacy X-Servora-* demo headers relate to each
 other; several tests here lock that boundary in explicitly.
 """
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 from app.auth.password import hash_password, verify_password
@@ -13,6 +15,10 @@ from app.main import app
 from tests.rbac_headers import customer_headers, staff_headers
 
 client = TestClient(app)
+
+
+def _google_claims(email, name="Google Test User", email_verified=True):
+    return {"email": email, "name": name, "email_verified": email_verified, "sub": "fake-google-sub"}
 
 
 def _admin_headers():
@@ -202,3 +208,107 @@ def test_legacy_demo_headers_still_work_with_no_authorization_header():
     resp = client.get("/api/auth/me", headers=headers)
     assert resp.status_code == 200
     assert resp.json()["role"] == "manager"
+
+
+# -- Real "Sign in with Google" ------------------------------------- #
+# google.oauth2.id_token.verify_oauth2_token() is always mocked here —
+# it makes a real network call to fetch Google's public signing keys,
+# and a genuine signed ID token can only come from a real Google login.
+# What's under test is everything AFTER verification: account
+# resolution/creation and session issuance.
+
+def test_google_sign_in_not_configured_returns_503():
+    with patch("app.api.auth.settings.google_client_id", ""):
+        resp = client.post("/api/auth/google", json={"credential": "whatever"})
+    assert resp.status_code == 503
+
+
+def test_google_sign_in_creates_a_new_customer_for_an_unknown_email():
+    with patch("app.api.auth.settings.google_client_id", "fake-client-id"), patch(
+        "app.api.auth.google_id_token.verify_oauth2_token",
+        return_value=_google_claims("real-auth-google-new@example.com", name="Gina Google"),
+    ):
+        resp = client.post("/api/auth/google", json={"credential": "fake-token"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["role"] == "customer"
+    assert body["name"] == "Gina Google"
+
+    with SessionLocal() as db:
+        customer = db.query(Customer).filter(Customer.email == "real-auth-google-new@example.com").first()
+        assert customer is not None
+        # A Google-only account — no password was ever set, so no Credential row.
+        credential = db.query(Credential).filter(Credential.actor_type == "customer", Credential.actor_id == customer.id).first()
+        assert credential is None
+
+
+def test_google_sign_in_resolves_an_existing_customer_by_email_no_duplicate():
+    register = client.post("/api/auth/register", json={
+        "name": "Existing Before Google", "email": "real-auth-google-existing@example.com", "password": "RealPassword1",
+    })
+    customer_id = register.json()["customer_id"]
+
+    with patch("app.api.auth.settings.google_client_id", "fake-client-id"), patch(
+        "app.api.auth.google_id_token.verify_oauth2_token",
+        return_value=_google_claims("real-auth-google-existing@example.com", name="Ignored Google Name"),
+    ):
+        resp = client.post("/api/auth/google", json={"credential": "fake-token"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["customer_id"] == customer_id
+    # The account's own name is kept, not silently overwritten by Google's claim.
+    assert body["name"] == "Existing Before Google"
+
+    with SessionLocal() as db:
+        assert db.query(Customer).filter(Customer.email == "real-auth-google-existing@example.com").count() == 1
+
+
+def test_google_sign_in_resolves_an_existing_staff_account_by_email():
+    admin_headers = None
+    with SessionLocal() as db:
+        admin_headers = staff_headers(db, "administrator")
+    create = client.post("/api/users", json={
+        "name": "Staff Via Google", "email": "real-auth-google-staff@example.com",
+        "role": "manager", "password": "StaffRealPass1",
+    }, headers=admin_headers)
+    user_id = create.json()["id"]
+
+    with patch("app.api.auth.settings.google_client_id", "fake-client-id"), patch(
+        "app.api.auth.google_id_token.verify_oauth2_token",
+        return_value=_google_claims("real-auth-google-staff@example.com"),
+    ):
+        resp = client.post("/api/auth/google", json={"credential": "fake-token"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["role"] == "manager"
+    assert body["user_id"] == user_id
+
+
+def test_google_sign_in_rejects_an_unverified_email():
+    with patch("app.api.auth.settings.google_client_id", "fake-client-id"), patch(
+        "app.api.auth.google_id_token.verify_oauth2_token",
+        return_value=_google_claims("real-auth-google-unverified@example.com", email_verified=False),
+    ):
+        resp = client.post("/api/auth/google", json={"credential": "fake-token"})
+    assert resp.status_code == 401
+
+
+def test_google_sign_in_rejects_an_invalid_token():
+    with patch("app.api.auth.settings.google_client_id", "fake-client-id"), patch(
+        "app.api.auth.google_id_token.verify_oauth2_token", side_effect=ValueError("bad token"),
+    ):
+        resp = client.post("/api/auth/google", json={"credential": "garbage"})
+    assert resp.status_code == 401
+
+
+def test_google_sign_in_issues_a_working_bearer_token():
+    with patch("app.api.auth.settings.google_client_id", "fake-client-id"), patch(
+        "app.api.auth.google_id_token.verify_oauth2_token",
+        return_value=_google_claims("real-auth-google-token-check@example.com"),
+    ):
+        resp = client.post("/api/auth/google", json={"credential": "fake-token"})
+    token = resp.json()["token"]
+
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["role"] == "customer"

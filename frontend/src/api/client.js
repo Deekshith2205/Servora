@@ -63,6 +63,13 @@ export function logoutRequest() {
   return request("/api/auth/logout", { method: "POST" });
 }
 
+export function googleSignInRequest(credential) {
+  return request("/api/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ credential }),
+  });
+}
+
 export function createUser(payload) {
   return request("/api/users", {
     method: "POST",

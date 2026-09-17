@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./servora.db"
     frontend_origin: str = "http://localhost:5173"
 
+    # Real "Sign in with Google" — see app/api/auth.py::google_sign_in().
+    # Empty (the honest default) means the feature is off; only the
+    # Client ID is ever read here, never a client secret.
+    google_client_id: str = ""
+
     # Every /api/chat or /api/booking call triggers a real LLM call chain
     # (classifier + planner + specialist(s) + critic, sometimes several in
     # parallel — see [SWARM] #88) — real cost and, on a free-tier provider
