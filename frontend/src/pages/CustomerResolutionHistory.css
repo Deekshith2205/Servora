@@ -15,11 +15,17 @@
 .crh-ticket-card {
   background: var(--app-surface);
   border: 1px solid var(--app-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-soft);
   overflow: hidden;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.crh-ticket-card:hover {
+  border-color: #CBD5E1;
+  box-shadow: var(--app-shadow-card);
 }
 .crh-ticket-header {
-  padding: 1rem;
+  padding: 1.25rem 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -60,7 +66,7 @@
   margin-bottom: 1.5rem;
   padding: 1rem;
   background: var(--app-surface);
-  border-radius: 6px;
+  border-radius: var(--app-radius-md);
   border: 1px solid var(--app-border);
   font-size: 0.9rem;
 }

@@ -52,11 +52,11 @@
   align-items: flex-start;
   background: var(--app-surface);
   border: 1px solid var(--app-border);
-  border-radius: 6px;
+  border-radius: var(--app-radius-md);
   padding: 1rem;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.2s, background-color 0.2s;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
   width: 100%;
 }
 
@@ -79,7 +79,7 @@
 .inbox-row-customer {
   font-weight: 600;
   font-size: 0.95rem;
-  color: var(--app-text);
+  color: var(--app-text-primary);
 }
 
 .inbox-row-time {
@@ -95,20 +95,22 @@
 
 .inbox-channel-badge {
   font-size: 0.7rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
-  background: var(--app-border);
-  color: var(--app-text);
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-neutral-bg);
+  color: var(--app-neutral-text);
+  font-weight: 600;
 }
 
 .inbox-status-badge {
   font-size: 0.7rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--app-radius-pill);
+  font-weight: 600;
 }
 
-.status-resolved { background: var(--app-success); color: var(--app-success-text); }
-.status-escalated { background: var(--app-error); color: white; }
+.status-resolved { background: var(--app-success-bg); color: var(--app-success-text); }
+.status-escalated { background: var(--app-danger-text); color: white; }
 .status-open { background: var(--app-primary); color: white; }
 .status-closed { background: var(--app-border); color: var(--app-text-muted); }
 .status-resolved-text { color: var(--app-success-text); font-weight: 600; }
@@ -116,7 +118,7 @@
 .inbox-row-subject {
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--app-text);
+  color: var(--app-text-primary);
   margin-bottom: 0.25rem;
   white-space: nowrap;
   overflow: hidden;
@@ -157,10 +159,11 @@
   background: var(--app-surface);
   border: 1px solid var(--app-border);
   color: var(--app-text-muted);
-  padding: 0.4rem 0.8rem;
-  border-radius: 4px;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--app-radius-pill);
   cursor: pointer;
   font-size: 0.85rem;
+  font-weight: 500;
   transition: all 0.2s;
   display: flex;
   align-items: center;
@@ -192,11 +195,11 @@
 
 .inbox-search-input,
 .inbox-status-select {
-  padding: 0.5rem;
+  padding: 0.55rem 0.75rem;
   border: 1px solid var(--app-border);
-  border-radius: 4px;
+  border-radius: var(--app-radius-md);
   background: var(--app-surface);
-  color: var(--app-text);
+  color: var(--app-text-primary);
   font-size: 0.9rem;
 }
 
@@ -262,7 +265,7 @@
   white-space: pre-wrap;
   font-size: 0.95rem;
   line-height: 1.5;
-  color: var(--app-text);
+  color: var(--app-text-primary);
   margin: 0;
 }
 
@@ -278,9 +281,9 @@
 
 .inbox-error {
   background: var(--app-surface);
-  border: 1px solid var(--app-error);
+  border: 1px solid var(--app-danger-text);
   padding: 1rem;
-  border-radius: 6px;
+  border-radius: var(--app-radius-md);
   text-align: center;
 }
 

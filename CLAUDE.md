@@ -1983,6 +1983,113 @@ backend suite unaffected (458 passed, 1 skipped — frontend-only change,
 run anyway per this session's own test-before-commit discipline). Old
 unused `OmnichannelDashboard.css` deleted.
 
+### 2026-09-17 (continued) — App-wide premium theme pass + a real
+Login screen, zero RBAC/data-logic changes
+
+Extended the Omnichannel Dashboard's premium visual language to the
+rest of the app shell and every other page, and added a dedicated
+sign-in screen — a pure presentation-layer pass, deliberately scoped to
+never touch a permission check, a fetch call, or any component's state
+logic.
+
+- **Design-token elevation in `App.css`** (the shared "Enterprise SaaS
+  Theme" almost every page already builds on): softer multi-layer
+  shadows, a larger border-radius scale, more generous sidebar/header/
+  content spacing — since most pages and their own `.css` files already
+  reference these same `--app-shadow-*`/`--app-radius-*` custom
+  properties, this alone uplifted Customer Chat, Staff Dashboard,
+  Analytics, Booking, User Management, Admin Settings, Resolution
+  History, Investigation Board, Agent Swarm, and Integrations with zero
+  JSX changes to any of them.
+- **Two real, pre-existing CSS bugs found and fixed along the way** (not
+  new work, just found while auditing tokens): `--app-radius-pill` was
+  referenced by `.app-badge`/`.analytics-status-badge` but never
+  actually defined anywhere — every "pill" badge in the app had
+  silently been rendering with square corners since whichever PR
+  introduced it. And `Inbox.css` referenced four custom properties that
+  don't exist in `App.css`'s real token set (`--app-text`,
+  `--app-border-hover`, `--app-success`, `--app-error` — the real names
+  are `--app-text-primary`, a newly-added `--app-border-hover`,
+  `--app-success-bg`, `--app-danger-text`/`--app-danger-bg`), so the
+  Unified Inbox's status/channel badges and hover states had been
+  silently falling back to unstyled defaults. Both fixed by pointing at
+  the real tokens — a visual fix only, no data or behavior changed.
+- **`.app-drawer-overlay` given the same `position: fixed` fix** the
+  Explainability drawer already got (see the 2026-09-13 entry) — the
+  Staff Dashboard's Escalation Drawer was flagged back then as "likely
+  has this exact same bug, not fixed since out of scope" and never
+  circled back to; confirmed live (it rendered anchored to scrolled
+  content, off-screen, exactly as predicted) and fixed now that it was
+  already being touched.
+- **Nav icons swapped from hand-drawn SVGs to Lucide** in `App.jsx`
+  (`TABS`'s `icon` field only — no other change to that config object),
+  matching the icon language the Omnichannel Dashboard already
+  introduced.
+- **New `Login.jsx`** — a full-screen, premium-themed sign-in screen
+  (role cards for Customer/Support Agent/Manager/Administrator, a
+  sub-step for picking which demo customer). It introduces **no new
+  access-control logic**: it calls the exact same
+  `useAuth().switchIdentity(role, userId, customerId)` RoleSwitcher.jsx
+  already used, reading from a newly-shared
+  `frontend/src/auth/demoIdentities.js` (the `DEMO_USERS`/
+  `DEMO_CUSTOMERS` arrays, previously only defined inline inside
+  RoleSwitcher.jsx — extracted so Login and RoleSwitcher can't drift out
+  of sync, not a behavior change). `App.jsx` renders `<Login />` in
+  place of the sidebar shell whenever `useAuth().currentRole` is falsy
+  (the exact same "no identity" state `ProtectedRoute` already treated
+  as unauthorized per-page) instead of dropping straight into a
+  half-empty app shell with per-tab Access Denied banners.
+- **RoleSwitcher.jsx restyled** (rounded gradient-avatar chip, softer
+  dropdown) and gained a real **Sign Out** action — calling
+  `switchIdentity(null, null, null)`, a call shape `AuthContext.jsx`
+  already fully supported (clears the three `localStorage` keys,
+  resolves back to the anonymous state) but that no UI ever actually
+  invoked before this.
+
+**Verified live across all 4 roles**, not just visually: signed in via
+the new Login screen as Customer (Alice Rao) — sent a real chat message
+end-to-end (escalated correctly, investigation timeline rendered,
+"Why did Servora recommend this?" panel present), expanded a real
+Resolution History entry (root cause + resolution text intact),
+confirmed Omnichannel Dashboard still correctly 403s for a Customer.
+Signed in as Administrator (Sam Okafor) — walked every sidebar item
+(Staff Dashboard incl. opening the now-fixed Escalation Drawer,
+Investigation Board, Agent Swarm, Book a Room, Analytics, Integrations,
+Unified Inbox incl. selecting a conversation, User Management, System
+Configuration) with no console errors and no broken data. Signed in as
+Support Agent (Jordan Lee) — confirmed the OR-permission gate on the
+Omnichannel Dashboard tab still lets a Support Agent in (it has
+`view_investigation_board`) while the page's own `analytics/summary`
+fetch still correctly 403s (Support Agent lacks `view_analytics`) and
+degrades to the page's existing error-banner-with-Retry state — a
+real, narrow, **pre-existing** gap (the tab-level OR permission doesn't
+match one of the two data sources the page needs), not something this
+session introduced or was asked to fix. Signed in as Manager (Priya
+Shah) — full Omnichannel Dashboard access as expected, and confirmed
+the Unified Inbox panel degrades gracefully (not a crash) when a
+`records`/`investigations` lookup 403s because Manager lacks
+`view_investigation_board` — same honest "no investigation recorded"
+message it would show for a real missing investigation, a minor
+imprecision worth knowing about but not a bug this pass caused.
+Confirmed Sign Out returns cleanly to the Login screen. Confirmed the
+Login screen reflows correctly to a single column at 375px mobile
+width.
+
+**Two real, pre-existing bugs found live and deliberately NOT fixed**
+(out of scope for a pure visual pass, flagged here instead of silently
+patched): `CustomerResolutionHistory.jsx`'s ticket dates render as
+"Invalid Date" (a `new Date(ticket.created_at)` parsing issue,
+unrelated to any styling) — worth its own follow-up. And the
+Unified Inbox / Omnichannel Inbox Preview's "no investigation" empty
+state is shown identically whether an investigation genuinely doesn't
+exist or the viewer's role simply lacks permission to see it (a 403
+and a real absence look the same to the user) — narrow, low-stakes,
+not touched here.
+
+`npm run build`/`npm run lint`: clean (same pre-existing warning set as
+before this pass, no new ones). Backend suite untouched and re-run
+anyway: 458 passed, 1 skipped — this was a frontend-only change.
+
 ## Next up (in priority order)
 
 1. ~~Confirm `call_llm()` against a real Anthropic API key~~ — **done,
