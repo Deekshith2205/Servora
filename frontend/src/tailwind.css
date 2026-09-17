@@ -1,0 +1,9 @@
+/* Utilities-only Tailwind: this app already has two real, working CSS
+   systems (the landing page's dark token set in index.css, and the
+   light "Enterprise SaaS Theme" in App.css) — pulling in Tailwind's
+   Preflight layer would reset headings/buttons/links globally and fight
+   both of them. Theme + utilities only gives every Tailwind utility
+   class (spacing, flex, grid, color, etc.) without touching anything
+   that isn't explicitly styled with one. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);

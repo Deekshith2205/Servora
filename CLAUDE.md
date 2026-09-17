@@ -1919,6 +1919,70 @@ list that isn't code — a public deployment URL, a recorded backup demo
 video. Those remain open and are the user's own follow-up, not
 something achieved here.
 
+### 2026-09-17 — Omnichannel Dashboard redesign: premium AI-operations
+visual overhaul, zero fabricated data
+
+Full from-scratch redesign of `OmnichannelDashboard.jsx`, replacing the
+old table/card admin-dashboard look with a premium enterprise-SaaS
+layout (Tailwind + Lucide) matching a reference mockup's visual
+ambition — but every number wired to real backend data instead of the
+reference's own fabricated sample stats.
+
+**New Tailwind setup**: `@tailwindcss/vite` added in utilities-only mode
+(`frontend/src/tailwind.css` imports only `theme.css`/`utilities.css`,
+deliberately skipping Preflight) specifically because this app already
+has two real, hand-written CSS systems — the landing page's dark theme
+(`index.css`) and the in-app light "Enterprise SaaS Theme"
+(`App.css`) — and Preflight's reset would fight both. `lucide-react`
+added for icons; no brand-logo glyphs exist in the library (an
+`Instagram` import broke the build — fixed by using a generic `Camera`
+icon instead, differentiated by real per-channel accent colors).
+
+New `frontend/src/components/omnichannel/` component set: `channelStyle.js`
+(icon/color per real channel), `Sparkline.jsx` (dependency-free SVG,
+never fabricates a trend when given <2 points), `KpiCard.jsx` (trend
+arrow only renders when a real finite number was computed — never
+decorative), `AIFlowDiagram.jsx` (the hero visualization — real
+channels flowing into a "Servora AI Core" node, real resolved/escalated
+split from `analytics/summary`), `ChannelHealthCard.jsx` (status badge
+**derived** from real resolution rate: ≥70% Healthy / ≥40% Warning /
+else Critical / "New" if zero processed — never hand-picked),
+`ChannelDistributionBar.jsx`, `InboxPreview.jsx` (list + detail pane;
+detail is fetched on-demand per selection — `fetchInboxDetail` +
+`fetchTicketRecord` + `fetchInvestigationByTicket` — not preloaded for
+every row, avoiding an N+1 fetch), `ActivityFeed.jsx` (derived from real
+Ticket rows' own status/updated_at — this app has no dedicated
+activity-event log, so no fabricated "Agent X completed step" entries),
+and `RoleBanner.jsx` (a premium role chip showing real channel/agent/
+conversation counts — replaces the brief's fabricated "1,248
+Conversations" mockup number with the actual total).
+
+**Deliberate, undiscussed judgment call — flagging transparently**: the
+reference mockup showed fabricated names/stats ("Riya Kapoor", "+25%").
+Built the identical visual treatment instead wired to 100% real data,
+and honestly omitted/dashed any requested metric with no real backing
+(Avg Response Time stays "—", same convention the old dashboard already
+used; "Customer Satisfaction" became "Positive Sentiment," computed
+from real `sentiment_trend` counts, never a literal fabricated CSAT
+score). AI Performance Center's "Avg Investigation Time" is a real sum
+of `GET /api/investigations/metrics/agents`' per-agent
+`avg_duration_ms`.
+
+**Verified live** as Administrator (RBAC gate `["view_analytics",
+"view_investigation_board"]` still correctly denies Support
+Agent/Manager as appropriate — confirmed the "Access Denied" state
+before switching identity): every section renders real seeded data (10
+active conversations, 5 real channels with correct derived health
+badges, real Unified Inbox detail pane including a real prompt-injection
+attempt ticket rendered safely as inert customer-message text — not
+executed), all `/api/...` calls 200 OK, zero console errors on a fresh
+load. Confirmed responsive reflow at 375px mobile width (KPI grid to
+2-column, Channel Health/Inbox Preview to single-column) with a clean
+screenshot pass. `npm run build` and `npm run lint` both clean; full
+backend suite unaffected (458 passed, 1 skipped — frontend-only change,
+run anyway per this session's own test-before-commit discipline). Old
+unused `OmnichannelDashboard.css` deleted.
+
 ## Next up (in priority order)
 
 1. ~~Confirm `call_llm()` against a real Anthropic API key~~ — **done,
