@@ -455,3 +455,15 @@ def test_analytics_30_day_cutoff_boundaries():
     # t_exactly_30_days_ago is excluded, others included
     res_rate = data["resolution_rate"]
     assert res_rate["total"] == 2
+
+
+def test_manager_analytics_permission():
+    """[RBAC] issue #195: Manager has view_analytics and can access resolution_rate/escalation_rate."""
+    db = SessionLocal()
+    headers = staff_headers(db, "manager")
+    with TestClient(app) as client:
+        response = client.get("/api/analytics/summary", headers=headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert "resolution_rate" in data
+        assert "escalation_rate" in data
