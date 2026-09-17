@@ -21,6 +21,9 @@ import ProtectedRoute from "./auth/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Login from "./pages/Login";
 import { useAuth } from "./auth/AuthContext";
+import { hasPermission } from "./auth/roles";
+import RoleBadge from "./components/RoleBadge";
+import UserProfileMenu from "./components/UserProfileMenu";
 
 const TABS = {
   dashboard_omni: {
@@ -113,7 +116,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("chat");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { currentRole, loading } = useAuth();
-
   const activeTabInfo = TABS[activeTab];
   const ActiveComponent = activeTabInfo.component;
 
@@ -149,7 +151,14 @@ export default function App() {
         </a>
         
         <nav className="app-nav">
-          {Object.entries(TABS).map(([key, { label, icon }]) => (
+          {Object.entries(TABS)
+            .filter(([, tab]) => {
+              const perm = tab.permission;
+              return Array.isArray(perm)
+                ? perm.some((p) => hasPermission(currentRole, p))
+                : hasPermission(currentRole, perm);
+            })
+            .map(([key, { label, icon }]) => (
             <button
               key={key}
               className={`app-nav-item ${activeTab === key ? "active" : ""}`}
@@ -161,7 +170,8 @@ export default function App() {
           ))}
         </nav>
         
-        <div className="app-sidebar-footer">
+        <div className="app-sidebar-footer" style={{ display: "flex", flexDirection: "column", gap: "1rem", alignItems: "flex-start" }}>
+          <RoleBadge />
           <a href="https://github.com/Deekshith2205/Servora" target="_blank" rel="noreferrer" style={{color: 'inherit', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
             GitHub
@@ -187,7 +197,10 @@ export default function App() {
             <h1>{activeTabInfo.label}</h1>
             <p>{activeTabInfo.description}</p>
           </div>
-          <RoleSwitcher />
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginLeft: "auto", marginRight: "1rem" }}>
+            <RoleSwitcher />
+            <UserProfileMenu />
+          </div>
         </header>
         
         <div className="app-content">
