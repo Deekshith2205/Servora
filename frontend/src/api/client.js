@@ -262,3 +262,13 @@ export function updateUserRole(userId, role) {
   });
 }
 
+export function fetchSettings() {
+  return request("/api/settings");
+}
+
+export function updateSetting(key, value) {
+  return request(`/api/settings/${key}`, {
+    method: "PATCH",
+    body: JSON.stringify({ value }),
+  });
+}

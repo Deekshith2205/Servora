@@ -274,6 +274,7 @@ def seed_if_empty() -> None:
             [
                 SystemSetting(key="demo_mode", value="true"),
                 SystemSetting(key="default_escalation_confidence_threshold", value="0.5"),
+                SystemSetting(key="feature_shopify_lookup_enabled", value="true"),
             ]
         )
 
