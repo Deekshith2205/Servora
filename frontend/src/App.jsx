@@ -14,6 +14,7 @@ import UserManagement from "./pages/UserManagement";
 import AdminSettings from "./pages/AdminSettings";
 import RoleSwitcher from "./auth/RoleSwitcher";
 import ProtectedRoute from "./auth/ProtectedRoute";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const TABS = {
   dashboard_omni: {
@@ -241,9 +242,11 @@ export default function App() {
         </header>
         
         <div className="app-content">
-          <ProtectedRoute permission={activeTabInfo.permission}>
-            <ActiveComponent />
-          </ProtectedRoute>
+          <ErrorBoundary resetKey={activeTab}>
+            <ProtectedRoute permission={activeTabInfo.permission}>
+              <ActiveComponent />
+            </ProtectedRoute>
+          </ErrorBoundary>
         </div>
       </main>
       
