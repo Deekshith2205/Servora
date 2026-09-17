@@ -9,11 +9,12 @@ from app.auth.roles import CUSTOMER
 from app.db.database import get_db
 from app.llm import LLMError
 from app.orchestrator import handle_message
+from app.rate_limit import rate_limit
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat", response_model=ChatResponse, dependencies=[Depends(rate_limit)])
 def chat(
     payload: ChatRequest, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
 ) -> ChatResponse:

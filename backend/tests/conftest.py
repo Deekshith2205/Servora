@@ -48,6 +48,12 @@ if os.path.exists(_TEST_DB_PATH):
     os.remove(_TEST_DB_PATH)  # fresh schema/seed every pytest invocation
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
 os.environ["LLM_PROVIDER"] = "anthropic"
+# /api/chat and /api/booking are rate-limited in real use (see
+# app/rate_limit.py) — every test here mocks the LLM client, so a single
+# test file can legitimately send far more requests in a few seconds
+# than any real caller would; without this override, that would trip a
+# limit meant for real abuse, not a fast local test run.
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 from app.db.database import Base, engine  # noqa: E402 (must come after the overrides above)
 from app.db.seed import seed_if_empty  # noqa: E402
