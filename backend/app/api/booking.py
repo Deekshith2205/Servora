@@ -9,11 +9,12 @@ from app.api.schemas import BookingChatRequest, BookingChatResponse
 from app.db.database import get_db
 from app.db.models import Customer
 from app.llm import LLMError
+from app.rate_limit import rate_limit
 
 router = APIRouter(prefix="/api", tags=["booking"])
 
 
-@router.post("/booking", response_model=BookingChatResponse)
+@router.post("/booking", response_model=BookingChatResponse, dependencies=[Depends(rate_limit)])
 def booking_chat(payload: BookingChatRequest, db: Session = Depends(get_db)) -> BookingChatResponse:
     if db.get(Customer, payload.customer_id) is None:
         raise HTTPException(status_code=404, detail=f"Customer {payload.customer_id} not found")

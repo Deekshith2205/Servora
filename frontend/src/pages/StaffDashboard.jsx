@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { approveKBArticle, fetchEscalationDetail, fetchEscalations, fetchResolvedHistory, resolveEscalation, assignEscalation, closeEscalation, fetchCustomerRecord } from "../api/client";
 import BookingsPanel from "./BookingsPanel";
 import Can from "../auth/Can";

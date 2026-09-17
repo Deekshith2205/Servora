@@ -40,6 +40,7 @@ def test_create_user_inserts_a_real_row():
     headers = _admin_headers()
     resp = client.post("/api/users", json={
         "name": "New Support Rep", "email": "new-support-rep@example.com", "role": "support_agent",
+        "password": "TestPass1234",
     }, headers=headers)
 
     assert resp.status_code == 200
@@ -58,13 +59,14 @@ def test_create_user_rejects_a_customer_role():
     identity this codebase's own model split forbids."""
     resp = client.post("/api/users", json={
         "name": "Bad", "email": "bad-role-user@example.com", "role": "customer",
+        "password": "TestPass1234",
     }, headers=_admin_headers())
     assert resp.status_code == 400
 
 
 def test_create_user_rejects_a_duplicate_email():
     headers = _admin_headers()
-    payload = {"name": "Dup One", "email": "dup-user-test@example.com", "role": "manager"}
+    payload = {"name": "Dup One", "email": "dup-user-test@example.com", "role": "manager", "password": "TestPass1234"}
     first = client.post("/api/users", json=payload, headers=headers)
     assert first.status_code == 200
 
@@ -72,11 +74,19 @@ def test_create_user_rejects_a_duplicate_email():
     assert second.status_code == 400
 
 
+def test_create_user_rejects_a_short_password():
+    resp = client.post("/api/users", json={
+        "name": "Too Short", "email": "short-pw-user@example.com", "role": "support_agent", "password": "short",
+    }, headers=_admin_headers())
+    assert resp.status_code == 422
+
+
 def test_create_user_without_permission_is_a_real_403():
     with SessionLocal() as db:
         headers = staff_headers(db, "manager")
         resp = client.post("/api/users", json={
             "name": "Nope", "email": "nope-user@example.com", "role": "support_agent",
+            "password": "TestPass1234",
         }, headers=headers)
         assert resp.status_code == 403
 
@@ -88,6 +98,7 @@ def test_update_user_changes_name_and_role():
     headers = _admin_headers()
     create = client.post("/api/users", json={
         "name": "Before Update", "email": "update-user-test@example.com", "role": "support_agent",
+        "password": "TestPass1234",
     }, headers=headers)
     user_id = create.json()["id"]
 

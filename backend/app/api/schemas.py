@@ -687,6 +687,44 @@ class CreateUserRequest(BaseModel):
     name: str
     email: str
     role: str
+    # Real auth: an Administrator sets a new staff member's initial
+    # password directly (there's no public staff sign-up — see
+    # app/api/auth.py's own module docstring for why that split exists).
+    password: str = Field(min_length=8)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    """Public self-registration — customers only, see app/api/auth.py."""
+
+    name: str
+    email: str
+    password: str = Field(min_length=8)
+
+
+class GoogleSignInRequest(BaseModel):
+    """The ID token Google Identity Services' JS client returns after a
+    successful "Sign in with Google" — a signed JWT, verified server-side
+    against Google's own public keys in app/api/auth.py::google_sign_in().
+    Never a password, never an authorization code."""
+
+    credential: str
+
+
+class AuthTokenOut(BaseModel):
+    """POST /api/auth/login|register|me-after-register response — enough
+    for the frontend to both store the session token and immediately
+    know who it belongs to, without a second round-trip to /auth/me."""
+
+    token: str
+    role: str
+    user_id: int | None = None
+    customer_id: int | None = None
+    name: str
 
 
 class UpdateUserRequest(BaseModel):

@@ -1,16 +1,21 @@
 """[RBAC] issue #175 (permission middleware) + #176 (route authorization).
 
 The real enforcement point every protected route depends on.
-`get_current_actor()` resolves "who is calling" from the demo-
-appropriate identity headers the frontend's Role Switcher sets (a
-header, not a real session/cookie — see app/db/models.py::User's own
-docstring for why: this codebase has no authentication anywhere, and
-building one would itself be the architecture redesign the RBAC epic's
-own instructions forbid). `require_permission()`/`require_any_permission()`
-are the dependency FACTORIES real routes opt into — deliberately
-per-route, not global middleware, so each phase's own issues gate
-exactly the endpoints their spec names, without touching routes nobody
-asked to protect yet.
+`get_current_actor()` resolves "who is calling" — real callers do this
+via a `Authorization: Bearer <token>` header, a genuine login session
+(see app/auth/session.py) issued only after a real password check
+(app/auth/password.py). The OLDER `X-Servora-*` demo-identity headers
+(no password, no token — a header claiming to just BE someone) are kept
+as a fallback ONLY when no bearer token is present at all, purely so
+this file's own large pre-existing test suite (90+ tests across many
+files, all built against that header shape) keeps working without a
+mechanical rewrite — the real frontend, as of the real-auth work, never
+sends those headers at all. See `resolve_authenticated_actor()` below
+for exactly where that line is drawn. `require_permission()`/
+`require_any_permission()` are the dependency FACTORIES real routes opt
+into — deliberately per-route, not global middleware, so each phase's
+own issues gate exactly the endpoints their spec names, without
+touching routes nobody asked to protect yet.
 """
 from dataclasses import dataclass
 
@@ -19,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.permissions import has_any_permission, has_permission
 from app.auth.roles import ALL_ROLES, CUSTOMER
+from app.auth.session import resolve_session
 from app.db.database import get_db
 from app.db.models import Customer, User
 
@@ -43,19 +49,59 @@ class CurrentActor:
 _ANONYMOUS_ACTOR = CurrentActor(role=None)
 
 
+def _resolve_from_bearer_token(db: Session, authorization: str) -> CurrentActor | None:
+    """Returns None if the header isn't a real bearer token, or the
+    token doesn't resolve to a live session/row — the caller falls back
+    to anonymous, never to the legacy header path, once a bearer token
+    was actually presented (see get_current_actor's own docstring for
+    why mixing the two would reopen the exact impersonation gap real
+    auth exists to close)."""
+    if not authorization.startswith("Bearer "):
+        return None
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        return None
+
+    session = resolve_session(db, token)
+    if session is None:
+        return None
+
+    if session.actor_type == CUSTOMER:
+        customer = db.get(Customer, session.actor_id)
+        if customer is None:
+            return None
+        return CurrentActor(role=CUSTOMER, customer_id=customer.id, name=customer.name)
+
+    user = db.get(User, session.actor_id)
+    if user is None:
+        return None
+    return CurrentActor(role=user.role, user_id=user.id, name=user.name)
+
+
 def get_current_actor(
     db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
     x_servora_role: str | None = Header(default=None),
     x_servora_user_id: int | None = Header(default=None),
     x_servora_customer_id: int | None = Header(default=None),
 ) -> CurrentActor:
-    """Missing headers, an unrecognized role string, or a header
+    """A real `Authorization: Bearer <token>` header, when present, is
+    the ONLY thing consulted — resolved against a genuine server-side
+    login session (app/auth/session.py), never a client-supplied role/id
+    claim. Missing headers, an unrecognized role string, or a header
     pointing at a real row that turns out not to exist all resolve to
     the SAME anonymous actor — never a silent "assume administrator" or
     a 500. For a staff role, the identity's ACTUAL `role` column (read
-    fresh from the `User` row) is what's trusted, not the
-    `X-Servora-Role` header's own claim — so a stale or mismatched
-    header can never claim a role that user doesn't really have."""
+    fresh from the `User` row) is what's trusted, not any claim in a
+    header — so a stale or mismatched header can never claim a role
+    that user doesn't really have.
+
+    The `X-Servora-*` headers below are the pre-real-auth demo mechanism,
+    consulted ONLY when no `Authorization` header was sent at all — see
+    this module's own top-of-file docstring."""
+    if authorization is not None:
+        return _resolve_from_bearer_token(db, authorization) or _ANONYMOUS_ACTOR
+
     if x_servora_role not in ALL_ROLES:
         return _ANONYMOUS_ACTOR
 

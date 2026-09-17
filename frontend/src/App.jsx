@@ -1,4 +1,8 @@
 import { useState } from "react";
+import {
+  BarChart3, ClipboardList, Compass, History, Inbox as InboxIcon, LayoutDashboard,
+  MessageSquare, Mic, Plug, Settings as SettingsIcon, Share2, Users as UsersIcon,
+} from "lucide-react";
 import "./App.css";
 import Analytics from "./pages/Analytics";
 import AgentSwarmView from "./pages/AgentSwarmView";
@@ -14,6 +18,8 @@ import UserManagement from "./pages/UserManagement";
 import AdminSettings from "./pages/AdminSettings";
 import RoleSwitcher from "./auth/RoleSwitcher";
 import ProtectedRoute from "./auth/ProtectedRoute";
+import ErrorBoundary from "./components/ErrorBoundary";
+import Login from "./pages/Login";
 import { useAuth } from "./auth/AuthContext";
 import { hasPermission } from "./auth/roles";
 import RoleBadge from "./components/RoleBadge";
@@ -25,162 +31,91 @@ const TABS = {
     description: "Live operational view across every support channel",
     component: OmnichannelDashboard,
     permission: ["view_analytics", "view_investigation_board"],
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-        <line x1="3" y1="9" x2="21" y2="9"></line>
-        <line x1="9" y1="21" x2="9" y2="9"></line>
-      </svg>
-    )
+    icon: <LayoutDashboard className="app-nav-icon" size={18} strokeWidth={2} />
   },
   chat: {
     label: "Customer Chat",
     description: "AI-powered customer conversation",
     component: CustomerChat,
     permission: "send_chat_message",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-      </svg>
-    )
+    icon: <MessageSquare className="app-nav-icon" size={18} strokeWidth={2} />
   },
   history: {
     label: "Resolution History",
     description: "View outcomes of your support tickets",
     component: CustomerResolutionHistory,
     permission: "view_own_tickets",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <polyline points="12 6 12 12 16 14"></polyline>
-      </svg>
-    )
+    icon: <History className="app-nav-icon" size={18} strokeWidth={2} />
   },
   dashboard: {
     label: "Staff Dashboard",
     description: "Review cases requiring human attention",
     component: StaffDashboard,
     permission: ["handle_escalations", "view_escalation_queue"],
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-        <line x1="3" y1="9" x2="21" y2="9"></line>
-        <line x1="9" y1="21" x2="9" y2="9"></line>
-      </svg>
-    )
+    icon: <ClipboardList className="app-nav-icon" size={18} strokeWidth={2} />
   },
   investigations: {
     label: "Investigation Board",
     description: "Autonomous reasoning timeline for every conversation",
     component: InvestigationBoard,
     permission: "view_investigation_board",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        <line x1="11" y1="8" x2="11" y2="12"></line>
-        <line x1="11" y1="14.5" x2="11.01" y2="14.5"></line>
-      </svg>
-    )
+    icon: <Compass className="app-nav-icon" size={18} strokeWidth={2} />
   },
   swarm: {
     label: "Agent Swarm",
     description: "Multi-agent network view of a single investigation",
     component: AgentSwarmView,
     permission: "view_investigation_board",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="6" cy="6" r="3"></circle>
-        <circle cx="18" cy="6" r="3"></circle>
-        <circle cx="12" cy="18" r="3"></circle>
-        <line x1="8.6" y1="7.6" x2="10.5" y2="16.2"></line>
-        <line x1="15.4" y1="7.6" x2="13.5" y2="16.2"></line>
-        <line x1="9" y1="6" x2="15" y2="6"></line>
-      </svg>
-    )
+    icon: <Share2 className="app-nav-icon" size={18} strokeWidth={2} />
   },
   booking: {
     label: "Book a Room",
     description: "Voice or text hotel booking (stretch feature)",
     component: BookingChat,
     permission: "send_chat_message",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-        <line x1="12" y1="19" x2="12" y2="23"></line>
-      </svg>
-    )
+    icon: <Mic className="app-nav-icon" size={18} strokeWidth={2} />
   },
   analytics: {
     label: "Analytics",
     description: "Understand support activity and outcomes",
     component: Analytics,
     permission: "view_analytics",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="20" x2="18" y2="10"></line>
-        <line x1="12" y1="20" x2="12" y2="4"></line>
-        <line x1="6" y1="20" x2="6" y2="14"></line>
-      </svg>
-    )
+    icon: <BarChart3 className="app-nav-icon" size={18} strokeWidth={2} />
   },
   integrations: {
     label: "Integrations",
     description: "Connect real external systems for Servora to investigate",
     component: Integrations,
     permission: "manage_integrations",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M9 3v6m6-6v6M4 9h16l-1 10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"></path>
-      </svg>
-    )
+    icon: <Plug className="app-nav-icon" size={18} strokeWidth={2} />
   },
   inbox: {
     label: "Unified Inbox",
     description: "All customer conversations in one place",
     component: Inbox,
     permission: "view_customer_conversations",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline>
-        <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
-      </svg>
-    )
+    icon: <InboxIcon className="app-nav-icon" size={18} strokeWidth={2} />
   },
   users: {
     label: "User Management",
     description: "Manage roles and access for staff members",
     component: UserManagement,
     permission: "manage_users",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-        <circle cx="9" cy="7" r="4"></circle>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-      </svg>
-    )
+    icon: <UsersIcon className="app-nav-icon" size={18} strokeWidth={2} />
   },
   settings: {
     label: "System Configuration",
     description: "Manage global feature toggles and settings",
     component: AdminSettings,
     permission: "manage_system_settings",
-    icon: (
-      <svg className="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="3"></circle>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-      </svg>
-    )
+    icon: <SettingsIcon className="app-nav-icon" size={18} strokeWidth={2} />
   },
 };
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("chat");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { currentRole } = useAuth();
-  
+  const { currentRole, loading } = useAuth();
   const activeTabInfo = TABS[activeTab];
   const ActiveComponent = activeTabInfo.component;
 
@@ -189,9 +124,21 @@ export default function App() {
     setMobileMenuOpen(false);
   };
 
+  if (loading) {
+    return <div className="servora-app" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--app-text-muted)" }}>Loading Servora…</div>;
+  }
+
+  if (!currentRole) {
+    return (
+      <div className="servora-app">
+        <Login />
+      </div>
+    );
+  }
+
   return (
     <div className="servora-app app-layout">
-      
+
       {/* Sidebar */}
       <aside className={`app-sidebar ${mobileMenuOpen ? 'open' : ''}`}>
         <a href="/" className="app-brand">
@@ -257,9 +204,11 @@ export default function App() {
         </header>
         
         <div className="app-content">
-          <ProtectedRoute permission={activeTabInfo.permission}>
-            <ActiveComponent />
-          </ProtectedRoute>
+          <ErrorBoundary resetKey={activeTab}>
+            <ProtectedRoute permission={activeTabInfo.permission}>
+              <ActiveComponent />
+            </ProtectedRoute>
+          </ErrorBoundary>
         </div>
       </main>
       

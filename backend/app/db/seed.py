@@ -3,9 +3,16 @@ something real to look up instead of hallucinating an answer.
 
 Run automatically on startup (see app/main.py) if the DB is empty.
 """
-from app.auth.roles import ADMINISTRATOR, MANAGER, SUPPORT_AGENT
+from app.auth.password import hash_password
+from app.auth.roles import ADMINISTRATOR, CUSTOMER, MANAGER, SUPPORT_AGENT
 from app.db.database import SessionLocal
-from app.db.models import Channel, Customer, KBArticle, Order, Room, SystemSetting, Ticket, User
+from app.db.models import Channel, Credential, Customer, KBArticle, Order, Room, SystemSetting, Ticket, User
+
+# Real auth: every seeded demo account (2 customers, 3 staff) shares this
+# one password so a fresh clone is immediately demoable without an
+# out-of-band credential handoff — see Login.jsx's own "Demo accounts"
+# hint box, which shows this same value.
+_DEMO_PASSWORD = "Demo1234!"
 
 
 def seed_if_empty() -> None:
@@ -18,6 +25,13 @@ def seed_if_empty() -> None:
         bob = Customer(name="Bob Nunez", email="bob@example.com", phone="+1-555-0102", tier="standard")
         db.add_all([alice, bob])
         db.flush()
+
+        db.add_all(
+            [
+                Credential(actor_type=CUSTOMER, actor_id=alice.id, password_hash=hash_password(_DEMO_PASSWORD)),
+                Credential(actor_type=CUSTOMER, actor_id=bob.id, password_hash=hash_password(_DEMO_PASSWORD)),
+            ]
+        )
 
         o1 = Order(customer_id=alice.id, product="Wireless Headphones", amount=129.99, status="shipped", payment_status="paid")
         o2 = Order(customer_id=alice.id, product="Phone Case", amount=19.99, status="delivered", payment_status="paid")
@@ -257,14 +271,23 @@ def seed_if_empty() -> None:
         )
 
         # [RBAC] issue #172: 3 seeded staff identities, one per staff
-        # role — real names, real roles, no password (see User's own
-        # docstring for why). These are the identities the Role
-        # Switcher (a later, frontend issue) lets a session act as.
+        # role — real names, real roles. Originally no password (see
+        # User's own docstring); now each gets a real Credential row
+        # (below) using the same shared demo password as the seeded
+        # customers, so every seeded identity is reachable through the
+        # real Login.jsx screen, not just the ones a demo role-switcher
+        # used to expose.
+        jordan = User(name="Jordan Lee", email="jordan.lee@servora.example", role=SUPPORT_AGENT)
+        priya = User(name="Priya Shah", email="priya.shah@servora.example", role=MANAGER)
+        sam = User(name="Sam Okafor", email="sam.okafor@servora.example", role=ADMINISTRATOR)
+        db.add_all([jordan, priya, sam])
+        db.flush()
+
         db.add_all(
             [
-                User(name="Jordan Lee", email="jordan.lee@servora.example", role=SUPPORT_AGENT),
-                User(name="Priya Shah", email="priya.shah@servora.example", role=MANAGER),
-                User(name="Sam Okafor", email="sam.okafor@servora.example", role=ADMINISTRATOR),
+                Credential(actor_type="staff", actor_id=jordan.id, password_hash=hash_password(_DEMO_PASSWORD)),
+                Credential(actor_type="staff", actor_id=priya.id, password_hash=hash_password(_DEMO_PASSWORD)),
+                Credential(actor_type="staff", actor_id=sam.id, password_hash=hash_password(_DEMO_PASSWORD)),
             ]
         )
 

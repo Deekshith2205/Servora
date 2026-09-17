@@ -1,7 +1,70 @@
 import { useEffect, useState } from "react";
-import { fetchUsers, updateUserRole } from "../api/client";
+import { createUser, fetchUsers, updateUserRole } from "../api/client";
 import { STAFF_ROLES } from "../auth/roles";
 import Can from "../auth/Can";
+
+function AddStaffForm({ onCreated }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState(STAFF_ROLES[0]);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const reset = () => {
+    setName(""); setEmail(""); setRole(STAFF_ROLES[0]); setPassword(""); setError(null);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const user = await createUser({ name: name.trim(), email: email.trim(), role, password });
+      onCreated(user);
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setError(err.message || "Failed to create user");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="app-btn-primary" style={{ alignSelf: "flex-start" }}>
+        + Add Staff Member
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="app-panel" style={{ gap: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0, fontFamily: "'Syne', sans-serif", color: "var(--app-text-primary)" }}>Add Staff Member</h3>
+        <button type="button" onClick={() => { setOpen(false); reset(); }} className="app-btn-secondary">Cancel</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.85rem" }}>
+        <input required placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} className="app-input" style={{ padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid var(--app-border)" }} />
+        <input required type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="app-input" style={{ padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid var(--app-border)" }} />
+        <select value={role} onChange={(e) => setRole(e.target.value)} className="app-input" style={{ padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid var(--app-border)", background: "var(--app-surface)" }}>
+          {STAFF_ROLES.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+        </select>
+        <input required type="password" placeholder="Initial password (min 8 chars)" value={password} onChange={(e) => setPassword(e.target.value)} className="app-input" style={{ padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid var(--app-border)" }} />
+      </div>
+      {error && <div className="app-error-banner"><span>{error}</span></div>}
+      <button type="submit" disabled={submitting} className="app-btn-primary" style={{ alignSelf: "flex-start" }}>
+        {submitting ? "Creating…" : "Create Staff Account"}
+      </button>
+    </form>
+  );
+}
 
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
@@ -45,6 +108,10 @@ export default function UserManagement() {
         </div>
         <button onClick={loadUsers} className="app-btn-secondary">Refresh</button>
       </div>
+
+      <Can permission="manage_users">
+        <AddStaffForm onCreated={(user) => setUsers((curr) => [...curr, user])} />
+      </Can>
 
       {error && (
         <div className="app-error-banner">
