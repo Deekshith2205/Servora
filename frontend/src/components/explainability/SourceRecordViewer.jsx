@@ -11,6 +11,7 @@ import {
   fetchCustomerRecord,
   fetchKBArticle,
   fetchOrderRecord,
+  fetchPaymentRecord,
   fetchShopifyCustomerRecord,
   fetchShopifyOrderRecord,
   fetchTicketRecord,
@@ -21,6 +22,7 @@ const FETCHERS = {
   customer: fetchCustomerRecord,
   ticket: fetchTicketRecord,
   kb_article: fetchKBArticle,
+  payment: fetchPaymentRecord,
   shopify_order: fetchShopifyOrderRecord,
   shopify_customer: fetchShopifyCustomerRecord,
 };
@@ -30,6 +32,7 @@ const TYPE_LABEL = {
   customer: "Customer Record",
   ticket: "Ticket Record",
   kb_article: "Knowledge Base Article",
+  payment: "Payment Record",
   shopify_order: "Shopify Order (Live)",
   shopify_customer: "Shopify Customer (Live)",
 };
@@ -105,6 +108,21 @@ function KBFields({ record }) {
   );
 }
 
+function PaymentFields({ record }) {
+  return (
+    <>
+      <Field label="Payment ID" value={`#${record.id}`} />
+      <Field label="Description" value={record.description} />
+      <Field label="Amount" value={`$${record.amount.toFixed(2)}`} />
+      <Field label="Method" value={record.method} />
+      <Field label="Status" value={record.status} />
+      <Field label="Type" value={record.payment_type} />
+      <Field label="Linked Order" value={record.order_id ? `Order #${record.order_id}` : "None — no order was ever created"} />
+      {record.duplicate_of && <Field label="Duplicate Of" value={`Payment #${record.duplicate_of}`} />}
+    </>
+  );
+}
+
 function ShopifyOrderFields({ record }) {
   return (
     <>
@@ -133,6 +151,7 @@ const FIELD_COMPONENTS = {
   customer: CustomerFields,
   ticket: TicketFields,
   kb_article: KBFields,
+  payment: PaymentFields,
   shopify_order: ShopifyOrderFields,
   shopify_customer: ShopifyCustomerFields,
 };

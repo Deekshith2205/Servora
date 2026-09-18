@@ -94,6 +94,8 @@ def test_billing_receives_all_and_only_its_allowed_tools(db_session):
     expected = {
         "get_customer", "get_customer_orders", "check_payment_issue", "search_kb", "issue_refund",
         "lookup_shopify_order", "lookup_shopify_customer",  # Shopify integration
+        # Payment-table scenarios (Connected Commerce demo polish).
+        "get_customer_payments", "check_payment_anomaly", "issue_payment_refund",
     }
     schemas, handlers = build_filtered_tool_registry(db_session, "billing")
 

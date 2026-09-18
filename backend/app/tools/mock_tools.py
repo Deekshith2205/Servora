@@ -8,9 +8,16 @@ These are intentionally plain functions (not yet wired to an LLM tool-call
 schema) — issue #4 (Planner/Orchestrator routing) and the specialist-agent
 issues wrap these with real tool-calling.
 """
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
-from app.db.models import Customer, KBArticle, Order, Room, Ticket
+from app.db.models import Customer, KBArticle, Order, Payment, Room, Ticket
+
+# Matches the seeded "Refund policy" KB article's own "5-7 business days"
+# wording — a refund still pending past this many days is a real anomaly,
+# not just normal processing time.
+REFUND_DELAY_THRESHOLD_DAYS = 7
 
 
 def get_customer(db: Session, customer_id: int) -> Customer | None:
@@ -116,3 +123,67 @@ def issue_refund(db: Session, order_id: int) -> dict:
 
 def check_room_availability(db: Session, room_type: str) -> Room | None:
     return db.query(Room).filter(Room.room_type == room_type).first()
+
+
+def get_customer_payments(db: Session, customer_id: int) -> list[Payment]:
+    return db.query(Payment).filter(Payment.customer_id == customer_id).all()
+
+
+def check_payment_anomaly(db: Session, payment_id: int) -> dict:
+    """Covers the 3 payment-only anomaly types that `check_payment_issue`
+    (which always assumes a linked `Order`) can't represent: a duplicate
+    charge with no order ever created, a subscription charged after
+    cancellation, and a refund stuck pending past the policy window.
+    Same dict shape as `check_payment_issue` for consistency."""
+    payment = db.get(Payment, payment_id)
+    if payment is None:
+        return {"detected": False, "issue_type": None, "payment_id": payment_id, "error": "Payment not found"}
+
+    if payment.status == "refunded":
+        return {"detected": False, "issue_type": None, "payment_id": payment_id, "error": "Already refunded"}
+
+    if payment.duplicate_of is not None and payment.order_id is None:
+        return {
+            "detected": True,
+            "issue_type": "duplicate_payment_no_order",
+            "payment_id": payment.id,
+            "related_payment_id": payment.duplicate_of,
+            "status": payment.status,
+        }
+
+    if payment.payment_type == "subscription" and payment.subscription_cancelled_at is not None:
+        if payment.charged_at > payment.subscription_cancelled_at:
+            return {
+                "detected": True,
+                "issue_type": "subscription_charged_after_cancellation",
+                "payment_id": payment.id,
+                "charged_at": payment.charged_at.isoformat(),
+                "subscription_cancelled_at": payment.subscription_cancelled_at.isoformat(),
+            }
+
+    if payment.status == "refund_pending" and payment.refund_requested_at is not None:
+        days_pending = (datetime.utcnow() - payment.refund_requested_at).days
+        if days_pending >= REFUND_DELAY_THRESHOLD_DAYS:
+            return {
+                "detected": True,
+                "issue_type": "refund_delayed",
+                "payment_id": payment.id,
+                "days_pending": days_pending,
+            }
+
+    return {"detected": False, "issue_type": None, "payment_id": payment.id}
+
+
+def issue_payment_refund(db: Session, payment_id: int) -> dict:
+    payment = db.get(Payment, payment_id)
+    if payment is None:
+        return {"success": False, "error": "Payment not found"}
+
+    if payment.status == "refunded":
+        return {"success": False, "error": "Payment already refunded"}
+
+    payment.status = "refunded"
+    payment.refunded_at = datetime.utcnow()
+    db.commit()
+    db.refresh(payment)
+    return {"success": True, "payment_id": payment.id, "status": "refunded"}

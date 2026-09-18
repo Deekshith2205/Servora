@@ -8,10 +8,13 @@ same rows `mock_tools.py` already queries for the specialists.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timedelta
+
 from app.api.analytics import CHURN_HIGH_THRESHOLD, CHURN_MEDIUM_THRESHOLD
 from app.api.schemas import (
     CustomerProfileOut,
     OrderRecordOut,
+    PaymentRecordOut,
     ShopifyCustomerRecordOut,
     ShopifyOrderRecordOut,
     TicketRecordOut,
@@ -20,7 +23,10 @@ from app.api.schemas import (
 from app.auth.dependency import CurrentActor, get_current_actor
 from app.auth.investigation_visibility import can_view_evidence
 from app.db.database import get_db
-from app.db.models import Customer, Order, Ticket
+from app.db.models import Customer, Order, Payment, Ticket
+
+# Customer Context panel: how far back "Recent Refund Requests" looks.
+_RECENT_REFUND_WINDOW_DAYS = 30
 from app.services import shopify_service
 from app.services.shopify_service import ShopifyAPIError, ShopifyNotConnectedError
 
@@ -86,6 +92,8 @@ def get_customer(
         ) for t in sorted_tickets
     ]
 
+    payments = db.query(Payment).filter(Payment.customer_id == customer.id).order_by(Payment.charged_at.desc()).all()
+
     return CustomerProfileOut(
         id=customer.id,
         name=customer.name,
@@ -96,7 +104,48 @@ def get_customer(
         risk_level=_risk_level(customer),
         channels_used=channels_used,
         conversation_history=history,
+        customer_since=_customer_since(customer, payments),
+        total_orders=len(customer.orders),
+        last_order=_last_order(customer),
+        payment_method=payments[0].method if payments and payments[0].method else None,
+        recent_refund_requests=_recent_refund_requests(payments),
     )
+
+
+def _customer_since(customer: Customer, payments: list[Payment]) -> str | None:
+    """No `Customer.created_at` column exists (see models.py::Payment's
+    docstring for why this repo avoids ALTERing an existing table) — the
+    earliest real Order/Payment timestamp this customer has is a
+    reasonable, honest proxy, not a fabricated date. `None` only for a
+    customer with neither (shouldn't happen for a seeded/real customer,
+    but not assumed)."""
+    candidates = [o.created_at for o in customer.orders] + [p.charged_at for p in payments]
+    return min(candidates).isoformat() if candidates else None
+
+
+def _last_order(customer: Customer) -> dict | None:
+    if not customer.orders:
+        return None
+    latest = max(customer.orders, key=lambda o: o.created_at)
+    return {"product": latest.product, "status": latest.status, "created_at": latest.created_at.isoformat()}
+
+
+def _recent_refund_requests(payments: list[Payment]) -> list[dict]:
+    cutoff = datetime.utcnow() - timedelta(days=_RECENT_REFUND_WINDOW_DAYS)
+    recent = [
+        p for p in payments
+        if p.status in ("refund_pending", "refunded")
+        and (p.refund_requested_at or p.refunded_at or p.charged_at) >= cutoff
+    ]
+    return [
+        {
+            "payment_id": p.id,
+            "amount": p.amount,
+            "status": p.status,
+            "requested_at": (p.refund_requested_at or p.charged_at).isoformat(),
+        }
+        for p in recent
+    ]
 
 
 def _risk_level(customer: Customer) -> str | None:
@@ -115,6 +164,31 @@ def _risk_level(customer: Customer) -> str | None:
     if unresolved < CHURN_MEDIUM_THRESHOLD:
         return None
     return "high" if unresolved >= CHURN_HIGH_THRESHOLD else "medium"
+
+
+@router.get("/payments/{payment_id}", response_model=PaymentRecordOut)
+def get_payment(
+    payment_id: int, db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
+) -> PaymentRecordOut:
+    """Mirrors get_order() exactly — backs a "payment" evidence
+    reference's inline preview in the Explainability drawer."""
+    payment = db.get(Payment, payment_id)
+    if payment is None:
+        raise HTTPException(status_code=404, detail=f"Payment {payment_id} not found")
+    if not can_view_evidence(actor, payment.customer_id):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
+    return PaymentRecordOut(
+        id=payment.id,
+        customer_id=payment.customer_id,
+        order_id=payment.order_id,
+        amount=payment.amount,
+        method=payment.method,
+        description=payment.description,
+        status=payment.status,
+        payment_type=payment.payment_type,
+        duplicate_of=payment.duplicate_of,
+        charged_at=payment.charged_at.isoformat(),
+    )
 
 
 @router.get("/tickets/{ticket_id}", response_model=TicketRecordOut)

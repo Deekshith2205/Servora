@@ -273,7 +273,7 @@
 }
 
 .chat-context {
-  width: 260px;
+  width: 300px;
   background: var(--app-surface);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-lg);
@@ -281,6 +281,78 @@
   box-shadow: var(--app-shadow-soft);
   flex-shrink: 0;
   overflow-y: auto;
+}
+
+.chat-context-fields {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+.chat-context-fields dt {
+  color: var(--app-text-muted);
+}
+.chat-context-fields dd {
+  margin: 0;
+  text-align: right;
+  color: var(--app-text-secondary);
+  font-weight: 500;
+}
+
+.demo-scenario-selector {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--app-radius-sm, 6px);
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
+  font-size: 0.85rem;
+}
+
+.connected-systems-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+.connected-systems-legend-item {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--app-surface-muted, rgba(0,0,0,0.04));
+  color: var(--app-text-muted);
+  border: 1px solid var(--app-border);
+}
+.connected-systems-empty {
+  font-size: 0.82rem;
+  color: var(--app-text-muted);
+  margin: 0;
+}
+.connected-systems-agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.connected-systems-agent-row {
+  font-size: 0.82rem;
+}
+.connected-systems-agent-name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+  color: var(--app-text-secondary);
+  margin-bottom: 0.2rem;
+}
+.connected-systems-checklist {
+  margin: 0;
+  padding-left: 1.5rem;
+  list-style: none;
+  color: var(--app-success-text, #16a34a);
+}
+.connected-systems-checklist li {
+  color: var(--app-text-secondary);
 }
 
 .chat-context h3 {

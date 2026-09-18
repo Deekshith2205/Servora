@@ -242,6 +242,10 @@ export function fetchTicketRecord(ticketId) {
   return request(`/api/records/tickets/${ticketId}`);
 }
 
+export function fetchPaymentRecord(paymentId) {
+  return request(`/api/records/payments/${paymentId}`);
+}
+
 export function fetchKBArticle(articleId) {
   return request(`/api/kb-articles/${articleId}`);
 }

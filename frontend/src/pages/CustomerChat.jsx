@@ -1,10 +1,18 @@
 import { useState, useRef, useEffect } from "react";
-import { openInvestigationStream, sendChatMessage } from "../api/client";
+import {
+  fetchCustomerRecord,
+  fetchInvestigationByTicket,
+  fetchMyTickets,
+  openInvestigationStream,
+  sendChatMessage,
+} from "../api/client";
 import { appendLiveStep, clearLive, finishLive, startLive } from "../liveInvestigation";
 import { useAuth } from "../auth/AuthContext";
 
 import InvestigationTimeline from "../components/InvestigationTimeline";
 import ExplainableAIPanel from "../components/ExplainableAIPanel";
+import ConnectedSystemsPanel from "../components/ConnectedSystemsPanel";
+import DemoScenarioSelector from "../components/DemoScenarioSelector";
 import { AgentIcon, agentLabel } from "../components/agentMeta";
 
 export default function CustomerChat() {
@@ -27,6 +35,15 @@ export default function CustomerChat() {
   const [liveSteps, setLiveSteps] = useState([]);
   const messagesEndRef = useRef(null);
 
+  // Customer Context panel (Part 3) — real, queried data, not the old
+  // static placeholder text.
+  const [customerContext, setCustomerContext] = useState(null);
+  const [openTicketsCount, setOpenTicketsCount] = useState(null);
+  // Connected Systems panel (Part 2) — the most recently completed
+  // investigation's real steps, so it can show which systems each
+  // agent actually queried (InvestigationStep.used_tools).
+  const [lastInvestigationSteps, setLastInvestigationSteps] = useState(null);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -34,6 +51,20 @@ export default function CustomerChat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, loading, liveSteps]);
+
+  function refreshCustomerContext() {
+    if (!customerId) return;
+    fetchCustomerRecord(customerId).then(setCustomerContext).catch(() => {});
+    fetchMyTickets()
+      .then((tickets) => setOpenTicketsCount(tickets.filter((t) => t.status === "open").length))
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    refreshCustomerContext();
+    setLastInvestigationSteps(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId]);
 
   async function handleSend() {
     if (!input.trim()) return;
@@ -89,6 +120,16 @@ export default function CustomerChat() {
           timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
         },
       ]);
+      // Real investigation just completed — refresh the Customer Context
+      // panel (open ticket count, recent refund requests, etc. may have
+      // changed) and pull the real per-agent tool usage for the
+      // Connected Systems panel.
+      refreshCustomerContext();
+      if (result.ticket_id) {
+        fetchInvestigationByTicket(result.ticket_id)
+          .then((inv) => setLastInvestigationSteps(inv.timeline))
+          .catch(() => {});
+      }
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -185,6 +226,9 @@ export default function CustomerChat() {
         </div>
         
         <div className="chat-input-area">
+          <div className="chat-input-row" style={{marginBottom: '0.5rem'}}>
+            <DemoScenarioSelector onSelect={setInput} disabled={loading} />
+          </div>
           <div className="chat-input-row">
             <input
               value={input}
@@ -210,22 +254,56 @@ export default function CustomerChat() {
         <div className="chat-customer-name">{customerName}</div>
         <div className="chat-customer-id">Active Session</div>
 
-        <div className="chat-context-section">
-          <div className="chat-context-section-title">Available Information</div>
-          <div className="chat-context-value">
-            <ul style={{margin: 0, paddingLeft: '1.25rem', color: 'inherit'}}>
-              <li>Account active</li>
-              <li>Order history accessible</li>
-              <li>Knowledge base enabled</li>
-            </ul>
+        {!customerId ? (
+          <div className="chat-context-section">
+            <div className="chat-context-value">
+              Customer Context is only available when signed in as a Customer — this staff identity has no customer profile to show.
+            </div>
           </div>
-        </div>
-        
-        <div className="chat-context-section">
-          <div className="chat-context-section-title">Workflow</div>
-          <div className="chat-context-value">
-            This demo environment connects to a live database backend. The agent has tools to query orders and tickets.
+        ) : !customerContext ? (
+          <div className="chat-context-section">
+            <div className="chat-context-value">Loading customer profile…</div>
           </div>
+        ) : (
+          <div className="chat-context-section">
+            <div className="chat-context-section-title">Profile</div>
+            <dl className="chat-context-fields">
+              <dt>Customer Since</dt>
+              <dd>{customerContext.customer_since ? new Date(customerContext.customer_since).toLocaleDateString() : "—"}</dd>
+              <dt>Account Status</dt>
+              <dd style={{textTransform: 'capitalize'}}>{customerContext.account_status}</dd>
+              <dt>Total Orders</dt>
+              <dd>{customerContext.total_orders}</dd>
+              <dt>Last Order</dt>
+              <dd>
+                {customerContext.last_order
+                  ? `${customerContext.last_order.product} (${customerContext.last_order.status})`
+                  : "None yet"}
+              </dd>
+              <dt>Payment Method</dt>
+              <dd>{customerContext.payment_method || "None on file"}</dd>
+              <dt>Open Tickets</dt>
+              <dd>{openTicketsCount ?? "—"}</dd>
+            </dl>
+
+            {customerContext.recent_refund_requests.length > 0 && (
+              <>
+                <div className="chat-context-section-title" style={{marginTop: '0.75rem'}}>Recent Refund Requests</div>
+                <ul style={{margin: 0, paddingLeft: '1.25rem', color: 'inherit'}}>
+                  {customerContext.recent_refund_requests.map((r) => (
+                    <li key={r.payment_id}>
+                      ${r.amount.toFixed(2)} — {r.status.replace("_", " ")}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="chat-context-section">
+          <div className="chat-context-section-title">Connected Systems</div>
+          <ConnectedSystemsPanel steps={lastInvestigationSteps} />
         </div>
       </div>
     </div>

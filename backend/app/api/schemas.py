@@ -95,6 +95,21 @@ class CustomerProfileOut(BaseModel):
     risk_level: str | None = None
     channels_used: list[str] = Field(default_factory=list)
     conversation_history: list["CustomerHistoryTicketOut"] = Field(default_factory=list)
+    # Customer Context panel fields (Customer Chat's right-side panel) —
+    # additive, computed at read time from Order/Payment rows this
+    # customer actually owns, never fabricated. `customer_since` has no
+    # backing `Customer.created_at` column (see models.py::Payment's own
+    # docstring for why this repo avoids ALTERing an existing table) —
+    # it's the earliest known Order/Payment timestamp instead, a
+    # documented proxy, not a stored fact.
+    customer_since: str | None = None
+    # This app has no account-suspension concept at all — "active" is a
+    # real, honest constant here, not a fabricated status field.
+    account_status: str = "active"
+    total_orders: int = 0
+    last_order: dict | None = None
+    payment_method: str | None = None
+    recent_refund_requests: list[dict] = Field(default_factory=list)
 
 
 class CustomerHistoryTicketOut(BaseModel):
@@ -457,6 +472,23 @@ class OrderRecordOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PaymentRecordOut(BaseModel):
+    """The inline preview a "payment" evidence reference opens — mirrors
+    OrderRecordOut's role, for the Payment table added alongside the
+    e-commerce demo scenarios (see models.py::Payment)."""
+
+    id: int
+    customer_id: int
+    order_id: int | None = None
+    amount: float
+    method: str
+    description: str
+    status: str
+    payment_type: str
+    duplicate_of: int | None = None
+    charged_at: str
 
 
 class TicketRecordOut(BaseModel):

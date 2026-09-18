@@ -103,6 +103,11 @@ EXPECTED_TOOL_NAMES = {
     "check_order_issue",
     "check_payment_issue",
     "issue_refund",
+    # Payment-table scenarios (Connected Commerce demo polish):
+    # payment-only anomalies with no linked order.
+    "get_customer_payments",
+    "check_payment_anomaly",
+    "issue_payment_refund",
     "check_room_availability",
     # Shopify integration (Phase 3): real-store lookups, billing/order only.
     "lookup_shopify_order",

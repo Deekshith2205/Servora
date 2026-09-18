@@ -2438,6 +2438,122 @@ phases; not all of it is realistic to complete before a hackathon
 finale, and that tradeoff is being made explicit rather than silently
 rushed or silently dropped.
 
+### 2026-09-18 (continued) — "Connected Commerce" demo polish: a real
+`Payment` table, Connected Systems panel, Customer Context panel, Demo
+Scenario selector
+
+User's second request today was a separate, even bigger 10-part
+"transform the demo into a realistic e-commerce support platform" brief.
+A codebase audit found Parts 4/5/6/8 (Investigation Board, Agent Swarm,
+Explainability Drawer, role-based nav) already real and substantially
+complete — re-doing them would have wasted time before the finale. User
+confirmed the priority: Parts 1/2/3/9 (the customer-facing parts, and
+the weakest/most placeholder ones), plus approved adding a real
+`Payment` table. Part 7's Analytics gaps and the full Part 10 audit were
+deliberately deferred — see the 3 `[Future Scope]` issues filed at the
+end (#300, #301, #302) rather than silently dropped.
+
+- **New `Payment` table** (`app/db/models.py`) — a NEW table, not an
+  `ALTER` on `Order`/`Customer` (this repo's own standing convention for
+  the live Neon deployment — `create_all()` can't migrate an existing
+  table). `order_id` is nullable specifically so "charged but no order
+  was ever created" is representable for real. New tools
+  (`app/tools/mock_tools.py`): `get_customer_payments`,
+  `check_payment_anomaly` (covers `duplicate_payment_no_order` /
+  `subscription_charged_after_cancellation` / `refund_delayed` — one
+  function, mirroring `check_payment_issue`'s shape), `issue_payment_refund`.
+  All three wired into `tool_registry.py` (billing-only, matching the
+  existing "only billing may refund" boundary) and `specialists.py`
+  (evidence/evidence_refs, `_ACTION_TOOLS`, an additive billing-prompt
+  paragraph). New `GET /api/records/payments/{id}` + `payment` case
+  added to `SourceRecordViewer.jsx`/`EvidenceExplorer.jsx`/`EvidenceCard.jsx`
+  so a payment evidence ref isn't a dead click in the Explainability
+  drawer. 6 new realistic scenarios seeded against Alice (double charge
+  with no order, refund pending 10+ days, wrong item delivered, cancelled-
+  but-unrefunded, package damaged, subscription charged after
+  cancellation) — "delivered but not received" and "delayed" were judged
+  already covered by existing seed data.
+- **`seed_payment_scenarios_if_missing()`** (`app/db/seed.py`) — its OWN
+  idempotency check (an Earbuds-payment lookup), deliberately separate
+  from `seed_if_empty()`'s "any customer exists" guard: the real Neon DB
+  already had Alice/Bob seeded from many prior sessions before this
+  table existed, so the empty-DB guard alone would never backfill it
+  there. Runs unconditionally but safely on every startup — confirmed
+  live against the real dev DB (backend restarted, table + 6 scenarios
+  appeared with zero manual script run needed).
+- **Connected Systems panel** (Part 2) — no backend changes needed
+  beyond the above: `InvestigationStep.used_tools` already existed per
+  step. New `utils/toolSystems.js` (tool name → system label) +
+  `components/ConnectedSystemsPanel.jsx`, wired into `CustomerChat.jsx`
+  via the existing `fetchInvestigationByTicket()` call after each reply.
+- **Real Customer Context panel** (Part 3) — reused the existing
+  `GET /api/records/customers/{id}` (already Customer-self-accessible)
+  rather than a new endpoint. `CustomerProfileOut` gained
+  `customer_since` (no `Customer.created_at` column exists — deliberately
+  not added, same ALTER-avoidance reasoning as the `Payment` table;
+  derived instead as the customer's earliest real Order/Payment
+  timestamp, a documented proxy not a fabricated date),
+  `account_status` (a real, honest `"active"` constant — this app has no
+  suspension concept, matching `SourceRecordViewer.jsx`'s own existing
+  "no fabricated Account Status" comment), `total_orders`, `last_order`,
+  `payment_method`, `recent_refund_requests`. `CustomerChat.jsx`'s old
+  100%-static "Available Information"/"Workflow" bullet copy is gone.
+- **Demo Scenario selector** (Part 9) — frontend-only, no backend
+  changes: `data/demoScenarios.js` (8 realistic messages, one per
+  scenario) + `components/DemoScenarioSelector.jsx`, a dropdown above
+  the chat input that fills (never auto-sends) the message — every
+  scenario still runs through the real pipeline live.
+- **A real bug found and fixed while live-testing this**: the 6 new
+  scenario tickets were originally seeded `status="open"`, which pushed
+  Alice's open-ticket count high enough to trip the Planner's own real
+  "too much unresolved history, escalate straight to a human" heuristic
+  — defeating the demo's purpose of showing specialist tool-calling live.
+  Fixed by seeding them `status="resolved"` instead (matching issue #22's
+  own established convention: a backing ticket represents a real PRIOR
+  occurrence already handled, not a live duplicate still sitting open) —
+  confirmed live: open ticket count dropped from 11 to 5, and the very
+  next scenario run correctly routed to a real parallel Order+Billing
+  specialist fan-out instead of escalating.
+
+**Verified live end-to-end against the real Gemini-backed dev server**,
+not just via mocked tests: ran the "Double Charge" scenario as Alice
+through the actual browser twice (once via a direct `resolve_billing()`
+script call, once through the full Customer Chat UI) — the Billing
+specialist genuinely called `get_customer_payments` then
+`check_payment_anomaly`, detected `duplicate_payment_no_order`, and
+called `issue_payment_refund` on the real duplicate Payment row (both
+test refunds reset back to `"paid"` afterward so the scenario stays
+fresh for the actual demo). Ran "Wrong Item Delivered" as Alice — a real
+[SWARM] #88 parallel Order+Billing fan-out, Connected Systems panel
+showing real per-agent checklists (Orders/Payments/Customer/Knowledge
+Base databases), Customer Context panel showing real computed values
+(Customer Since, Total Orders 12, Last Order, Payment Method, Open
+Tickets, Recent Refund Requests). Signed in as Jordan Lee (Support
+Agent) and opened the Investigation Board for the Double Charge
+investigation — the "Payment #2" evidence card opened the drill-down
+drawer with a real Payment Record (ID, description, amount, method,
+status, linked order "None — no order was ever created", duplicate-of)
+and real Tool Execution entries for all 4 new/existing payment tools.
+
+Full backend suite: **497 passed** (up from 489 pre-existing), 1
+skipped — 3 pre-existing tests updated for the new tool set
+(`test_tools.py`'s `EXPECTED_TOOL_NAMES`, `test_tool_permissions.py`'s
+billing allowlist), 2 new test files added
+(`tests/test_payment_scenarios.py`, 9 tests on the 3 new mock_tools
+functions; `tests/test_payment_scenario_seeding.py`, 4 tests on the
+backfill's idempotency, including the real "already-seeded database"
+case). `npm run build`/`npm run lint`: clean (no new warnings beyond
+this repo's existing pre-change baseline).
+
+**Deferred, filed as real GitHub issues rather than silently dropped**:
+[#300](https://github.com/Deekshith2205/Servora/issues/300) (Analytics:
+Average Resolution Time + Agent Success Rate),
+[#301](https://github.com/Deekshith2205/Servora/issues/301) (a real
+`promised_delivery_date` field for the delayed-order scenario),
+[#302](https://github.com/Deekshith2205/Servora/issues/302) (the
+broader Part 10 production-readiness audit — out of scope for a single
+pre-finale session).
+
 ## Next up (in priority order)
 
 1. ~~Confirm `call_llm()` against a real Anthropic API key~~ — **done,

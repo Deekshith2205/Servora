@@ -49,7 +49,7 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Customer, KBArticle, Order, Room, Ticket, SystemSetting
+from app.db.models import Customer, KBArticle, Order, Payment, Room, Ticket, SystemSetting
 from app.services import shopify_service
 from app.services.shopify_service import ShopifyAPIError, ShopifyNotConnectedError
 from app.tools import mock_tools
@@ -111,6 +111,19 @@ def _serialize(obj: Any) -> Any:
             "room_type": obj.room_type,
             "price_per_night": obj.price_per_night,
             "total_count": obj.total_count,
+        }
+    if isinstance(obj, Payment):
+        return {
+            "id": obj.id,
+            "customer_id": obj.customer_id,
+            "order_id": obj.order_id,
+            "amount": obj.amount,
+            "method": obj.method,
+            "description": obj.description,
+            "status": obj.status,
+            "payment_type": obj.payment_type,
+            "duplicate_of": obj.duplicate_of,
+            "charged_at": obj.charged_at.isoformat() if obj.charged_at else None,
         }
     # Scalar fallback — already JSON-safe
     return obj
@@ -280,6 +293,64 @@ TOOL_SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "get_customer_payments",
+        "description": (
+            "Return a customer's PAYMENT history — separate from get_customer_orders, "
+            "which only shows orders that were actually created. A payment can exist "
+            "here with NO linked order (a charge that never resulted in an order being "
+            "created) or as a subscription charge. Call this when the customer mentions "
+            "a charge, subscription, or payment that doesn't obviously match one of "
+            "their orders."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "integer",
+                    "description": "The unique numeric ID of the customer whose payments to fetch.",
+                }
+            },
+            "required": ["customer_id"],
+        },
+    },
+    {
+        "name": "check_payment_anomaly",
+        "description": (
+            "Check a PAYMENT (not an order) for anomalies: a duplicate charge that never "
+            "created an order, a subscription charged after it was cancelled, or a refund "
+            "stuck pending past the policy window. Call this BEFORE deciding to refund a "
+            "payment that has no linked order or looks like a subscription/refund-delay issue."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "payment_id": {
+                    "type": "integer",
+                    "description": "The unique numeric ID of the payment to check.",
+                }
+            },
+            "required": ["payment_id"],
+        },
+    },
+    {
+        "name": "issue_payment_refund",
+        "description": (
+            "Mark a PAYMENT as refunded — use this (not issue_refund) when the anomaly is "
+            "on a payment with no linked order, a mischarged subscription, or a delayed "
+            "refund. Only call after check_payment_anomaly confirmed a real issue."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "payment_id": {
+                    "type": "integer",
+                    "description": "The unique numeric ID of the payment to refund.",
+                }
+            },
+            "required": ["payment_id"],
+        },
+    },
+    {
         "name": "check_room_availability",
         "description": (
             "Check whether a hotel room of a given type is available (stretch "
@@ -419,19 +490,31 @@ def build_tool_registry(
             handler=lambda args: mock_tools.issue_refund(db, args["order_id"]),
         ),
         _BoundTool(
-            schema=TOOL_SCHEMAS[7],  # check_room_availability
+            schema=TOOL_SCHEMAS[7],  # get_customer_payments
+            handler=lambda args: mock_tools.get_customer_payments(db, args["customer_id"]),
+        ),
+        _BoundTool(
+            schema=TOOL_SCHEMAS[8],  # check_payment_anomaly
+            handler=lambda args: mock_tools.check_payment_anomaly(db, args["payment_id"]),
+        ),
+        _BoundTool(
+            schema=TOOL_SCHEMAS[9],  # issue_payment_refund
+            handler=lambda args: mock_tools.issue_payment_refund(db, args["payment_id"]),
+        ),
+        _BoundTool(
+            schema=TOOL_SCHEMAS[10],  # check_room_availability
             handler=lambda args: mock_tools.check_room_availability(db, args["room_type"]),
         ),
         _BoundTool(
-            schema=TOOL_SCHEMAS[8],  # lookup_shopify_order
+            schema=TOOL_SCHEMAS[11],  # lookup_shopify_order
             handler=lambda args: _call_shopify(db, lambda: shopify_service.get_order(db, args["order_id"])),
         ),
         _BoundTool(
-            schema=TOOL_SCHEMAS[9],  # lookup_shopify_customer
+            schema=TOOL_SCHEMAS[12],  # lookup_shopify_customer
             handler=lambda args: _call_shopify(db, lambda: _lookup_shopify_customer(db, args)),
         ),
         _BoundTool(
-            schema=TOOL_SCHEMAS[10],  # lookup_shopify_fulfillment
+            schema=TOOL_SCHEMAS[13],  # lookup_shopify_fulfillment
             handler=lambda args: _call_shopify(db, lambda: shopify_service.get_fulfillment_status(db, args["order_id"])),
         ),
     ]
@@ -505,6 +588,13 @@ SPECIALIST_TOOL_PERMISSIONS: dict[str, frozenset[str]] = {
         "check_payment_issue",
         "search_kb",
         "issue_refund",
+        # Payment-only anomalies (no linked order, subscription billing,
+        # a stuck refund) — billing is the only specialist that ever
+        # touches the Payment table, same "only billing may refund"
+        # boundary check_payment_issue/issue_refund already establish.
+        "get_customer_payments",
+        "check_payment_anomaly",
+        "issue_payment_refund",
         # Shopify integration: Billing may look up a real Shopify order's
         # payment/financial status, but — same "no direct write access"
         # posture as issue_refund's own scope — nothing here lets it

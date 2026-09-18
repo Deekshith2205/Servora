@@ -6,7 +6,7 @@
 // new minimal `app/api/records.py` lookups (#95) for order/customer/
 // ticket previews.
 import { useState } from "react";
-import { fetchCustomerRecord, fetchKBArticle, fetchOrderRecord, fetchShopifyCustomerRecord, fetchShopifyOrderRecord, fetchTicketRecord } from "../api/client";
+import { fetchCustomerRecord, fetchKBArticle, fetchOrderRecord, fetchPaymentRecord, fetchShopifyCustomerRecord, fetchShopifyOrderRecord, fetchTicketRecord } from "../api/client";
 import "./EvidenceExplorer.css";
 
 const TYPE_ICON = {
@@ -41,6 +41,11 @@ const TYPE_ICON = {
       <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><path d="M3 6h18"></path><path d="M16 10a4 4 0 0 1-8 0"></path>
     </svg>
   ),
+  payment: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="4" width="22" height="16" rx="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line>
+    </svg>
+  ),
 };
 
 const FETCHERS = {
@@ -50,6 +55,7 @@ const FETCHERS = {
   kb_article: fetchKBArticle,
   shopify_order: fetchShopifyOrderRecord,
   shopify_customer: fetchShopifyCustomerRecord,
+  payment: fetchPaymentRecord,
 };
 
 function RecordPreview({ type, record }) {
@@ -99,6 +105,17 @@ function RecordPreview({ type, record }) {
         <dt>Name</dt><dd>{record.first_name} {record.last_name}</dd>
         <dt>Email</dt><dd>{record.email}</dd>
         <dt>Orders</dt><dd>{record.orders_count}</dd>
+      </dl>
+    );
+  }
+  if (type === "payment") {
+    return (
+      <dl className="ee-preview-fields">
+        <dt>Description</dt><dd>{record.description}</dd>
+        <dt>Amount</dt><dd>${record.amount.toFixed(2)}</dd>
+        <dt>Status</dt><dd>{record.status}</dd>
+        <dt>Method</dt><dd>{record.method}</dd>
+        <dt>Linked Order</dt><dd>{record.order_id ? `Order #${record.order_id}` : "None — no order was ever created"}</dd>
       </dl>
     );
   }

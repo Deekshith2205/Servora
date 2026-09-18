@@ -49,6 +49,48 @@ class Order(Base):
     customer: Mapped["Customer"] = relationship(back_populates="orders")
 
 
+class Payment(Base):
+    """A charge, independent of any `Order` row — added so a "charged but
+    no order was ever created" or "subscription charged after
+    cancellation" scenario can be modeled for real instead of faked on
+    top of `Order.payment_status` (which always assumes a linked order
+    exists). A NEW table, not a change to `Order` — this repo has no
+    migration tool and the real deployment is a persistent Neon Postgres
+    database (`Base.metadata.create_all()` only creates missing tables,
+    it never ALTERs an existing one — see CLAUDE.md's standing note), so
+    a brand-new table is the only schema change that's safe to make here
+    without a manual migration.
+
+    `order_id` is nullable specifically so a payment can exist with NO
+    linked order at all (the duplicate-charge-no-order scenario) — every
+    other payment sets it to the order it actually paid for.
+    `duplicate_of` mirrors `Order.duplicate_of`'s existing convention
+    (self-referential FK, nullable, points at the ORIGINAL payment a
+    duplicate charge repeats). `subscription_cancelled_at` is only ever
+    set for a `payment_type="subscription"` row — a payment whose
+    `charged_at` is AFTER that timestamp is the anomaly
+    `mock_tools.check_payment_anomaly()` detects.
+    """
+
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True, default=None)
+    amount: Mapped[float] = mapped_column(Float)
+    method: Mapped[str] = mapped_column(String, default="")  # e.g. "Visa •••• 4242"
+    description: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="paid")  # paid|refund_pending|refunded|failed
+    payment_type: Mapped[str] = mapped_column(String, default="one_time")  # one_time|subscription
+    duplicate_of: Mapped[int | None] = mapped_column(ForeignKey("payments.id"), nullable=True, default=None)
+    charged_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    refund_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    subscription_cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
+    customer: Mapped["Customer"] = relationship()
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
 

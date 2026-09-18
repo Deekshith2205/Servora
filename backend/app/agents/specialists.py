@@ -29,7 +29,7 @@ from app.tools.tool_registry import build_filtered_tool_registry
 
 # Tools that only *ground an answer* (look something up) rather than take an
 # irreversible action. Used by _estimate_confidence — see its docstring.
-_ACTION_TOOLS = {"issue_refund"}
+_ACTION_TOOLS = {"issue_refund", "issue_payment_refund"}
 _GROUNDING_TOOLS = {
     "get_customer", "get_customer_orders", "get_customer_tickets", "search_kb",
     "check_payment_issue", "check_order_issue",
@@ -37,6 +37,9 @@ _GROUNDING_TOOLS = {
     # least as well as this app's own mocked tables do — same 0.6 tier,
     # not a separate one.
     "lookup_shopify_order", "lookup_shopify_customer", "lookup_shopify_fulfillment",
+    # Payment-table lookups ground an answer the same way an order lookup
+    # does — same 0.6 tier.
+    "get_customer_payments", "check_payment_anomaly",
 }
 
 
@@ -127,6 +130,23 @@ def _describe_evidence(tool_name: str, args: dict, result) -> str:
         error = result.get("error") if isinstance(result, dict) else "unknown error"
         return f"Refund attempt for order #{args.get('order_id')} failed: {error}."
 
+    if tool_name == "get_customer_payments":
+        if not result:
+            return f"Queried payment history for customer #{args.get('customer_id')} — none found."
+        ids = ", ".join(f"#{p.id}" for p in result)
+        return f"Retrieved {len(result)} payment(s) for customer #{args.get('customer_id')}: {ids}."
+
+    if tool_name == "check_payment_anomaly":
+        if isinstance(result, dict) and result.get("detected"):
+            return f"Payment anomaly detected on payment #{result.get('payment_id')}: {result.get('issue_type')}."
+        return f"Checked payment #{args.get('payment_id')} for anomalies — none detected."
+
+    if tool_name == "issue_payment_refund":
+        if isinstance(result, dict) and result.get("success"):
+            return f"Issued refund for payment #{result.get('payment_id')}."
+        error = result.get("error") if isinstance(result, dict) else "unknown error"
+        return f"Refund attempt for payment #{args.get('payment_id')} failed: {error}."
+
     if tool_name == "lookup_shopify_order":
         if isinstance(result, dict) and result.get("error"):
             return f"Shopify order lookup for #{args.get('order_id')} — {result['error']}"
@@ -187,6 +207,14 @@ def _describe_evidence_refs(tool_name: str, args: dict, result) -> list[dict]:
     if tool_name in ("check_payment_issue", "check_order_issue"):
         if isinstance(result, dict) and result.get("order_id") is not None:
             return [{"type": "order", "ref_id": result["order_id"], "label": f"Order #{result['order_id']}"}]
+        return []
+
+    if tool_name == "get_customer_payments":
+        return [{"type": "payment", "ref_id": p.id, "label": f"Payment #{p.id}"} for p in (result or [])]
+
+    if tool_name in ("check_payment_anomaly", "issue_payment_refund"):
+        if isinstance(result, dict) and result.get("payment_id") is not None:
+            return [{"type": "payment", "ref_id": result["payment_id"], "label": f"Payment #{result['payment_id']}"}]
         return []
 
     if tool_name == "lookup_shopify_order":
@@ -311,6 +339,21 @@ def _run_specialist(
             return res
         tool_handlers["check_payment_issue"] = wrapped_check_payment
 
+    original_check_payment_anomaly = tool_handlers.get("check_payment_anomaly")
+    if original_check_payment_anomaly:
+        def wrapped_check_payment_anomaly(args):
+            nonlocal root_cause
+            res = original_check_payment_anomaly(args)
+            if res and isinstance(res, dict) and res.get("detected"):
+                if res.get("issue_type") == "duplicate_payment_no_order":
+                    root_cause = f"Payment {res.get('payment_id')} was charged twice with no order ever created for the duplicate charge."
+                elif res.get("issue_type") == "subscription_charged_after_cancellation":
+                    root_cause = f"Subscription payment {res.get('payment_id')} was charged after the subscription was already cancelled."
+                elif res.get("issue_type") == "refund_delayed":
+                    root_cause = f"Refund for payment {res.get('payment_id')} has been pending for {res.get('days_pending')} days, beyond policy."
+            return res
+        tool_handlers["check_payment_anomaly"] = wrapped_check_payment_anomaly
+
     original_check_order = tool_handlers.get("check_order_issue")
     if original_check_order:
         def wrapped_check_order(args):
@@ -388,6 +431,17 @@ the real Shopify order. If no store is connected, that tool will tell you \
 so plainly — don't treat that as the order not existing, just fall back \
 to this system's own order lookup instead. You do not have a Shopify \
 refund tool — issue_refund only ever affects this system's own records.
+
+If the customer's issue doesn't clearly match one of their orders — a \
+charge they don't recognize, a subscription, or a refund that's been \
+pending a while — call get_customer_payments instead of assuming it's an \
+order problem. Then call check_payment_anomaly on the specific payment_id \
+BEFORE deciding what to do. If it detects duplicate_payment_no_order, \
+subscription_charged_after_cancellation, or refund_delayed: explain the \
+real anomaly to the customer, then call issue_payment_refund with that \
+payment's ID to resolve it. Never call issue_refund for a payment-only \
+anomaly — issue_refund only ever affects an order's payment_status, not a \
+standalone Payment row.
 """
 
 
