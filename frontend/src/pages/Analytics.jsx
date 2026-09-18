@@ -1,17 +1,19 @@
 import { useEffect, useState, useMemo } from "react";
-import { fetchAnalyticsSummary, fetchChannels } from "../api/client";
+import { fetchAnalyticsSummary, fetchChannels, fetchAgentPerformanceMetrics } from "../api/client";
 
 export default function Analytics() {
   const [summary, setSummary] = useState(null);
   const [channels, setChannels] = useState([]);
+  const [agentMetrics, setAgentMetrics] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const doFetch = () => {
-    Promise.all([fetchAnalyticsSummary(), fetchChannels()])
-      .then(([summaryData, channelsData]) => {
+    Promise.all([fetchAnalyticsSummary(), fetchChannels(), fetchAgentPerformanceMetrics()])
+      .then(([summaryData, channelsData, agentMetricsData]) => {
         setSummary(summaryData);
         setChannels(channelsData);
+        setAgentMetrics(agentMetricsData?.agents || []);
       })
       .catch((err) => setError(err.message || "Failed to load analytics"))
       .finally(() => setLoading(false));
@@ -209,6 +211,47 @@ export default function Analytics() {
               </div>
             </div>
           )}
+          {agentMetrics && agentMetrics.length > 0 && (
+            <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+              <div className="escalations-header">
+                <div>
+                  <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Agent Performance Metrics</h3>
+                  <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Aggregated statistics across all investigations by specialist agent.</p>
+                </div>
+              </div>
+              <div className="app-table-container">
+                <table className="app-table">
+                  <thead>
+                    <tr>
+                      <th>Agent</th>
+                      <th>Total Steps</th>
+                      <th>Avg Duration</th>
+                      <th>Avg Confidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {agentMetrics.map((agent, i) => (
+                      <tr key={i}>
+                        <td style={{fontWeight: 600, color: 'var(--app-primary)'}}>{agent.agent_name}</td>
+                        <td>{agent.total_steps}</td>
+                        <td>{Math.round(agent.avg_duration_ms)} ms</td>
+                        <td>
+                          {agent.avg_confidence ? (
+                            <span className={`app-badge ${agent.avg_confidence > 0.8 ? 'badge-success' : agent.avg_confidence > 0.5 ? 'badge-warning' : 'badge-danger'}`}>
+                              {Math.round(agent.avg_confidence * 100)}%
+                            </span>
+                          ) : (
+                            <span className="app-badge">N/A</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="escalations-header">
             <div>
               <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Recurring Issues</h3>
