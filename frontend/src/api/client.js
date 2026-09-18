@@ -15,6 +15,9 @@ async function request(path, options = {}) {
     // silently discarded here in favor of a bare status code — surface it
     // when present, since several endpoints now go out of their way to
     // return a specific, readable detail instead of an opaque 500/502.
+    if (res.status === 403) {
+      window.dispatchEvent(new CustomEvent("api-403"));
+    }
     let detail = null;
     try {
       detail = (await res.json()).detail;

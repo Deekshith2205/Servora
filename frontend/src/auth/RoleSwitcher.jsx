@@ -25,7 +25,13 @@ export default function RoleSwitcher() {
   };
 
   return (
-    <div style={{ position: "relative", marginLeft: "auto", marginRight: "1rem" }}>
+    <div
+      style={{
+        position: "relative",
+        marginLeft: "auto",
+        marginRight: "1rem",
+      }}
+    >
       <button
         onClick={() => setIsOpen(!isOpen)}
         style={{
