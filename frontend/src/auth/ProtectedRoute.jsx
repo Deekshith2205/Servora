@@ -1,5 +1,5 @@
 import { useAuth } from "./AuthContext";
-import { hasPermission } from "./roles";
+import { isPermitted } from "./roles";
 import AccessDenied from "../pages/AccessDenied";
 
 export default function ProtectedRoute({ permission, children }) {
@@ -9,11 +9,12 @@ export default function ProtectedRoute({ permission, children }) {
     return <div style={{ padding: "2rem", textAlign: "center", color: "var(--app-text-muted)" }}>Loading access...</div>;
   }
 
-  const isAllowed = Array.isArray(permission) 
-    ? permission.some(p => hasPermission(currentRole, p))
-    : hasPermission(currentRole, permission);
-
-  if (!isAllowed) {
+  // Defense in depth: the sidebar (App.jsx) already hides a tab this role
+  // can't reach, so reaching this false branch in practice means the
+  // role changed out from under an already-mounted page, not a real nav
+  // path — this banner is the fallback for that split second, not the
+  // primary UX.
+  if (!isPermitted(currentRole, permission)) {
     return <AccessDenied />;
   }
 

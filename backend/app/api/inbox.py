@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.schemas import InboxItemOut, InboxDetailOut, CompactCustomerOut
+from app.auth.dependency import require_permission
 from app.db.database import get_db
 from sqlalchemy import or_
 from app.db.models import Ticket, Investigation, Channel, Customer
@@ -10,10 +11,16 @@ router = APIRouter(prefix="/api/inbox", tags=["inbox"])
 
 @router.get("", response_model=list[InboxItemOut])
 def list_inbox(
-    channel: str | None = None, 
+    channel: str | None = None,
     q: str | None = None,
     status: str | None = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    # Real cross-customer data (every ticket, every customer's name/
+    # email/message) — this endpoint had NO permission check at all
+    # until now, despite the frontend's own TABS config declaring
+    # `view_customer_conversations` as required (App.jsx only hides the
+    # nav item; it was never actually enforced server-side).
+    _actor=Depends(require_permission("view_customer_conversations")),
 ) -> list[InboxItemOut]:
     """
     Unified Inbox Phase 2: One row per Ticket, forming the conversational list view.
@@ -75,7 +82,9 @@ def list_inbox(
 
 
 @router.get("/{ticket_id}", response_model=InboxDetailOut)
-def get_inbox_detail(ticket_id: int, db: Session = Depends(get_db)) -> InboxDetailOut:
+def get_inbox_detail(
+    ticket_id: int, db: Session = Depends(get_db), _actor=Depends(require_permission("view_customer_conversations"))
+) -> InboxDetailOut:
     """
     Unified Inbox Phase 2: Details for the selected conversation panel.
     Returns real ticket/customer data without the massive overhead of the full Investigation.
