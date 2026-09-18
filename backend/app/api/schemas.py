@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -64,6 +66,19 @@ class TicketOut(BaseModel):
     status: str
     confidence: float | None = None
     assigned_to: str | None = None
+    # [Future Scope #302 audit] a real, previously-flagged bug: this
+    # field was missing entirely, so every TicketOut-shaped response
+    # (GET /api/tickets/mine, /api/escalations, /api/tickets/resolved)
+    # silently dropped `created_at` — the frontend's own
+    # `new Date(ticket.created_at)` then rendered as "Invalid Date"
+    # (see CustomerResolutionHistory.jsx, flagged in CLAUDE.md's
+    # 2026-09-17 entry, never fixed until now). A plain `datetime` field
+    # (not `str`) — Pydantic v2's `from_attributes` correctly serializes
+    # a real `datetime.datetime` to an ISO8601 JSON string on its own;
+    # confirmed directly before relying on it, since a same-shaped `str`
+    # field does NOT auto-coerce (see KnowledgeDocumentOut's own history
+    # for where that assumption broke).
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -264,6 +279,11 @@ class NotificationOut(BaseModel):
     customer_id: int
     subject: str
     body: str
+    # [Future Scope #302 audit] same missing-field bug as TicketOut's own
+    # `created_at` (see that field's comment) — CustomerDashboard.jsx's
+    # `new Date(notif.created_at)` was silently rendering "Invalid Date"
+    # for every notification.
+    created_at: datetime
 
     class Config:
         from_attributes = True
