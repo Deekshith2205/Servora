@@ -43,7 +43,20 @@ class Order(Base):
     # Issue #59: Payment state
     payment_status: Mapped[str] = mapped_column(String, default="paid")  # paid|failed|refunded
     duplicate_of: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True, default=None)
-    
+
+    # [Future Scope] issue #301 — a real promised-delivery date, so a
+    # "delayed order" scenario can be judged against an actual SLA
+    # instead of specialists.py's own prior "processing/shipped for an
+    # unusually long time" heuristic. Nullable: most seeded orders never
+    # set this, and an order with none is honestly "no promised date on
+    # file" rather than a fabricated default. NOTE (see CLAUDE.md's Open
+    # Questions on schema drift): this ALTERs an existing table — on the
+    # live Neon Postgres deployment `create_all()` will NOT add this
+    # column to `orders` if the table already exists; a real migration
+    # (`ALTER TABLE orders ADD COLUMN promised_delivery_date TIMESTAMP`)
+    # is needed there before this field is usable against that database.
+    promised_delivery_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     customer: Mapped["Customer"] = relationship(back_populates="orders")
@@ -536,6 +549,119 @@ class AuthSession(Base):
     actor_id: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class KnowledgeDocument(Base):
+    """[RAG] issue #226 — the authoritative record of one uploaded source
+    document (a PDF/DOCX/TXT file), part of #225's Knowledge Center epic.
+    Separate from its `KnowledgeChunk` children (next model) — same one-
+    parent-many-children shape this codebase already uses for
+    `Investigation`/`InvestigationStep`.
+
+    No embedding/vector data lives on this row at all — that is
+    ChromaDB's job (Phase 4, `app/services/vector_store.py`); this table
+    is the SQLite/Postgres source of truth for what was uploaded and its
+    current state only.
+
+    `status` state machine (#229): uploaded -> processing -> indexed, or
+    uploaded/processing -> failed (`error_message` set). `indexed_at` is
+    only ever set on the transition into `indexed`. `chunk_count` is
+    denormalized — updated once indexing finishes — so a Knowledge
+    Center list view never needs a second query (`COUNT(*) ... GROUP BY
+    document_id`) just to show how many chunks a document produced.
+    """
+
+    __tablename__ = "knowledge_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String)
+    filename: Mapped[str] = mapped_column(String)  # the original uploaded name
+    file_path: Mapped[str] = mapped_column(String)  # where the raw file is stored on disk
+    file_type: Mapped[str] = mapped_column(String)  # pdf | docx | txt
+    file_size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String, default="uploaded")  # uploaded|processing|indexed|failed
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    chunks: Mapped[list["KnowledgeChunk"]] = relationship(
+        back_populates="document",
+        order_by="KnowledgeChunk.chunk_index",
+        # [RAG] #230: deleting a KnowledgeDocument (the delete workflow,
+        # #273) must delete its chunks too — a chunk can never legitimately
+        # outlive its parent document.
+        cascade="all, delete-orphan",
+    )
+
+
+class KnowledgeChunk(Base):
+    """[RAG] issue #227 — one retrievable unit of a `KnowledgeDocument`'s
+    text (Phase 3's chunking service splits a document into several of
+    these). This is the row a `search_knowledge` tool call ultimately
+    returns and a `knowledge_chunk` evidence_ref points at — its plain
+    autoincrement integer `id` is what rides the existing
+    `EvidenceRefOut.ref_id: int` shape with zero schema changes (see
+    #225's epic description).
+
+    `embedding_id` is the id this chunk's vector was stored under in
+    ChromaDB's `knowledge_chunks` collection (Phase 4) — kept here, on
+    the SQL side, so `knowledge_retrieval.search_knowledge()` can join a
+    vector-store hit straight back to this row's real `text`/
+    `chunk_metadata` without a second round trip through Chroma's own
+    metadata store. Nullable because a chunk exists (and is listed on the
+    document) the moment chunking finishes, one step before embedding
+    finishes (Phase 4 sets this once the vector is actually stored).
+    """
+
+    __tablename__ = "knowledge_chunks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("knowledge_documents.id"))
+    chunk_index: Mapped[int] = mapped_column(Integer)  # 0-based position within the document
+    text: Mapped[str] = mapped_column(String)
+    # JSON-encoded {page_number?, section_heading?, char_start, char_end} —
+    # same flat "_json column + parsed @property" convention as
+    # InvestigationStep.evidence_json above. Optional fields depend on
+    # file_type (a .txt file has no page_number); char_start/char_end are
+    # always real (offsets into the document's cleaned, extracted text).
+    chunk_metadata_json: Mapped[str] = mapped_column(String, default="{}")
+    embedding_id: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    document: Mapped["KnowledgeDocument"] = relationship(back_populates="chunks")
+
+    @property
+    def chunk_metadata(self) -> dict:
+        return json.loads(self.chunk_metadata_json) if self.chunk_metadata_json else {}
+
+
+class KnowledgeSearchLog(Base):
+    """[RAG] Phase 10 (#275-#279) — one row per real
+    `knowledge_retrieval.search_knowledge()` call, logged at that single
+    call site so every caller (the `search_knowledge` specialist tool,
+    the Knowledge Center's own search interface) is captured the same
+    way with no double-instrumentation. This is what makes the Analytics
+    tab's retrieval usage/success-rate/performance metrics real
+    aggregates over real searches rather than fabricated numbers — this
+    codebase's own standing rule (see analytics.py's existing
+    churn/trend functions, all real `Ticket` aggregates, never invented).
+
+    `top_document_id`/`top_score` are nullable — a real zero-result
+    search (nothing indexed yet, or a genuinely unmatched query) logs a
+    row with both `None`, an honest "searched, found nothing" record,
+    not an error.
+    """
+
+    __tablename__ = "knowledge_search_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    query: Mapped[str] = mapped_column(String)
+    result_count: Mapped[int] = mapped_column(Integer, default=0)
+    top_document_id: Mapped[int | None] = mapped_column(ForeignKey("knowledge_documents.id"), nullable=True, default=None)
+    top_score: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class SystemSetting(Base):

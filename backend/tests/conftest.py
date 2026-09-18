@@ -41,6 +41,7 @@ Three real bugs found by writing tests carefully, all fixed here:
    overrides this default for the duration of that test only.
 """
 import os
+import shutil
 import tempfile
 
 _TEST_DB_PATH = os.path.join(tempfile.gettempdir(), "servora_test.db")
@@ -48,12 +49,33 @@ if os.path.exists(_TEST_DB_PATH):
     os.remove(_TEST_DB_PATH)  # fresh schema/seed every pytest invocation
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
 os.environ["LLM_PROVIDER"] = "anthropic"
+
+# [RAG] same class of test-pollution bug as the SQLite DB above (see #2
+# in this file's own docstring): without this, `pytest` would read/write
+# the real dev server's on-disk `backend/chroma_data/` vector index.
+# See `app/services/vector_store.py::_persist_dir()` for the read side.
+_TEST_CHROMA_DIR = os.path.join(tempfile.gettempdir(), "servora_test_chroma")
+if os.path.exists(_TEST_CHROMA_DIR):
+    shutil.rmtree(_TEST_CHROMA_DIR, ignore_errors=True)
+os.environ["CHROMA_PERSIST_DIR"] = _TEST_CHROMA_DIR
+
+# Same reasoning, for uploaded document bytes — see
+# app/services/knowledge_retrieval.py::_upload_dir().
+_TEST_UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "servora_test_uploads")
+if os.path.exists(_TEST_UPLOAD_DIR):
+    shutil.rmtree(_TEST_UPLOAD_DIR, ignore_errors=True)
+os.environ["UPLOAD_DIR"] = _TEST_UPLOAD_DIR
 # /api/chat and /api/booking are rate-limited in real use (see
 # app/rate_limit.py) — every test here mocks the LLM client, so a single
 # test file can legitimately send far more requests in a few seconds
 # than any real caller would; without this override, that would trip a
 # limit meant for real abuse, not a fast local test run.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+# [RAG] see app/db/seed.py::seed_knowledge_documents_if_missing()'s own
+# docstring — without this, every test that reaches seed_if_empty()
+# would make 3 real Gemini embedding API calls against whatever
+# GOOGLE_API_KEY happens to be in a developer's local .env.
+os.environ["SEED_KNOWLEDGE_DOCUMENTS"] = "false"
 
 from app.db.database import Base, engine  # noqa: E402 (must come after the overrides above)
 from app.db.seed import seed_if_empty  # noqa: E402
