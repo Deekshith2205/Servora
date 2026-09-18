@@ -118,8 +118,8 @@ export function openInvestigationStream(streamKey, { onStep, onDone, onEnd }) {
   return () => source.close();
 }
 
-export function fetchEscalations() {
-  return request("/api/escalations");
+export function fetchEscalations(includeMetrics = false) {
+  return request(includeMetrics ? "/api/escalations?include_metrics=true" : "/api/escalations");
 }
 
 export function fetchInbox(channel = null, q = null, status = null) {

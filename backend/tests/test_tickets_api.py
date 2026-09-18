@@ -240,3 +240,44 @@ def test_close_escalation_validation():
 
         resp = client.post(f"/api/escalations/{ticket.id}/close", headers=headers)
         assert resp.status_code == 400
+
+
+def test_list_escalations_with_metrics():
+    with SessionLocal() as db:
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        yesterday = now - timedelta(days=1)
+        
+        ticket_open = Ticket(customer_id=1, category="order", subject="Metrics open", message="m", status="open")
+        ticket_resolved_today = Ticket(customer_id=1, category="order", subject="Metrics res today", message="m", status="resolved", resolved_at=now)
+        ticket_resolved_yesterday = Ticket(customer_id=1, category="order", subject="Metrics res yes", message="m", status="resolved", resolved_at=yesterday)
+        
+        db.add_all([ticket_open, ticket_resolved_today, ticket_resolved_yesterday])
+        db.commit()
+        headers = staff_headers(db, "administrator")
+
+        # Test without metrics (backwards compatible)
+        resp1 = client.get("/api/escalations", headers=headers)
+        assert resp1.status_code == 200
+        body1 = resp1.json()
+        assert isinstance(body1, list)
+        
+        # Test with metrics
+        resp2 = client.get("/api/escalations?include_metrics=true", headers=headers)
+        assert resp2.status_code == 200
+        body2 = resp2.json()
+        assert isinstance(body2, dict)
+        assert "value" in body2
+        assert "today_resolved_count" in body2
+        assert isinstance(body2["value"], list)
+        
+        # Open ticket should be in the value list
+        assert any(t["subject"] == "Metrics open" for t in body2["value"])
+        # Should not include resolved in the value list
+        assert not any(t["status"] == "resolved" for t in body2["value"])
+        
+        # resolved count should include today but not yesterday
+        # Since we might have other seeded tickets resolved today, we can't assert == 1,
+        # but we can assert it's >= 1 and check that yesterday wasn't counted (harder to isolate in a shared DB without clearing).
+        # We know at least ticket_resolved_today is there.
+        assert body2["today_resolved_count"] >= 1
