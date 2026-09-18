@@ -125,6 +125,56 @@ def test_resolved_conversation_creates_an_investigation_linked_to_its_ticket(mon
     assert "Duplicate payment" in specialist_step.action
 
 
+def test_clarify_action_records_the_real_resolved_specialist_not_none_specialist(monkeypatch, db_session):
+    """Real bug, found live in the browser: the Planner's own contract
+    sets `target_agent="none"` for a "clarify" action (see planner.py) —
+    a value that isn't a real key in `SPECIALISTS`, so
+    `handle_message()`'s single-specialist branch falls back to running
+    the Technical specialist. Before the fix, the resulting
+    `InvestigationStep.agent_name` was recorded as the literal string
+    `"none_specialist"` (using the raw, unresolved `target_agent`) even
+    though Technical is what actually ran — the Investigation Board/
+    Agent Swarm rendered this as a fabricated "None Agent" step. The
+    step must be recorded under the SAME specialist that was actually
+    invoked.
+    """
+    customer = _seed_customer(db_session, email="clarify-inv@example.com")
+
+    monkeypatch.setattr(
+        orchestrator_module, "classify",
+        lambda message: ClassificationResult(category="general", sentiment="neutral", urgency=3, reasoning="vague", confidence=0.7),
+    )
+    monkeypatch.setattr(
+        orchestrator_module, "plan",
+        lambda classification, customer_id, db: PlanDecision(action="clarify", target_agent="none", reasoning="need more detail"),
+    )
+    technical_specialist = lambda db, customer_id, message, channel="live_chat": SpecialistResponse(
+        reply="Could you share your order number so I can look into this?",
+        used_tools=[],
+        confidence=0.2,
+    )
+    monkeypatch.setattr(orchestrator_module, "SPECIALISTS", {"technical": technical_specialist})
+    monkeypatch.setattr(orchestrator_module, "critique", lambda response, message: _MOCK_CRITIC_REVIEW)
+    monkeypatch.setattr(orchestrator_module, "verify", lambda response: VerificationResult(approved=False, reasoning="low confidence"))
+    monkeypatch.setattr(orchestrator_module, "build_handoff_packet", lambda **kwargs: HandoffPacket(
+        situation="s", attempted_fixes=[], root_cause_hypothesis="unclear", recommended_action="ask for details", urgency=3,
+    ))
+    monkeypatch.setattr(orchestrator_module, "extract_facts", lambda message, reply: [])
+
+    result = handle_message(db_session, customer.id, "something's wrong")
+
+    investigation = db_session.query(Investigation).filter_by(ticket_id=result.ticket_id).one()
+    steps = (
+        db_session.query(InvestigationStep)
+        .filter_by(investigation_id=investigation.id)
+        .order_by(InvestigationStep.step_number)
+        .all()
+    )
+    agent_names = [s.agent_name for s in steps]
+    assert "none_specialist" not in agent_names
+    assert "technical_specialist" in agent_names
+
+
 def test_direct_escalation_creates_an_investigation_with_escalated_status(monkeypatch, db_session):
     customer = _seed_customer(db_session, email="bob-inv@example.com")
 

@@ -311,15 +311,29 @@ def handle_message(
             )
         else:
             t0, t0_wall = time.perf_counter(), datetime.utcnow()
-            specialist_fn = SPECIALISTS.get(decision.target_agent, SPECIALISTS["technical"])
+            # A real bug, found live: `decision.target_agent` is "none"
+            # whenever the Planner's action is "clarify" (its own
+            # documented contract — see planner.py) or an unrecognized
+            # value, and this branch is also what "clarify" falls into
+            # (deliberately shares "resolve"'s code path — see
+            # DecisionTree.jsx's own inline caption for why). The lookup
+            # below already falls back to the Technical specialist for
+            # exactly that case, so the specialist that actually RUNS is
+            # resolved here once — the record below must use this same
+            # resolved name, not the raw (possibly "none") target_agent,
+            # or the Investigation Board/Agent Swarm show a fabricated
+            # "none_specialist" step for a Technical specialist that
+            # really ran.
+            resolved_agent = decision.target_agent if decision.target_agent in SPECIALISTS else "technical"
+            specialist_fn = SPECIALISTS[resolved_agent]
             response = specialist_fn(db, customer_id, message, channel=channel)
 
             # Extract root_cause safely if it was populated by the specialist
             root_cause = getattr(response, "root_cause", None)
             resolution = getattr(response, "resolution", None)
             reviewed_step_number = _record(
-                f"{decision.target_agent}_specialist", response.reply,
-                action=root_cause or f"{decision.target_agent.title()} specialist investigated and responded",
+                f"{resolved_agent}_specialist", response.reply,
+                action=root_cause or f"{resolved_agent.title()} specialist investigated and responded",
                 evidence=getattr(response, "evidence", []),
                 duration_ms=round((time.perf_counter() - t0) * 1000), started_at=t0_wall,
                 confidence=response.confidence, root_cause=root_cause, resolution=resolution,
