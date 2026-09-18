@@ -32,8 +32,11 @@ from app.services.channel_adapters import route_channel_message
 from tests.rbac_headers import staff_headers
 
 # [RBAC]: Investigation detail and Analytics summary are both
-# permission-gated now (issues #187/#193) — the Inbox endpoint (#136)
-# is untouched by the RBAC batch and stays open.
+# permission-gated (issues #187/#193). The Inbox endpoint (#136) was
+# genuinely left open by the RBAC batch — a real gap, not a deliberate
+# scope call — closed directly (gated by `view_customer_conversations`,
+# matching what App.jsx's own TABS config already claimed) rather than
+# left for a future session.
 
 _MOCK_CRITIC_REVIEW = CriticReview(agrees=True, confidence=0.8, alternative_hypothesis=None, reasoning="mocked for test")
 
@@ -79,7 +82,7 @@ def test_whatsapp_conversation_agrees_across_inbox_investigation_and_analytics(m
         assert ticket_id is not None
 
         # Surface 1: Inbox (#136) — the ticket shows up, correctly tagged.
-        inbox_resp = client.get("/api/inbox", params={"channel": "whatsapp"})
+        inbox_resp = client.get("/api/inbox", params={"channel": "whatsapp"}, headers=headers)
         assert inbox_resp.status_code == 200
         inbox_row = next((r for r in inbox_resp.json() if r["id"] == ticket_id), None)
         assert inbox_row is not None
@@ -117,7 +120,7 @@ def test_email_conversation_agrees_across_inbox_investigation_and_analytics(monk
         ticket_id = result.ticket_id
         assert ticket_id is not None
 
-        inbox_resp = client.get("/api/inbox", params={"channel": "email"})
+        inbox_resp = client.get("/api/inbox", params={"channel": "email"}, headers=headers)
         assert inbox_resp.status_code == 200
         inbox_row = next((r for r in inbox_resp.json() if r["id"] == ticket_id), None)
         assert inbox_row is not None

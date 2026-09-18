@@ -2334,6 +2334,110 @@ real "access blocked" error from Google, not a bug in this app. Worth
 adding the team's own Google accounts as test users, or publishing the
 OAuth consent screen, before relying on this in a live demo.
 
+### 2026-09-18 — Finale-eve pass, part 1: role-based sidebar (the
+long-standing nav complaint) + a real security gap found and closed
+
+User's own request was a huge 9-phase "audit everything, make it
+production-ready" brief the night before the hackathon finale. Rather
+than attempt all 9 phases blind, started with the single most concrete,
+highest-value, lowest-risk complaint named directly: every role's
+sidebar listed every tab, including ones RBAC denies — a genuinely poor
+first impression (click Staff Dashboard as a Customer, see "Access
+Denied"). Fixed properly, then found two real bugs while verifying it
+live across every role.
+
+- **`App.jsx`'s `TABS` now filters by real permission** — a new
+  `isPermitted(role, permission)` helper in `auth/roles.js` (handles
+  both a single permission string and an OR-array, the one place both
+  the sidebar and `ProtectedRoute`/`Can` now resolve "can this role
+  reach this" from, so they can't drift apart — `ProtectedRoute.jsx`/
+  `Can.jsx` both refactored to call it instead of duplicating the
+  OR-logic inline). The sidebar (`visibleTabs`, a `useMemo` over the
+  real `ROLE_PERMISSIONS` cache) now renders only what a role can
+  actually reach. If the active tab ever isn't in that set (first
+  load, or a role switch drops access to whatever was open), a new
+  effect lands on the first tab the role CAN reach instead of a dead
+  nav item or an Access Denied banner. An empty-permission-set role
+  (shouldn't happen today, but no fake default) gets an honest "your
+  account doesn't have access to any page yet" message instead of a
+  blank screen.
+- **Verified live against the REAL permission map** (`app/auth/
+  permissions.py`), not the user's own recalled wishlist of what each
+  role "should" see — Customer: Customer Chat / Resolution History /
+  Book a Room (no Profile or Settings page exists in this app at all;
+  not fabricated to match the request). Support Agent: Omnichannel
+  Dashboard / Staff Dashboard / Investigation Board / Agent Swarm /
+  Unified Inbox — **deliberately no Customer Chat**, since
+  `support_agent` was never granted `send_chat_message` (a real,
+  already-tested security boundary — `/api/chat`'s whole design assumes
+  a Customer identity; not loosened just to cosmetically match the
+  request). Manager: Omnichannel Dashboard / Staff Dashboard /
+  Analytics — **deliberately no Investigation Board/Agent Swarm**,
+  per `permissions.py`'s own explicit comment on why Manager was never
+  given `view_investigation_board`. Administrator: all 11 tabs (the
+  real permission union). Both discrepancies from the user's literal
+  ask are flagged here rather than silently "fixed" by loosening real
+  RBAC the night before a demo.
+
+- **A real, previously-unpatched security gap found and closed while
+  verifying this**: `GET /api/inbox` and `GET /api/inbox/{ticket_id}`
+  had **zero permission check at all** — any authenticated identity,
+  including a low-privilege Customer, could read every customer's
+  ticket subjects/previews/messages across the whole company. `App.jsx`'s
+  own `TABS` config already claimed this needed
+  `view_customer_conversations`; the backend never actually enforced
+  it — `test_omnichannel_e2e.py` even had a comment noting this was a
+  known, deliberate gap from the original RBAC batch, never circled
+  back to. Closed with `Depends(require_permission(
+  "view_customer_conversations"))` on both routes (`app/api/inbox.py`),
+  the same proven pattern every other gated endpoint already uses. ~28
+  call sites across `tests/test_inbox_api.py` and
+  `tests/test_omnichannel_e2e.py` updated with real staff headers
+  (including the isolated-in-memory-DB test helpers, which needed a
+  real seeded `User` row inserted into THAT specific engine — the
+  override-DB and the auth dependency's own `Depends(get_db)` resolve
+  to the same one). 2 new explicit negative tests
+  (`test_inbox_list_without_permission_is_a_real_403`/`..._detail_...`).
+
+- **A second real regression found live, from the fix above**: gating
+  Inbox broke the Omnichannel Dashboard for Manager — Manager has
+  `view_analytics` (the dashboard's own tab permission) but not
+  `view_customer_conversations`, and `OmnichannelDashboard.jsx`'s
+  `Promise.all([...])` failed the ENTIRE page over that one now-403'ing
+  sub-fetch. Fixed by catching just the two Inbox-specific fetches to
+  `[]` on failure — the dashboard's real sections (KPIs, channel
+  health, analytics, AI Performance Center) still render with real
+  data, and the Inbox Preview/Live Activity sections degrade to their
+  existing real empty states ("No conversations yet." / "No recent
+  activity.") instead of the whole page erroring. Verified live: Manager
+  now sees a fully-working dashboard with an honestly-empty Inbox
+  section, not a broken page.
+
+- **Also tightened `dashboard_omni`'s own tab permission** from
+  `["view_analytics", "view_investigation_board"]` (OR) down to
+  `"view_analytics"` alone — the page's core data fetch
+  (`GET /api/analytics/summary`) always required `view_analytics`
+  specifically, so a Support Agent who reached the tab only via
+  `view_investigation_board` was landing on a broken page before this
+  session even started (a real, previously-undocumented bug, not a new
+  one introduced today). Every role that can actually use the page
+  (Manager/Administrator) already has `view_analytics`, so this is
+  pure bug fix, not a new restriction on anyone who could use it.
+
+**Verified live across all 4 roles** with real credentials (not the
+demo picker, which no longer exists): Customer, Support Agent, Manager,
+Administrator each land on their own correct first-accessible tab,
+sidebar shows only the real reachable set, zero console errors on a
+fresh tab for Administrator. Full backend suite: **485 passed** (483 +
+2 new), 1 skipped. `npm run build`/`npm run lint`: clean.
+
+**This is part 1 of the user's much larger 9-phase request** (full
+audit, RAG, complete redesign, etc.) — see the chat transcript for the
+full brief and the prioritized plan given back for the remaining
+phases; not all of it is realistic to complete before a hackathon
+finale, and that tradeoff is being made explicit rather than silently
+rushed or silently dropped.
+
 ## Next up (in priority order)
 
 1. ~~Confirm `call_llm()` against a real Anthropic API key~~ — **done,

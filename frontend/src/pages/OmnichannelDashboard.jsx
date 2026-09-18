@@ -44,8 +44,17 @@ export default function OmnichannelDashboard() {
     setError(null);
     Promise.all([
       fetchChannels(),
-      fetchInbox(null, null, "open"),
-      fetchInbox(),
+      // Conversation content (Inbox) is gated separately from analytics
+      // (`view_customer_conversations` vs `view_analytics`) — a role
+      // with real, legitimate access to this dashboard (e.g. Manager)
+      // can still lack the former. Degrading those two specifically to
+      // an empty list on failure means the dashboard's own real
+      // sections (KPIs, channel health, analytics) still render
+      // instead of the whole page failing over one optional widget —
+      // InboxPreview already has a real empty state for "no
+      // conversations," which this also matches honestly.
+      fetchInbox(null, null, "open").catch(() => []),
+      fetchInbox().catch(() => []),
       fetchAnalyticsSummary(),
       fetchAgentPerformanceMetrics(),
     ])

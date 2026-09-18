@@ -7,9 +7,10 @@ from sqlalchemy.orm import sessionmaker
 
 from sqlalchemy.pool import StaticPool
 
-from app.db.models import Ticket, Customer, Investigation, Channel
+from app.db.models import Ticket, Customer, Investigation, Channel, User
 from app.db.database import SessionLocal, Base, get_db
 from app.main import app
+from tests.rbac_headers import staff_headers
 
 client = TestClient(app)
 
@@ -19,7 +20,12 @@ def db_session():
         yield db
         db.close()
 
-def test_inbox_list_all_tickets_with_customer_and_sorting(db_session):
+
+@pytest.fixture
+def staff_headers_fixture(db_session):
+    return staff_headers(db_session, "support_agent")
+
+def test_inbox_list_all_tickets_with_customer_and_sorting(db_session, staff_headers_fixture):
     """
     Test that /api/inbox returns all tickets, sorted newest first,
     with real customer data and channel keys.
@@ -43,7 +49,7 @@ def test_inbox_list_all_tickets_with_customer_and_sorting(db_session):
     db_session.add(inv)
     db_session.commit()
 
-    response = client.get("/api/inbox")
+    response = client.get("/api/inbox", headers=staff_headers_fixture)
     assert response.status_code == 200
     data = response.json()
 
@@ -67,7 +73,7 @@ def test_inbox_list_all_tickets_with_customer_and_sorting(db_session):
     assert t1_data["channel_key"] == "live_chat"
     assert t1_data["preview"] == "Short msg"
 
-def test_dashboard_channel_counts_consistency_with_inbox(db_session):
+def test_dashboard_channel_counts_consistency_with_inbox(db_session, staff_headers_fixture):
     """
     [Omnichannel] issue #154 requires a focused verification that Dashboard 
     channel counts (calculated client-side from the open inbox items) 
@@ -88,15 +94,15 @@ def test_dashboard_channel_counts_consistency_with_inbox(db_session):
     db_session.commit()
 
     # What the dashboard fetches:
-    all_open_resp = client.get("/api/inbox?status=open")
+    all_open_resp = client.get("/api/inbox?status=open", headers=staff_headers_fixture)
     assert all_open_resp.status_code == 200
     all_open_items = all_open_resp.json()
 
     # Dashboard client-side calculation for whatsapp:
     dashboard_whatsapp_open = len([t for t in all_open_items if t["channel_key"] == "whatsapp"])
-    
+
     # What the Inbox fetch uses for the channel tab:
-    channel_open_resp = client.get("/api/inbox?channel=whatsapp&status=open")
+    channel_open_resp = client.get("/api/inbox?channel=whatsapp&status=open", headers=staff_headers_fixture)
     assert channel_open_resp.status_code == 200
     channel_open_items = channel_open_resp.json()
     
@@ -106,7 +112,7 @@ def test_dashboard_channel_counts_consistency_with_inbox(db_session):
     # Sanity check against actual test data (should be 2)
     assert dashboard_whatsapp_open >= 2
 
-def test_inbox_detail_success(db_session):
+def test_inbox_detail_success(db_session, staff_headers_fixture):
     """
     Test /api/inbox/{ticket_id} returns exact conversation details
     and links to investigation if present.
@@ -123,7 +129,7 @@ def test_inbox_detail_success(db_session):
     db_session.add(inv)
     db_session.commit()
 
-    response = client.get(f"/api/inbox/{t.id}")
+    response = client.get(f"/api/inbox/{t.id}", headers=staff_headers_fixture)
     assert response.status_code == 200
     data = response.json()
 
@@ -135,12 +141,24 @@ def test_inbox_detail_success(db_session):
     assert data["status"] == "escalated"
     assert data["investigation_id"] == inv.id
 
-def test_inbox_detail_not_found(db_session):
+def test_inbox_detail_not_found(db_session, staff_headers_fixture):
     """
-    Test /api/inbox/{ticket_id} failure edge case.
+    Test /api/inbox/{ticket_id} failure edge case. Permission is checked
+    (as a FastAPI dependency) before the route body's own lookup runs,
+    so real headers are needed to actually reach the 404 rather than a 403.
     """
-    response = client.get("/api/inbox/9999999")
+    response = client.get("/api/inbox/9999999", headers=staff_headers_fixture)
     assert response.status_code == 404
+
+
+def test_inbox_list_without_permission_is_a_real_403(db_session):
+    response = client.get("/api/inbox")
+    assert response.status_code == 403
+
+
+def test_inbox_detail_without_permission_is_a_real_403(db_session):
+    response = client.get("/api/inbox/1")
+    assert response.status_code == 403
 
 from sqlalchemy.pool import StaticPool
 
@@ -164,9 +182,11 @@ def test_empty_inbox():
         finally:
             db.close()
 
+    headers = staff_headers(TestingSessionLocal(), "support_agent")
+
     app.dependency_overrides[get_db] = override_get_db
     try:
-        response = client.get("/api/inbox")
+        response = client.get("/api/inbox", headers=headers)
         assert response.status_code == 200
         assert response.json() == []
     finally:
@@ -196,6 +216,8 @@ def test_inbox_channel_filtering():
         db = TestingSessionLocal()
         from app.db.models import Channel
 
+        headers = staff_headers(db, "support_agent")
+
         # Add a valid channel
         c = Channel(key="test_channel", display_name="Test Channel", status="active")
         db.add(c)
@@ -213,12 +235,12 @@ def test_inbox_channel_filtering():
         db.commit()
 
         # Test 1: Invalid channel -> 400
-        response = client.get("/api/inbox?channel=invalid_channel")
+        response = client.get("/api/inbox?channel=invalid_channel", headers=headers)
         assert response.status_code == 400
         assert "Invalid channel" in response.json()["detail"]
 
         # Test 2: Valid channel filtering (only 1 result)
-        response = client.get("/api/inbox?channel=test_channel")
+        response = client.get("/api/inbox?channel=test_channel", headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
@@ -230,7 +252,7 @@ def test_inbox_channel_filtering():
         db.add(c2)
         db.commit()
 
-        response = client.get("/api/inbox?channel=empty_channel")
+        response = client.get("/api/inbox?channel=empty_channel", headers=headers)
         assert response.status_code == 200
         assert response.json() == []
 
@@ -239,7 +261,7 @@ def test_inbox_channel_filtering():
         db.add(t3)
         db.commit()
 
-        response = client.get("/api/inbox?channel=test_channel")
+        response = client.get("/api/inbox?channel=test_channel", headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 2
@@ -279,88 +301,92 @@ def _setup_isolated_db_for_search():
     t3 = Ticket(customer_id=c1.id, subject="T3", message="Another question", channel_key="email", status="escalated", created_at=now)
     db.add_all([t1, t2, t3])
     db.commit()
+
+    headers = staff_headers(db, "support_agent")
     db.close()
-    
+
     def override_get_db():
         try:
             session = TestingSessionLocal()
             yield session
         finally:
             session.close()
-            
-    return override_get_db
+
+    return override_get_db, headers
 
 
 def test_inbox_search_and_filter():
-    app.dependency_overrides[get_db] = _setup_isolated_db_for_search()
+    override_get_db, headers = _setup_isolated_db_for_search()
+    app.dependency_overrides[get_db] = override_get_db
     try:
         # no filters equals current unfiltered behavior
-        r = client.get("/api/inbox")
+        r = client.get("/api/inbox", headers=headers)
         assert r.status_code == 200
         assert len(r.json()) == 3
         # newest first
         assert r.json()[0]["subject"] == "T3"
 
         # whitespace-only q
-        r = client.get("/api/inbox?q=   ")
+        r = client.get("/api/inbox?q=   ", headers=headers)
         assert len(r.json()) == 3
 
         # customer-name search
-        r = client.get("/api/inbox?q=Alice")
+        r = client.get("/api/inbox?q=Alice", headers=headers)
         assert len(r.json()) == 3 # T1 and T3 match name, T2 matches message text "ALICE"
 
-        r = client.get("/api/inbox?q=bob") # case-insensitive
+        r = client.get("/api/inbox?q=bob", headers=headers) # case-insensitive
         assert len(r.json()) == 1
         assert r.json()[0]["subject"] == "T2"
 
         # customer-email search
-        r = client.get("/api/inbox?q=test.com")
+        r = client.get("/api/inbox?q=test.com", headers=headers)
         assert len(r.json()) == 1
 
         # message-text search
-        r = client.get("/api/inbox?q=login")
+        r = client.get("/api/inbox?q=login", headers=headers)
         assert len(r.json()) == 1
         assert r.json()[0]["subject"] == "T1"
 
         # no-match
-        r = client.get("/api/inbox?q=xyzzzzz")
+        r = client.get("/api/inbox?q=xyzzzzz", headers=headers)
         assert len(r.json()) == 0
 
         # each supported status
-        r = client.get("/api/inbox?status=open")
+        r = client.get("/api/inbox?status=open", headers=headers)
         assert len(r.json()) == 1
-        r = client.get("/api/inbox?status=resolved")
+        r = client.get("/api/inbox?status=resolved", headers=headers)
         assert len(r.json()) == 1
-        r = client.get("/api/inbox?status=escalated")
+        r = client.get("/api/inbox?status=escalated", headers=headers)
         assert len(r.json()) == 1
 
         # invalid status behavior
-        r = client.get("/api/inbox?status=invalid")
+        r = client.get("/api/inbox?status=invalid", headers=headers)
         assert r.status_code == 400
 
         # channel + q
-        r = client.get("/api/inbox?channel=whatsapp&q=alice")
+        r = client.get("/api/inbox?channel=whatsapp&q=alice", headers=headers)
         assert len(r.json()) == 1 # Only T1
 
         # channel + status
-        r = client.get("/api/inbox?channel=email&status=resolved")
+        r = client.get("/api/inbox?channel=email&status=resolved", headers=headers)
         assert len(r.json()) == 1 # T2
 
         # q + status
-        r = client.get("/api/inbox?q=alice&status=escalated")
+        r = client.get("/api/inbox?q=alice&status=escalated", headers=headers)
         assert len(r.json()) == 1 # T3
 
         # channel + q + status
-        r = client.get("/api/inbox?channel=email&q=alice&status=resolved")
+        r = client.get("/api/inbox?channel=email&q=alice&status=resolved", headers=headers)
         assert len(r.json()) == 1 # T2 (matches q="alice" via message, channel=email, status=resolved)
 
         # one-row-per-ticket remains true
         inv = Investigation(ticket_id=1, customer_id=1, status="investigating")
-        db = next(_setup_isolated_db_for_search()())
+        other_override, _ = _setup_isolated_db_for_search()
+        db = next(other_override())
         db.add(inv)
         db.commit()
         db.close()
-        r = client.get("/api/inbox")
+        r = client.get("/api/inbox", headers=headers)
         assert len(r.json()) == 3
 
     finally:

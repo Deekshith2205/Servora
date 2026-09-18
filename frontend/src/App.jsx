@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3, ClipboardList, Compass, History, Inbox as InboxIcon, LayoutDashboard,
   MessageSquare, Mic, Plug, Settings as SettingsIcon, Share2, Users as UsersIcon,
@@ -21,13 +21,21 @@ import ProtectedRoute from "./auth/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Login from "./pages/Login";
 import { useAuth } from "./auth/AuthContext";
+import { isPermitted } from "./auth/roles";
 
 const TABS = {
   dashboard_omni: {
     label: "Omnichannel Dashboard",
     description: "Live operational view across every support channel",
     component: OmnichannelDashboard,
-    permission: ["view_analytics", "view_investigation_board"],
+    // Tightened from an OR with view_investigation_board: the page's own
+    // core data fetch (GET /api/analytics/summary) requires
+    // view_analytics specifically, so a viewer who reached this tab
+    // ONLY via view_investigation_board (Support Agent) landed on a
+    // broken page, not a working one — a real bug, not a permission
+    // decision. Every role that could actually use this page
+    // (Manager/Administrator) already has view_analytics.
+    permission: "view_analytics",
     icon: <LayoutDashboard className="app-nav-icon" size={18} strokeWidth={2} />
   },
   chat: {
@@ -110,12 +118,32 @@ const TABS = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("chat");
+  const [activeTab, setActiveTab] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { currentRole, loading } = useAuth();
 
-  const activeTabInfo = TABS[activeTab];
-  const ActiveComponent = activeTabInfo.component;
+  // The real, permission-filtered set of tabs this role can actually
+  // reach — recomputed whenever the resolved role changes (sign-in,
+  // sign-out, a different account). Order follows TABS' own declared
+  // order, not permission-grant order.
+  const visibleTabs = useMemo(
+    () => Object.entries(TABS).filter(([, tab]) => isPermitted(currentRole, tab.permission)),
+    [currentRole]
+  );
+
+  // Whenever the visible set changes and the current tab isn't in it
+  // (first load, or a role switch that drops access to whatever was
+  // open), land on the first tab this role can actually see instead of
+  // showing a dead nav item or an Access Denied banner.
+  useEffect(() => {
+    if (visibleTabs.length === 0) return;
+    if (!visibleTabs.some(([key]) => key === activeTab)) {
+      setActiveTab(visibleTabs[0][0]);
+    }
+  }, [visibleTabs, activeTab]);
+
+  const activeTabInfo = activeTab ? TABS[activeTab] : null;
+  const ActiveComponent = activeTabInfo?.component;
 
   const handleTabClick = (key) => {
     setActiveTab(key);
@@ -134,6 +162,18 @@ export default function App() {
     );
   }
 
+  if (visibleTabs.length === 0) {
+    return (
+      <div className="servora-app" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--app-text-muted)", textAlign: "center", padding: "2rem" }}>
+        Your account ({currentRole.replace("_", " ")}) doesn't have access to any page yet. Contact an Administrator.
+      </div>
+    );
+  }
+
+  if (!activeTabInfo) {
+    return null; // one render tick while the effect above picks the first visible tab
+  }
+
   return (
     <div className="servora-app app-layout">
 
@@ -149,7 +189,7 @@ export default function App() {
         </a>
         
         <nav className="app-nav">
-          {Object.entries(TABS).map(([key, { label, icon }]) => (
+          {visibleTabs.map(([key, { label, icon }]) => (
             <button
               key={key}
               className={`app-nav-item ${activeTab === key ? "active" : ""}`}
