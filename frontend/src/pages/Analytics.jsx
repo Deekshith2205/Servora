@@ -122,6 +122,20 @@ export default function Analytics() {
               <span className="summary-card-value">{summary.resolution_rate.total}</span>
               <span className="summary-card-desc">Resolved + escalated</span>
             </div>
+
+            <div className="summary-card">
+              <span className="summary-card-title">Avg Resolution Time</span>
+              <span className="summary-card-value">
+                {summary.avg_resolution_time_seconds != null
+                  ? `${Math.round(summary.avg_resolution_time_seconds / 60)} min`
+                  : '—'}
+              </span>
+              <span className="summary-card-desc">
+                {summary.resolved_ticket_count_with_duration > 0
+                  ? `Across ${summary.resolved_ticket_count_with_duration} resolved ticket(s)`
+                  : 'No resolved tickets with duration yet'}
+              </span>
+            </div>
           </div>
           
           {channelMetricsData.length > 0 && (
@@ -249,6 +263,106 @@ export default function Analytics() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {summary.agent_success_rate && summary.agent_success_rate.length > 0 && (
+            <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+              <div className="escalations-header">
+                <div>
+                  <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Agent Success Rate</h3>
+                  <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Resolved vs. escalated share of processed conversations, per assignee ("AI (autonomous)" = never handed to a human).</p>
+                </div>
+              </div>
+              <div className="app-table-container">
+                <table className="app-table">
+                  <thead>
+                    <tr>
+                      <th>Agent</th>
+                      <th>Resolved</th>
+                      <th>Total</th>
+                      <th>Success Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.agent_success_rate.map((a) => (
+                      <tr key={a.agent}>
+                        <td style={{fontWeight: 600, color: 'var(--app-primary)'}}>{a.agent}</td>
+                        <td>{a.resolved}</td>
+                        <td>{a.total}</td>
+                        <td>
+                          <span className={`app-badge ${a.success_rate > 0.8 ? 'badge-success' : a.success_rate > 0.5 ? 'badge-warning' : 'badge-danger'}`}>
+                            {Math.round(a.success_rate * 100)}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {summary.knowledge_metrics && (
+            <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+              <div className="escalations-header">
+                <div>
+                  <h3 style={{margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--app-text-primary)'}}>Knowledge Center Metrics</h3>
+                  <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--app-text-secondary)'}}>Real search_knowledge retrieval activity — no searches yet reports honest zeros, not a fabricated baseline.</p>
+                </div>
+              </div>
+
+              <div className="summary-cards-grid">
+                <div className="summary-card">
+                  <span className="summary-card-title">Total Searches</span>
+                  <span className="summary-card-value">{summary.knowledge_metrics.usage.total_searches}</span>
+                  <span className="summary-card-desc">Last 30 days</span>
+                </div>
+                <div className="summary-card">
+                  <span className="summary-card-title">Search Success Rate</span>
+                  <span className="summary-card-value">{Math.round(summary.knowledge_metrics.success_rate * 100)}%</span>
+                  <span className="summary-card-desc">Searches returning at least one result</span>
+                </div>
+                <div className="summary-card">
+                  <span className="summary-card-title">Documents Indexed</span>
+                  <span className="summary-card-value">{summary.knowledge_metrics.coverage.total_documents}</span>
+                  <span className="summary-card-desc">{summary.knowledge_metrics.coverage.total_chunks} chunk(s) total</span>
+                </div>
+                <div className="summary-card">
+                  <span className="summary-card-title">Avg Search Time</span>
+                  <span className="summary-card-value">
+                    {summary.knowledge_metrics.performance.avg_duration_ms != null
+                      ? `${Math.round(summary.knowledge_metrics.performance.avg_duration_ms)} ms`
+                      : '—'}
+                  </span>
+                  <span className="summary-card-desc">
+                    {summary.knowledge_metrics.performance.avg_top_score != null
+                      ? `Avg top match: ${Math.round(summary.knowledge_metrics.performance.avg_top_score * 100)}%`
+                      : 'No searches yet'}
+                  </span>
+                </div>
+              </div>
+
+              {summary.knowledge_metrics.most_used_documents.length > 0 && (
+                <div className="app-table-container">
+                  <table className="app-table">
+                    <thead>
+                      <tr>
+                        <th>Document</th>
+                        <th>Top-Result Hits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.knowledge_metrics.most_used_documents.map((d) => (
+                        <tr key={d.document_id}>
+                          <td style={{fontWeight: 600, color: 'var(--app-primary)'}}>{d.title}</td>
+                          <td>{d.hit_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 

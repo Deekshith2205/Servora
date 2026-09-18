@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from app.api.analytics import CHURN_HIGH_THRESHOLD, CHURN_MEDIUM_THRESHOLD
 from app.api.schemas import (
     CustomerProfileOut,
+    KnowledgeChunkRecordOut,
     OrderRecordOut,
     PaymentRecordOut,
     ShopifyCustomerRecordOut,
@@ -20,10 +21,10 @@ from app.api.schemas import (
     TicketRecordOut,
     CustomerHistoryTicketOut,
 )
-from app.auth.dependency import CurrentActor, get_current_actor
+from app.auth.dependency import CurrentActor, get_current_actor, require_permission
 from app.auth.investigation_visibility import can_view_evidence
 from app.db.database import get_db
-from app.db.models import Customer, Order, Payment, Ticket
+from app.db.models import Customer, KnowledgeChunk, Order, Payment, Ticket
 
 # Customer Context panel: how far back "Recent Refund Requests" looks.
 _RECENT_REFUND_WINDOW_DAYS = 30
@@ -54,7 +55,17 @@ def get_order(
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     if not can_view_evidence(actor, order.customer_id):
         raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
-    return order
+    return OrderRecordOut(
+        id=order.id,
+        customer_id=order.customer_id,
+        product=order.product,
+        amount=order.amount,
+        status=order.status,
+        payment_status=order.payment_status,
+        failure_reason=order.failure_reason,
+        duplicate_of=order.duplicate_of,
+        promised_delivery_date=order.promised_delivery_date.isoformat() if order.promised_delivery_date else None,
+    )
 
 
 @router.get("/customers/{customer_id}", response_model=CustomerProfileOut)
@@ -211,6 +222,30 @@ def get_ticket(
         sentiment=ticket.sentiment,
         urgency=ticket.urgency,
         created_at=ticket.created_at.isoformat(),
+    )
+
+
+@router.get("/knowledge-chunks/{chunk_id}", response_model=KnowledgeChunkRecordOut)
+def get_knowledge_chunk(
+    chunk_id: int,
+    db: Session = Depends(get_db),
+    _actor: CurrentActor = Depends(require_permission("view_knowledge_base")),
+) -> KnowledgeChunkRecordOut:
+    """[RAG] #266 — backs a `knowledge_chunk` evidence reference's inline
+    preview. Not customer-owned data (a Knowledge Center document isn't
+    tied to any one customer), so this is gated by `view_knowledge_base`
+    directly rather than `can_view_evidence()`'s ownership check."""
+    chunk = db.get(KnowledgeChunk, chunk_id)
+    if chunk is None:
+        raise HTTPException(status_code=404, detail=f"Knowledge chunk {chunk_id} not found")
+    return KnowledgeChunkRecordOut(
+        id=chunk.id,
+        document_id=chunk.document_id,
+        document_title=chunk.document.title,
+        document_file_type=chunk.document.file_type,
+        chunk_index=chunk.chunk_index,
+        text=chunk.text,
+        chunk_metadata=chunk.chunk_metadata,
     )
 
 

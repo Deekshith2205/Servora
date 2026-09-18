@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.schemas import TeamActivityEntryOut
 from app.auth.dependency import require_permission
 from app.db.database import get_db
-from app.db.models import Channel, Customer, Ticket, User
+from app.db.models import Channel, Customer, KnowledgeDocument, KnowledgeSearchLog, Ticket, User
 
 router = APIRouter(prefix="/api", tags=["analytics"])
 
@@ -209,6 +209,120 @@ def compute_channel_metrics(db: Session, cutoff: datetime) -> list[dict]:
     return sorted(by_channel.values(), key=lambda m: m["total"], reverse=True)
 
 
+def compute_resolution_time_and_agent_success(db: Session, cutoff: datetime) -> dict:
+    """[Future Scope] issue #300 — real Average Resolution Time (from
+    `Ticket.resolved_at - Ticket.created_at`, both real columns — no
+    schema change needed) and a per-agent success rate (resolved vs.
+    escalated share of everything a given `assigned_to` name touched,
+    reusing `compute_team_activity()`'s own "match Ticket.assigned_to as
+    a plain free-text name, not a real FK" limitation rather than
+    inventing a second convention).
+
+    A ticket the AI resolved autonomously (never assigned to anyone) has
+    no `assigned_to` — it is honestly grouped under "AI (autonomous)"
+    rather than silently dropped, since that is this app's single most
+    common real outcome and omitting it would make "Agent Success Rate"
+    misleadingly read as 100% (only human-handled tickets counted).
+    """
+    processed = db.query(Ticket).filter(
+        Ticket.status.in_(["resolved", "escalated"]),
+        Ticket.created_at >= cutoff,
+    ).all()
+
+    resolved_with_duration = [
+        t for t in processed if t.status == "resolved" and t.resolved_at is not None
+    ]
+    if resolved_with_duration:
+        avg_seconds = sum(
+            (t.resolved_at - t.created_at).total_seconds() for t in resolved_with_duration
+        ) / len(resolved_with_duration)
+    else:
+        avg_seconds = None
+
+    by_agent: dict[str, dict] = {}
+    for t in processed:
+        agent = t.assigned_to or "AI (autonomous)"
+        bucket = by_agent.setdefault(agent, {"agent": agent, "resolved": 0, "total": 0})
+        bucket["total"] += 1
+        if t.status == "resolved":
+            bucket["resolved"] += 1
+
+    agent_success_rate = [
+        {**b, "success_rate": (b["resolved"] / b["total"]) if b["total"] else 0.0}
+        for b in by_agent.values()
+    ]
+    agent_success_rate.sort(key=lambda a: a["total"], reverse=True)
+
+    return {
+        "avg_resolution_time_seconds": avg_seconds,
+        "resolved_ticket_count": len(resolved_with_duration),
+        "agent_success_rate": agent_success_rate,
+    }
+
+
+def compute_knowledge_metrics(db: Session, cutoff: datetime) -> dict:
+    """[RAG] Phase 10 (#275-#279) — real Knowledge Center retrieval
+    analytics, all derived from `KnowledgeSearchLog` (logged at the one
+    real `search_knowledge()` call site — see that function's own
+    docstring) and `KnowledgeDocument`. Never a fabricated percentage:
+    a knowledge base with zero searches yet reports honest zeros/`None`,
+    not an invented baseline.
+    """
+    searches = db.query(KnowledgeSearchLog).filter(KnowledgeSearchLog.created_at >= cutoff).all()
+    documents = db.query(KnowledgeDocument).all()
+
+    total_searches = len(searches)
+    successful_searches = sum(1 for s in searches if s.result_count > 0)
+    success_rate = (successful_searches / total_searches) if total_searches else 0.0
+    avg_duration_ms = (
+        sum(s.duration_ms for s in searches) / total_searches if total_searches else None
+    )
+    scored = [s.top_score for s in searches if s.top_score is not None]
+    avg_top_score = (sum(scored) / len(scored)) if scored else None
+
+    usage_by_day: dict[str, int] = {}
+    for s in searches:
+        day = s.created_at.date().isoformat()
+        usage_by_day[day] = usage_by_day.get(day, 0) + 1
+
+    doc_hit_counts: dict[int, int] = {}
+    for s in searches:
+        if s.top_document_id is not None:
+            doc_hit_counts[s.top_document_id] = doc_hit_counts.get(s.top_document_id, 0) + 1
+    doc_by_id = {d.id: d for d in documents}
+    most_used_documents = sorted(
+        (
+            {"document_id": doc_id, "title": doc_by_id[doc_id].title, "hit_count": count}
+            for doc_id, count in doc_hit_counts.items()
+            if doc_id in doc_by_id
+        ),
+        key=lambda d: d["hit_count"],
+        reverse=True,
+    )[:10]
+
+    status_counts: dict[str, int] = {}
+    for d in documents:
+        status_counts[d.status] = status_counts.get(d.status, 0) + 1
+
+    return {
+        "usage": {
+            "total_searches": total_searches,
+            "usage_by_day": [{"date": d, "count": c} for d, c in sorted(usage_by_day.items())],
+        },
+        "success_rate": success_rate,
+        "most_used_documents": most_used_documents,
+        "coverage": {
+            "total_documents": len(documents),
+            "by_status": status_counts,
+            "total_chunks": sum(d.chunk_count for d in documents),
+        },
+        "performance": {
+            "avg_duration_ms": avg_duration_ms,
+            "avg_top_score": avg_top_score,
+        },
+    }
+
+
 @router.get("/analytics/summary")
 def analytics_summary(
     db: Session = Depends(get_db), _actor=Depends(require_permission("view_analytics"))
@@ -335,6 +449,8 @@ def analytics_summary(
     sentiment_trend = compute_sentiment_trend(db, now, cutoff, days=30)
     confidence_distribution = compute_confidence_distribution(db, cutoff)
     channel_metrics = compute_channel_metrics(db, cutoff)
+    resolution_time_and_agent_success = compute_resolution_time_and_agent_success(db, cutoff)
+    knowledge_metrics = compute_knowledge_metrics(db, cutoff)
 
     return {
         "status": "ok",
@@ -349,6 +465,12 @@ def analytics_summary(
         "confidence_distribution": confidence_distribution,
         # [Omnichannel] issue #158 — additive.
         "channel_metrics": channel_metrics,
+        # [Future Scope] issue #300 — additive.
+        "avg_resolution_time_seconds": resolution_time_and_agent_success["avg_resolution_time_seconds"],
+        "resolved_ticket_count_with_duration": resolution_time_and_agent_success["resolved_ticket_count"],
+        "agent_success_rate": resolution_time_and_agent_success["agent_success_rate"],
+        # [RAG] issue #225 Phase 10 — additive.
+        "knowledge_metrics": knowledge_metrics,
     }
 
 

@@ -88,6 +88,16 @@ Runs on **http://localhost:8000**.
 The SQLite database (`backend/servora.db`) is created and seeded with demo data
 automatically on first startup — you do not need to run any migration commands.
 
+**If you pull changes that touch `app/db/models.py`** (a new column on an
+existing table), delete `backend/servora.db` before restarting the
+backend. `Base.metadata.create_all()` creates missing *tables* but does
+not add columns to a table that already exists — an existing local
+`servora.db` will throw `OperationalError: no such column` until the
+file is deleted and reseeded from scratch. (This project has no
+migration tool; see `CLAUDE.md`'s Open Questions for the same caveat
+applied to the real deployed Postgres database, which needs an actual
+`ALTER TABLE` instead of a delete-and-reseed.)
+
 ---
 
 ## 3. Frontend setup

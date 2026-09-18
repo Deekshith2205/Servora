@@ -40,7 +40,7 @@ def test_support_agent_permissions_cover_investigation_and_evidence():
 
 def test_manager_permissions_cover_analytics_and_escalation_queue_only():
     perms = ROLE_PERMISSIONS[MANAGER]
-    assert perms == {"view_analytics", "view_escalation_queue"}
+    assert perms == {"view_analytics", "view_escalation_queue", "view_knowledge_base"}
     # A Manager can SEE the escalation queue but never ACT on it directly.
     assert "handle_escalations" not in perms
     assert "view_investigation_board" not in perms

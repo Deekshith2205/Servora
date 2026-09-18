@@ -10,3 +10,10 @@ anthropic==1.5.0
 google-genai==2.23.0
 httpx==0.28.1
 pytest==8.3.3
+
+# [RAG] Knowledge Center — document upload, extraction, chunking, and
+# vector search (see app/services/knowledge_retrieval.py).
+chromadb==1.5.9
+pypdf==6.19.0
+python-docx==1.2.0
+python-multipart==0.0.32

@@ -52,6 +52,14 @@ ordinary billing question is not cross-cutting).
 guessing. Set target_agent to "none".
 - "escalate": skip straight to a human agent. Set target_agent to "none".
 
+Specialists can ground an answer not just in short KB articles but in a \
+full Knowledge Center of uploaded policy/manual/SOP documents (real \
+warranty terms, detailed refund windows, troubleshooting guides) via a \
+real semantic-search tool — factor that into "fixability": a question \
+that sounds like it needs a documented policy or procedure is more \
+likely resolvable by a specialist than one that genuinely needs human \
+judgment or an exception no document could authorize.
+
 Base the decision on what is actually at stake and whether it is fixable \
 by an automated specialist — NOT on how the customer sounds. A calm, \
 politely worded message about a serious, repeated, or clearly \

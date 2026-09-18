@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -64,6 +66,19 @@ class TicketOut(BaseModel):
     status: str
     confidence: float | None = None
     assigned_to: str | None = None
+    # [Future Scope #302 audit] a real, previously-flagged bug: this
+    # field was missing entirely, so every TicketOut-shaped response
+    # (GET /api/tickets/mine, /api/escalations, /api/tickets/resolved)
+    # silently dropped `created_at` — the frontend's own
+    # `new Date(ticket.created_at)` then rendered as "Invalid Date"
+    # (see CustomerResolutionHistory.jsx, flagged in CLAUDE.md's
+    # 2026-09-17 entry, never fixed until now). A plain `datetime` field
+    # (not `str`) — Pydantic v2's `from_attributes` correctly serializes
+    # a real `datetime.datetime` to an ISO8601 JSON string on its own;
+    # confirmed directly before relying on it, since a same-shaped `str`
+    # field does NOT auto-coerce (see KnowledgeDocumentOut's own history
+    # for where that assumption broke).
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -264,6 +279,11 @@ class NotificationOut(BaseModel):
     customer_id: int
     subject: str
     body: str
+    # [Future Scope #302 audit] same missing-field bug as TicketOut's own
+    # `created_at` (see that field's comment) — CustomerDashboard.jsx's
+    # `new Date(notif.created_at)` was silently rendering "Invalid Date"
+    # for every notification.
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -288,7 +308,10 @@ class AlternativeOut(BaseModel):
 
 class EvidenceRefOut(BaseModel):
     """One structured, id-addressable evidence reference — [EXPLAIN]
-    issue #91. `type` is one of: order | customer | ticket | kb_article."""
+    issue #91. `type` is one of: order | customer | ticket | kb_article |
+    shopify_order | shopify_customer | payment | knowledge_chunk (the
+    last added by [RAG] issue #258 — `ref_id` is a real
+    `KnowledgeChunk.id`)."""
 
     type: str
     ref_id: int
@@ -472,6 +495,7 @@ class OrderRecordOut(BaseModel):
     payment_status: str
     failure_reason: str | None = None
     duplicate_of: int | None = None
+    promised_delivery_date: str | None = None  # [Future Scope] #301
 
     class Config:
         from_attributes = True
@@ -793,3 +817,107 @@ class TeamActivityEntryOut(BaseModel):
     role: str
     open_ticket_count: int
     escalated_ticket_count: int
+
+
+# --------------------------------------------------------------------- #
+# [RAG] issue #225 — Knowledge Center. Mirrors KBArticleOut's shape
+# convention above (a plain Pydantic `from_attributes` model per
+# SQLAlchemy model) for the two new tables app/db/models.py adds:
+# KnowledgeDocument and KnowledgeChunk.
+# --------------------------------------------------------------------- #
+
+class KnowledgeDocumentOut(BaseModel):
+    """[RAG] issue #226/#228 — one uploaded document's metadata, as the
+    Knowledge Center's document management table (#270) and status
+    indicators (#271) read it. No chunk text here — see
+    KnowledgeChunkOut for that, fetched separately per-document (#274)."""
+
+    id: int
+    title: str
+    filename: str
+    file_type: str
+    file_size_bytes: int
+    status: str  # uploaded | processing | indexed | failed
+    uploaded_at: str
+    indexed_at: str | None = None
+    error_message: str | None = None
+    chunk_count: int
+
+    class Config:
+        from_attributes = True
+
+
+class KnowledgeChunkOut(BaseModel):
+    """[RAG] issue #227/#266 — one chunk's full text and position, as the
+    Knowledge Center's document detail view (#274) and the
+    Explainability Panel's "retrieved chunk inspection" (#266) both read
+    it. `chunk_metadata` is the parsed dict (`KnowledgeChunk.chunk_metadata`
+    property), not the raw JSON string."""
+
+    id: int
+    document_id: int
+    chunk_index: int
+    text: str
+    chunk_metadata: dict
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class KnowledgeSearchResultOut(BaseModel):
+    """[RAG] issue #248/#272 — one semantic-search hit: real chunk text
+    plus its parent document's title, joined back from ChromaDB's vector
+    hit to the real SQL rows (see
+    app/services/knowledge_retrieval.py::search_knowledge()). `score` is
+    the similarity score ChromaDB reports for this hit (higher = closer;
+    see that service's own docstring for the exact metric), surfaced so
+    the Knowledge Center's search interface (#272) and the Explainability
+    Panel's retrieval reasoning display (#267) can show WHY a result
+    ranked where it did, not just the bare text."""
+
+    chunk_id: int
+    document_id: int
+    document_title: str
+    text: str
+    score: float
+
+
+class KnowledgeChunkRecordOut(BaseModel):
+    """[RAG] issue #266 — backs a `knowledge_chunk` evidence reference's
+    inline preview in the Explainability drill-down drawer (mirrors
+    PaymentRecordOut/TicketRecordOut's role for their own evidence
+    types). Includes the parent document's title/file_type so the
+    preview can show real source attribution, not just a bare chunk id."""
+
+    id: int
+    document_id: int
+    document_title: str
+    document_file_type: str
+    chunk_index: int
+    text: str
+    chunk_metadata: dict
+
+
+class KnowledgeDocumentDetailOut(KnowledgeDocumentOut):
+    """[RAG] issue #274 — the document detail view: the document's own
+    metadata (inherited from KnowledgeDocumentOut) plus every real chunk
+    it was split into, so a staff member can inspect exactly what text
+    is actually searchable for this document."""
+
+    chunks: list[KnowledgeChunkOut] = []
+
+
+class KnowledgeDocumentUploadOut(BaseModel):
+    """Returned immediately by POST /api/knowledge/documents (#231-233) —
+    the document row exists and processing has been kicked off, but
+    indexing is NOT complete yet (`status` is "uploaded" or "processing",
+    never "indexed" in this specific response) — the Knowledge Center's
+    upload interface (#269) polls GET /api/knowledge/documents/{id} (or
+    the list endpoint) afterward to watch `status` reach "indexed"."""
+
+    id: int
+    title: str
+    filename: str
+    file_type: str
+    status: str

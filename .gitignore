@@ -4,6 +4,13 @@ __pycache__/
 .venv/
 *.db
 
+# [RAG] issue #225: uploaded source documents and ChromaDB's local
+# persistent data directory — real uploaded files and a real local
+# vector index, neither belongs in version control, same reasoning as
+# *.db above for the SQLite file.
+backend/uploads/
+backend/chroma_data/
+
 # Env files
 .env
 

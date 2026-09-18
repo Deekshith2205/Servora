@@ -1,0 +1,98 @@
+/* [RAG] issue #225 — Knowledge Center. Reuses the app's existing
+   --app-* design tokens (App.css) for visual consistency — same
+   card/shadow/badge language as Integrations.css, just its own scoped
+   prefix (kc-). */
+
+.kc-title-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--app-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.kc-title-link:hover {
+  text-decoration: underline;
+}
+
+.kc-delete-btn:hover {
+  background: var(--app-danger-bg);
+  color: var(--app-danger-text);
+}
+
+.kc-chunk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.kc-chunk-card {
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  padding: 12px 14px;
+}
+
+.kc-chunk-meta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--app-text-muted);
+  margin-bottom: 6px;
+}
+
+.kc-chunk-text {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--app-text-primary);
+  white-space: pre-wrap;
+}
+
+/* Same "position: fixed on the viewport, not the scrolled content"
+   fix already applied to .app-drawer-overlay and the Explainability
+   drawer overlay (see CLAUDE.md's 2026-09-13/17 entries) — .app-main
+   is itself the scrolling element on this page, so an absolutely
+   positioned overlay would anchor to scrolled content offset instead
+   of the real viewport. */
+.kc-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 5vh 20px;
+  z-index: 1000;
+  overflow-y: auto;
+}
+
+.kc-detail-panel {
+  background: var(--app-surface);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-drawer, var(--app-shadow-card));
+  padding: 24px;
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@media (max-width: 640px) {
+  .kc-detail-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+  .kc-detail-panel {
+    max-width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+}

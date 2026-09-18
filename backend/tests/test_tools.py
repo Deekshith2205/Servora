@@ -109,6 +109,8 @@ EXPECTED_TOOL_NAMES = {
     "check_payment_anomaly",
     "issue_payment_refund",
     "check_room_availability",
+    # [RAG] Knowledge Center semantic search — billing/technical/order only.
+    "search_knowledge",
     # Shopify integration (Phase 3): real-store lookups, billing/order only.
     "lookup_shopify_order",
     "lookup_shopify_customer",

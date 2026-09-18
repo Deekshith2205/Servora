@@ -6,7 +6,7 @@
 // new minimal `app/api/records.py` lookups (#95) for order/customer/
 // ticket previews.
 import { useState } from "react";
-import { fetchCustomerRecord, fetchKBArticle, fetchOrderRecord, fetchPaymentRecord, fetchShopifyCustomerRecord, fetchShopifyOrderRecord, fetchTicketRecord } from "../api/client";
+import { fetchCustomerRecord, fetchKBArticle, fetchKnowledgeChunkRecord, fetchOrderRecord, fetchPaymentRecord, fetchShopifyCustomerRecord, fetchShopifyOrderRecord, fetchTicketRecord } from "../api/client";
 import "./EvidenceExplorer.css";
 
 const TYPE_ICON = {
@@ -46,6 +46,13 @@ const TYPE_ICON = {
       <rect x="1" y="4" width="22" height="16" rx="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line>
     </svg>
   ),
+  // [RAG] issue #225 — a real Knowledge Center document chunk.
+  knowledge_chunk: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+      <path d="M9 8h6M9 12h6"></path>
+    </svg>
+  ),
 };
 
 const FETCHERS = {
@@ -56,6 +63,7 @@ const FETCHERS = {
   shopify_order: fetchShopifyOrderRecord,
   shopify_customer: fetchShopifyCustomerRecord,
   payment: fetchPaymentRecord,
+  knowledge_chunk: fetchKnowledgeChunkRecord,
 };
 
 function RecordPreview({ type, record }) {
@@ -116,6 +124,15 @@ function RecordPreview({ type, record }) {
         <dt>Status</dt><dd>{record.status}</dd>
         <dt>Method</dt><dd>{record.method}</dd>
         <dt>Linked Order</dt><dd>{record.order_id ? `Order #${record.order_id}` : "None — no order was ever created"}</dd>
+      </dl>
+    );
+  }
+  if (type === "knowledge_chunk") {
+    return (
+      <dl className="ee-preview-fields">
+        <dt>Document</dt><dd>{record.document_title}</dd>
+        <dt>Chunk</dt><dd>#{record.chunk_index}</dd>
+        <dt>Text</dt><dd>{record.text}</dd>
       </dl>
     );
   }
