@@ -26,6 +26,7 @@ import RoleBadge from "./components/RoleBadge";
 import UserProfileMenu from "./components/UserProfileMenu";
 
 import CustomerDashboard from "./pages/CustomerDashboard";
+import AdminDashboard from "./pages/AdminDashboard";
 
 const TABS = {
   dashboard_customer: {
@@ -40,6 +41,13 @@ const TABS = {
     description: "Live operational view across every support channel",
     component: OmnichannelDashboard,
     permission: ["view_analytics", "view_investigation_board"],
+    icon: <LayoutDashboard className="app-nav-icon" size={18} strokeWidth={2} />
+  },
+  admin_dashboard: {
+    label: "Admin Dashboard",
+    description: "System administration and organizational analytics",
+    component: AdminDashboard,
+    permission: "manage_users", // Only admins have manage_users in this app
     icon: <LayoutDashboard className="app-nav-icon" size={18} strokeWidth={2} />
   },
   chat: {
@@ -125,7 +133,7 @@ const DEFAULT_TABS = {
   customer: "dashboard_customer",
   support_agent: "dashboard",
   manager: "analytics",
-  administrator: "dashboard_admin"
+  administrator: "admin_dashboard"
 };
 
 export default function App() {
