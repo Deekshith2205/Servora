@@ -23,6 +23,7 @@ underlying tool calls and routing decisions should be consistent.
 - [Scenario 4 — Genuine parallel multi-agent investigation](#scenario-4--genuine-parallel-multi-agent-investigation)
 - [Scenario 5 — Critic Agent: an independent second opinion](#scenario-5--critic-agent-an-independent-second-opinion)
 - [Scenario 6 — The Multi-Channel Journey](#scenario-6--the-multi-channel-journey)
+- [Scenario 7 — Knowledge Center: real document search and citation](#scenario-7--knowledge-center-real-document-search-and-citation)
 
 ## Setup
 
@@ -239,3 +240,52 @@ mention if the demo is going well:
      Dashboard**'s escalation drawer for any escalated ticket (Scenario
      3) — worth showing once to make clear it's one shared component, not
      a customer-only feature.
+
+## Scenario 7 — Knowledge Center: real document search and citation
+
+**What it shows:** a specialist grounding an answer in a real uploaded
+policy document (not just the short seeded KB articles) via genuine
+semantic search — issue #225's Knowledge Center epic, Phase 11.
+
+1. As **Administrator** (Sam Okafor), open the **Knowledge Center** tab.
+   Three real documents are already seeded and indexed on first startup
+   (Refund & Return Policy, Shipping & Delivery Policy, Warranty &
+   Product Support Policy — `app/db/seed.py::seed_knowledge_documents_if_missing()`),
+   each showing a real **Indexed** status and real chunk count. Point out
+   the **Test Search** box at the bottom — type "how long does shipping
+   take" and show the real matching passage, with its real similarity
+   score, retrieved live from ChromaDB (not a keyword match).
+2. Click a document's title to open its detail view — every real chunk
+   it was split into, with real page/section metadata where applicable.
+3. As **Administrator**, upload a new document (drag any short PDF/DOCX/
+   TXT policy) via **+ Upload Document** — point out the status genuinely
+   moves uploaded → processing → indexed over a few seconds (real
+   extraction + chunking + embedding, not a fake progress bar), then the
+   new document is immediately searchable.
+4. Switch to **Support Agent** (Jordan Lee) and reopen Knowledge Center —
+   the document list and Test Search are still there, but **Upload/
+   Reprocess/Delete are gone** (`manage_knowledge_base` is Administrator-
+   only; Support Agent/Manager only get read/search via
+   `view_knowledge_base`) — a real RBAC boundary, not a UI convention.
+5. Back in **Customer Chat** as Alice, ask something a seeded KB article
+   doesn't cover in depth but a Knowledge Center document does — e.g.
+   *"What is your warranty policy for a defective product?"*. Watch the
+   **Connected Systems** panel: the specialist(s) that ran will show a
+   real `search_knowledge` line (distinct from `search_kb`) — this
+   demo's own seeded ticket history for Alice often triggers issue #88's
+   parallel Billing+Account fan-out here, so you may see it on more than
+   one agent.
+6. Click **"Why did Servora recommend this?"**, then the matching
+   evidence card (book icon, labelled with the document title and a real
+   match percentage) in the Evidence Explorer — the inline preview shows
+   the real retrieved chunk text. On the **Investigation Board**, the
+   same evidence item opens the full drill-down drawer with a **Source
+   Record** section labelled **Knowledge Chunk** — document, file type,
+   chunk index, and the exact retrieved text, fetched live via
+   `GET /api/records/knowledge-chunks/{id}`.
+7. On **Analytics** (Manager or Administrator), scroll to **Knowledge
+   Center Metrics** — real search count, success rate, most-used
+   documents, and coverage, all derived from `KnowledgeSearchLog` rows
+   logged at the one real `search_knowledge()` call site. A judge asking
+   "how do you know the retrieval is actually being used?" is answered
+   directly by this section, not by a claim.
