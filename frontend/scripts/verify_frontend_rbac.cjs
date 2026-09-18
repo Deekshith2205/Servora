@@ -42,30 +42,29 @@ tabsConfig.properties.forEach(prop => {
   tabs[key] = perm;
 });
 
-// Based on backend/app/auth/permissions.py
+// Deterministically parse permissions from authoritative backend source
+const permissionsPyPath = path.join(__dirname, '../../backend/app/auth/permissions.py');
+const permissionsPyCode = fs.readFileSync(permissionsPyPath, 'utf8');
+
+function extractSet(name) {
+  const match = permissionsPyCode.match(new RegExp(`${name}:\\s*set\\[str\\]\\s*=\\s*{([\\s\\S]*?)\n}`));
+  if (!match) return [];
+  const elements = match[1].match(/"([^"]+)"/g) || [];
+  return elements.map(s => s.replace(/"/g, ''));
+}
+
+const customerPerms = extractSet('_CUSTOMER_PERMISSIONS');
+const agentPerms = extractSet('_SUPPORT_AGENT_PERMISSIONS');
+const managerPerms = extractSet('_MANAGER_PERMISSIONS');
+const adminOnlyPerms = extractSet('_ADMIN_ONLY_PERMISSIONS');
+
+const adminPerms = [...new Set([...customerPerms, ...agentPerms, ...managerPerms, ...adminOnlyPerms])];
+
 const ROLE_PERMISSIONS = {
-  customer: ["view_own_tickets", "submit_tickets"],
-  support_agent: [
-    "view_own_tickets",
-    "submit_tickets",
-    "view_investigation_board",
-    "handle_escalations",
-    "manage_knowledge_base",
-    "view_customer_conversations"
-  ],
-  admin: [
-    "view_own_tickets",
-    "submit_tickets",
-    "view_investigation_board",
-    "handle_escalations",
-    "manage_knowledge_base",
-    "manage_users",
-    "manage_system_settings",
-    "manage_integrations",
-    "assign_roles",
-    "view_analytics",
-    "view_customer_conversations"
-  ]
+  customer: customerPerms,
+  support_agent: agentPerms,
+  manager: managerPerms,
+  administrator: adminPerms
 };
 
 function hasPermission(role, permission) {
@@ -85,20 +84,27 @@ function getVisibleTabs(role) {
 
 const customerTabs = getVisibleTabs('customer');
 const agentTabs = getVisibleTabs('support_agent');
+const adminTabs = getVisibleTabs('administrator');
 
 console.log("Customer tabs:", customerTabs);
 console.log("Agent tabs:", agentTabs);
+console.log("Admin tabs:", adminTabs);
 
+// Navigation assertions
 if (!customerTabs.includes('chat')) {
   console.error("Customer should see chat");
   process.exit(1);
 }
-if (customerTabs.includes('dashboard_omni')) {
-  console.error("Customer should NOT see dashboard_omni");
+if (customerTabs.includes('dashboard_omni') || customerTabs.includes('settings')) {
+  console.error("Customer should NOT see staff-only tabs");
   process.exit(1);
 }
 if (!agentTabs.includes('dashboard_omni')) {
   console.error("Support agent should see dashboard_omni");
+  process.exit(1);
+}
+if (!adminTabs.includes('settings')) {
+  console.error("Administrator should see settings");
   process.exit(1);
 }
 
