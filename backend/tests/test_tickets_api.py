@@ -111,6 +111,28 @@ def test_list_resolved_tickets_excludes_open_and_escalated():
         assert any(t["subject"] == "resolved ticket" for t in body)
         assert all(t["status"] == "resolved" for t in body)
 
+
+def test_ticket_out_includes_a_real_created_at_not_dropped():
+    """[Future Scope #302 audit] regression test for a real bug: TicketOut
+    previously had no `created_at` field at all, so every TicketOut-shaped
+    response silently dropped it and the frontend's `new Date(undefined)`
+    rendered as "Invalid Date" (CustomerResolutionHistory.jsx). Checks the
+    field is present, a real non-empty string, and round-trips through a
+    real `datetime.fromisoformat()` parse — not just "the key exists"."""
+    from datetime import datetime as _dt
+
+    with SessionLocal() as db:
+        ticket = Ticket(customer_id=1, category="order", subject="created_at check", message="m", status="resolved")
+        db.add(ticket)
+        db.commit()
+
+    resp = client.get("/api/tickets/resolved")
+    assert resp.status_code == 200
+    row = next(t for t in resp.json() if t["subject"] == "created_at check")
+    assert row["created_at"]
+    _dt.fromisoformat(row["created_at"])  # raises if not a real, parseable timestamp
+
+
 def test_list_escalations_excludes_resolved_and_closed():
     with SessionLocal() as db:
         ticket_resolved = Ticket(customer_id=1, category="order", subject="res", message="m", status="resolved")

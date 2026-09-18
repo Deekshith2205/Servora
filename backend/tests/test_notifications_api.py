@@ -31,8 +31,18 @@ def test_list_notifications_returns_seeded_row():
             resp = client.get("/api/notifications")
 
         assert resp.status_code == 200
-        ids = [n["id"] for n in resp.json()]
+        rows = resp.json()
+        ids = [n["id"] for n in rows]
         assert notification.id in ids
+
+        # [Future Scope #302 audit] regression: NotificationOut previously
+        # had no created_at field at all — CustomerDashboard.jsx's
+        # `new Date(notif.created_at)` silently rendered "Invalid Date".
+        from datetime import datetime as _dt
+
+        row = next(n for n in rows if n["id"] == notification.id)
+        assert row["created_at"]
+        _dt.fromisoformat(row["created_at"])
 
 
 def test_patch_booking_notification_is_also_visible_via_list_endpoint():
