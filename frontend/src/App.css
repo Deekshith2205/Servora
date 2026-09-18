@@ -155,6 +155,7 @@
 .app-header {
   padding: 2.25rem 2.5rem 1.5rem;
   background: var(--app-bg);
+  position: relative;
 }
 
 .app-header h1 {

@@ -16,14 +16,13 @@ import OmnichannelDashboard from "./pages/OmnichannelDashboard";
 import CustomerResolutionHistory from "./pages/CustomerResolutionHistory";
 import UserManagement from "./pages/UserManagement";
 import AdminSettings from "./pages/AdminSettings";
-import RoleSwitcher from "./auth/RoleSwitcher";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Login from "./pages/Login";
 import { useAuth } from "./auth/AuthContext";
 import { isPermitted } from "./auth/roles";
 import RoleBadge from "./components/RoleBadge";
-import UserProfileMenu from "./components/UserProfileMenu";
+import AccountMenu from "./components/AccountMenu";
 
 import CustomerDashboard from "./pages/CustomerDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -270,9 +269,8 @@ export default function App() {
             <h1>{activeTabInfo.label}</h1>
             <p>{activeTabInfo.description}</p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginLeft: "auto", marginRight: "1rem" }}>
-            <RoleSwitcher />
-            <UserProfileMenu />
+          <div style={{ position: "absolute", top: "1.5rem", right: "2rem", zIndex: 100 }}>
+            <AccountMenu />
           </div>
         </header>
         
