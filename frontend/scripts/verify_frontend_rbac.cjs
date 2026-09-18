@@ -99,8 +99,8 @@ if (customerTabs.includes('dashboard_omni') || customerTabs.includes('settings')
   console.error("Customer should NOT see staff-only tabs");
   process.exit(1);
 }
-if (!agentTabs.includes('dashboard_omni')) {
-  console.error("Support agent should see dashboard_omni");
+if (agentTabs.includes('dashboard_omni')) {
+  console.error("Support agent should NOT see dashboard_omni (requires view_analytics)");
   process.exit(1);
 }
 if (!adminTabs.includes('settings')) {

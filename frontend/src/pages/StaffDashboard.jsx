@@ -83,11 +83,16 @@ export default function StaffDashboard() {
   const [lookupId, setLookupId] = useState("");
   const [lookupError, setLookupError] = useState(null);
 
+  const [todayResolvedCount, setTodayResolvedCount] = useState(0);
+
   const doFetch = () => {
     Promise.all([
-      fetchEscalations().then((data) => {
+      fetchEscalations(true).then((data) => {
         const records = Array.isArray(data) ? data : data.value || [];
         setTickets(records);
+        if (data && !Array.isArray(data) && data.today_resolved_count !== undefined) {
+          setTodayResolvedCount(data.today_resolved_count);
+        }
       }).catch((err) => setError(err.message || "Failed to load escalations")),
       fetchResolvedHistory().then((data) => {
         const records = Array.isArray(data) ? data : data.value || [];
@@ -321,9 +326,14 @@ export default function StaffDashboard() {
       {metrics && !error && !loading && (
         <div className="summary-cards-grid">
           <div className="summary-card">
-            <span className="summary-card-title">Active Escalations</span>
-            <span className="summary-card-value">{metrics.active}</span>
-            <span className="summary-card-desc">Currently open or in progress</span>
+            <span className="summary-card-title">Open Escalations</span>
+            <span className="summary-card-value">{metrics.requiresAttention}</span>
+            <span className="summary-card-desc">Requires attention</span>
+          </div>
+          <div className="summary-card">
+            <span className="summary-card-title">Today's Resolved</span>
+            <span className="summary-card-value">{todayResolvedCount}</span>
+            <span className="summary-card-desc">Resolved today</span>
           </div>
           <div className="summary-card">
             <span className="summary-card-title">High Priority</span>
@@ -340,11 +350,6 @@ export default function StaffDashboard() {
               )}
             </div>
             <span className="summary-card-desc">Urgency requiring attention</span>
-          </div>
-          <div className="summary-card">
-            <span className="summary-card-title">Requires Attention</span>
-            <span className="summary-card-value">{metrics.requiresAttention}</span>
-            <span className="summary-card-desc">Open cases</span>
           </div>
           <div className="summary-card">
             <span className="summary-card-title">Total Escalations</span>
