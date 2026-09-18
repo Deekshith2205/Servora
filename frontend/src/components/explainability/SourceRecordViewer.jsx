@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import {
   fetchCustomerRecord,
   fetchKBArticle,
+  fetchKnowledgeChunkRecord,
   fetchOrderRecord,
   fetchPaymentRecord,
   fetchShopifyCustomerRecord,
@@ -25,6 +26,7 @@ const FETCHERS = {
   payment: fetchPaymentRecord,
   shopify_order: fetchShopifyOrderRecord,
   shopify_customer: fetchShopifyCustomerRecord,
+  knowledge_chunk: fetchKnowledgeChunkRecord,
 };
 
 const TYPE_LABEL = {
@@ -35,6 +37,7 @@ const TYPE_LABEL = {
   payment: "Payment Record",
   shopify_order: "Shopify Order (Live)",
   shopify_customer: "Shopify Customer (Live)",
+  knowledge_chunk: "Knowledge Chunk",
 };
 
 function Field({ label, value }) {
@@ -146,6 +149,22 @@ function ShopifyCustomerFields({ record }) {
   );
 }
 
+function KnowledgeChunkFields({ record }) {
+  return (
+    <>
+      <Field label="Document" value={record.document_title} />
+      <Field label="File Type" value={record.document_file_type?.toUpperCase()} />
+      <Field label="Chunk Index" value={record.chunk_index} />
+      {record.chunk_metadata?.page_number != null && <Field label="Page" value={record.chunk_metadata.page_number} />}
+      {record.chunk_metadata?.section_heading && <Field label="Section" value={record.chunk_metadata.section_heading} />}
+      <div className="expl-field expl-field-full">
+        <span className="expl-field-label">Text</span>
+        <p className="expl-kb-excerpt">{record.text}</p>
+      </div>
+    </>
+  );
+}
+
 const FIELD_COMPONENTS = {
   order: OrderFields,
   customer: CustomerFields,
@@ -154,6 +173,7 @@ const FIELD_COMPONENTS = {
   payment: PaymentFields,
   shopify_order: ShopifyOrderFields,
   shopify_customer: ShopifyCustomerFields,
+  knowledge_chunk: KnowledgeChunkFields,
 };
 
 export default function SourceRecordViewer({ evidenceRef }) {

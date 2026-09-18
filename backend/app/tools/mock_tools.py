@@ -98,7 +98,27 @@ def check_order_issue(db: Session, order_id: int) -> dict:
             "status": "failed",
             "failure_reason": "inventory_shortfall"
         }
-        
+
+    # [Future Scope] issue #301 — a real, dated SLA check: only orders
+    # with an actual promised_delivery_date on file can be judged
+    # "delayed," and only if it has genuinely passed and the order still
+    # isn't delivered. Replaces the old "processing/shipped for an
+    # unusually long time" guesswork with a real comparison wherever a
+    # promised date exists; orders with none simply skip this check
+    # (honestly not evaluable), same as before this field existed.
+    if (
+        order.status in ("processing", "shipped")
+        and order.promised_delivery_date is not None
+        and order.promised_delivery_date < datetime.utcnow()
+    ):
+        return {
+            "detected": True,
+            "issue_type": "delayed_past_promised_date",
+            "order_id": order.id,
+            "status": order.status,
+            "promised_delivery_date": order.promised_delivery_date.isoformat(),
+        }
+
     return {
         "detected": False,
         "issue_type": None,

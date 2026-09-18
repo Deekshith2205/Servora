@@ -3,6 +3,7 @@ something real to look up instead of hallucinating an answer.
 
 Run automatically on startup (see app/main.py) if the DB is empty.
 """
+import os
 from datetime import datetime, timedelta
 
 from app.auth.password import hash_password
@@ -33,6 +34,7 @@ def seed_if_empty() -> None:
         # existed, so a `db.query(Customer).first()` guard alone would
         # never backfill it there.
         seed_payment_scenarios_if_missing(db)
+        seed_knowledge_documents_if_missing(db)
     finally:
         db.close()
 
@@ -499,3 +501,174 @@ def seed_payment_scenarios_if_missing(db) -> None:
     )
 
     db.commit()
+
+
+# [RAG] issue #225 Phase 11 (#280/#281) — 3 real, substantial policy
+# documents for the Knowledge Center demo, each grounded in a number
+# that already appears elsewhere in this codebase (the 30-day refund
+# window `_BILLING_SYSTEM_PROMPT`/search_kb scenarios already assume,
+# the 5-7 business day shipping estimate `search_kb`'s own "shipping
+# delay" queries reference, a 1-year warranty) — so a specialist citing
+# one of these documents agrees with, rather than contradicts, every
+# other real policy signal already in this demo.
+_REFUND_POLICY_TEXT = """Servora Refund & Return Policy
+
+Eligibility window: a customer may request a refund within 30 days of
+the original purchase date. Requests made after day 30 are not eligible
+for an automatic refund and must be escalated to a human agent for
+case-by-case review.
+
+Duplicate charges: if a customer was charged twice for the same order —
+for example, a payment that succeeded twice due to a checkout retry —
+the DUPLICATE charge is refunded in full. The original, legitimate
+charge is never refunded as part of resolving a duplicate-charge
+complaint.
+
+Payment succeeded but no order exists: if a payment was captured but no
+corresponding order was ever created (a checkout failure after payment),
+this is treated as a billing error, not a standard refund request. The
+charge is refunded in full and the customer is not asked to place a new
+order first.
+
+Subscription charges after cancellation: a subscription charge that
+posts after the customer's cancellation date is always refunded in
+full, regardless of the 30-day window above — a cancelled subscription
+should never generate a new charge.
+
+Delayed refunds: an approved refund should complete within 5 business
+days. If a refund has been marked pending for more than 10 days past
+approval, escalate to a human agent rather than telling the customer to
+keep waiting.
+
+Damaged or defective items: an item that arrives damaged or defective is
+eligible for a full refund OR a free replacement, at the customer's
+choice, regardless of the 30-day window, provided the customer reports
+it within 14 days of delivery.
+
+Courtesy discounts: a courtesy discount (not a refund) may be offered
+for a shipping delay past the promised delivery date, per the Shipping &
+Delivery Policy. A courtesy discount is never combined with a full
+refund for the same order.
+"""
+
+_SHIPPING_POLICY_TEXT = """Servora Shipping & Delivery Policy
+
+Standard delivery estimate: standard shipping takes 5 to 7 business days
+from order confirmation to delivery. Expedited shipping, where
+available, takes 2 to 3 business days.
+
+Delayed orders: an order still showing "processing" or "shipped" past
+its promised delivery date is considered delayed. A delayed order should
+first be checked for a fulfillment anomaly (a cancellation, or an
+inventory shortfall) before being treated as an ordinary delay — those
+are different problems with different resolutions.
+
+Courtesy discount for delays: a customer whose order is delayed beyond
+its promised delivery date, with no fulfillment anomaly detected, is
+eligible for a 10% courtesy discount on that order, offered proactively
+rather than only when the customer asks. This is a discount, not a
+refund, and does not cancel or refund the original order.
+
+Cancelled orders: a cancelled order will never ship. If a customer asks
+about the status of a cancelled order, explain the cancellation plainly
+— do not describe it as "still processing" or "delayed."
+
+Inventory shortfalls: if an order fails because the item is no longer in
+stock, this is an inventory shortfall, not a shipping delay. It requires
+either a substitute item, a refund, or escalation to a human agent for a
+fulfillment remedy — a courtesy discount alone does not resolve it.
+
+Lost packages: a package that tracking shows as delivered, but the
+customer says never arrived, should be escalated to a human agent for
+carrier investigation rather than resolved automatically — this
+codebase's specialists have no tool that can confirm physical delivery
+beyond what tracking already reports.
+"""
+
+_WARRANTY_POLICY_TEXT = """Servora Warranty & Product Support Policy
+
+Standard warranty: every product sold carries a 1-year warranty against
+manufacturing defects, starting from the delivery date. The warranty
+covers manufacturing defects only — it does not cover damage from normal
+wear, misuse, or accidental drops.
+
+Warranty claims: a customer reporting a suspected manufacturing defect
+within the 1-year warranty window is eligible for a free repair or
+replacement, at Servora's discretion, at no cost to the customer.
+Outside the 1-year window, a repair may still be offered but is not
+covered free of charge.
+
+Troubleshooting before replacement: for a product that "isn't working,"
+a basic troubleshooting step (a restart, a factory reset, reseating a
+cable) should be suggested first when one plausibly applies, before
+treating the report as a confirmed hardware defect. If the customer has
+already tried basic troubleshooting and the issue persists, treat it as
+a likely defect and proceed with the warranty claim.
+
+App and account issues: a crash, error message, or "how do I..." — style
+question about the Servora app itself is a software support matter, not
+a hardware warranty claim. These are handled by walking the customer
+through the relevant fix directly, and escalating to a human agent only
+if no known fix resolves it.
+
+Out-of-policy exceptions: a request for an exception outside any of the
+windows above (e.g. a warranty claim after 1 year, or a refund well past
+30 days) is not something a specialist can grant on its own authority —
+it must be escalated to a human agent, who can approve a one-time
+exception at their discretion.
+"""
+
+
+def seed_knowledge_documents_if_missing(db) -> None:
+    """[RAG] issue #225 Phase 11 (#280/#281) — 3 real seeded Knowledge
+    Center documents (refund/shipping/warranty policy), indexed through
+    the REAL extract/chunk/embed/store pipeline (not fabricated chunk
+    rows) so `search_knowledge` has real, citable content to retrieve
+    from the moment a fresh environment starts up.
+
+    Deliberately its own idempotency check (a title lookup), same
+    pattern as `seed_payment_scenarios_if_missing()` and for the exact
+    same reason: this table didn't exist for most of this project's
+    history, so an already-seeded database needs its own backfill path,
+    not just the empty-database `_seed_core()` guard. Runs
+    unconditionally but safely on every startup.
+
+    Indexing runs SYNCHRONOUSLY here (unlike the real upload API, which
+    schedules it as a background task) — this is a one-time startup
+    step, not a request a caller is waiting on. If no real Google API
+    key is configured, `process_document_task()`'s own broad exception
+    handling leaves the document honestly in "failed" status (see that
+    function's docstring) rather than crashing startup — the same
+    graceful-degradation contract every other best-effort LLM-adjacent
+    step in this codebase already follows.
+
+    Gated by `SEED_KNOWLEDGE_DOCUMENTS` (default "true", forced to
+    "false" by tests/conftest.py) — same convention as
+    `RATE_LIMIT_ENABLED`. Without this, every test run that reaches
+    `seed_if_empty()` (which is most of them — see conftest.py's
+    `pytest_configure`, plus every "fresh seed" test that monkeypatches
+    `SessionLocal`) would make 3 REAL Gemini embedding API calls per
+    run against whatever `GOOGLE_API_KEY` happens to be in a
+    developer's local `.env` — slow, non-deterministic, and burns real
+    quota, exactly what this codebase's own network-free-tests
+    convention exists to prevent.
+    """
+    if os.environ.get("SEED_KNOWLEDGE_DOCUMENTS", "true").lower() == "false":
+        return
+
+    from app.services import knowledge_retrieval
+
+    documents = [
+        ("Refund & Return Policy", "refund_return_policy.txt", _REFUND_POLICY_TEXT),
+        ("Shipping & Delivery Policy", "shipping_delivery_policy.txt", _SHIPPING_POLICY_TEXT),
+        ("Warranty & Product Support Policy", "warranty_support_policy.txt", _WARRANTY_POLICY_TEXT),
+    ]
+    for title, filename, text in documents:
+        from app.db.models import KnowledgeDocument
+
+        if db.query(KnowledgeDocument).filter(KnowledgeDocument.title == title).first():
+            continue
+        document = knowledge_retrieval.create_document(
+            db, title=title, filename=filename, file_type="txt", content=text.encode("utf-8"),
+        )
+        knowledge_retrieval.process_document_task(document.id)

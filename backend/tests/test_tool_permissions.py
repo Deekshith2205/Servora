@@ -96,6 +96,7 @@ def test_billing_receives_all_and_only_its_allowed_tools(db_session):
         "lookup_shopify_order", "lookup_shopify_customer",  # Shopify integration
         # Payment-table scenarios (Connected Commerce demo polish).
         "get_customer_payments", "check_payment_anomaly", "issue_payment_refund",
+        "search_knowledge",  # [RAG] Knowledge Center
     }
     schemas, handlers = build_filtered_tool_registry(db_session, "billing")
 
@@ -116,7 +117,7 @@ def test_technical_does_not_receive_issue_refund(db_session):
     assert "issue_refund" not in names
     assert "issue_refund" not in handlers
     # Full expected set, not just the negative check.
-    assert names == {"get_customer", "get_customer_tickets", "search_kb"}
+    assert names == {"get_customer", "get_customer_tickets", "search_kb", "search_knowledge"}
     assert set(handlers.keys()) == names
 
 
@@ -134,6 +135,7 @@ def test_order_does_not_receive_issue_refund(db_session):
     assert names == {
         "get_customer", "get_customer_orders", "check_order_issue", "search_kb",
         "lookup_shopify_order", "lookup_shopify_customer", "lookup_shopify_fulfillment",  # Shopify integration
+        "search_knowledge",  # [RAG] Knowledge Center
     }
     assert set(handlers.keys()) == names
 
@@ -222,7 +224,7 @@ def test_technical_llm_call_never_receives_issue_refund_schema(db_session):
     first_call_kwargs = mock_client.messages.create.call_args_list[0][1]
     sent_tool_names = {t["name"] for t in first_call_kwargs["tools"]}
     assert "issue_refund" not in sent_tool_names
-    assert sent_tool_names == {"get_customer", "get_customer_tickets", "search_kb"}
+    assert sent_tool_names == {"get_customer", "get_customer_tickets", "search_kb", "search_knowledge"}
 
 
 @patch("app.llm._client", None)
@@ -247,6 +249,7 @@ def test_order_llm_call_never_receives_issue_refund_schema(db_session):
     assert sent_tool_names == {
         "get_customer", "get_customer_orders", "check_order_issue", "search_kb",
         "lookup_shopify_order", "lookup_shopify_customer", "lookup_shopify_fulfillment",  # Shopify integration
+        "search_knowledge",  # [RAG] Knowledge Center
     }
 
 

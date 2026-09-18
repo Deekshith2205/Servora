@@ -38,6 +38,7 @@ _SUPPORT_AGENT_PERMISSIONS: set[str] = {
     "view_explainability",          # #189
     "handle_escalations",           # #190 — act (assign/resolve) AND view the queue
     "view_customer_conversations",  # Phase 4's own spec item (Track B builds the UI)
+    "view_knowledge_base",          # [RAG] #268 — browse/search the Knowledge Center, read-only
 }
 
 # --------------------------------------------------------------------- #
@@ -51,6 +52,7 @@ _SUPPORT_AGENT_PERMISSIONS: set[str] = {
 _MANAGER_PERMISSIONS: set[str] = {
     "view_analytics",           # #193 (also satisfies #194's metrics OR-check, #197's team activity)
     "view_escalation_queue",    # #196 — read-only queue visibility
+    "view_knowledge_base",      # [RAG] #268 — same read-only browse/search as Support Agent
 }
 
 # --------------------------------------------------------------------- #

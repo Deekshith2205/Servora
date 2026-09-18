@@ -48,6 +48,13 @@ const TYPE_ICON = {
       <rect x="1" y="4" width="22" height="16" rx="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line>
     </svg>
   ),
+  // [RAG] issue #225 — a real Knowledge Center document chunk.
+  knowledge_chunk: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+      <path d="M9 8h6M9 12h6"></path>
+    </svg>
+  ),
 };
 
 function formatTime(isoString) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, ClipboardList, Compass, History, Inbox as InboxIcon, LayoutDashboard,
+  BarChart3, BookOpen, ClipboardList, Compass, History, Inbox as InboxIcon, LayoutDashboard,
   MessageSquare, Mic, Plug, Settings as SettingsIcon, Share2, Users as UsersIcon,
 } from "lucide-react";
 import "./App.css";
@@ -9,6 +9,7 @@ import AgentSwarmView from "./pages/AgentSwarmView";
 import BookingChat from "./pages/BookingChat";
 import CustomerChat from "./pages/CustomerChat";
 import Integrations from "./pages/Integrations";
+import KnowledgeCenter from "./pages/KnowledgeCenter";
 import InvestigationBoard from "./pages/InvestigationBoard";
 import StaffDashboard from "./pages/StaffDashboard";
 import Inbox from "./pages/Inbox";
@@ -112,6 +113,16 @@ const TABS = {
     component: Integrations,
     permission: "manage_integrations",
     icon: <Plug className="app-nav-icon" size={18} strokeWidth={2} />
+  },
+  knowledge_center: {
+    label: "Knowledge Center",
+    description: "Upload and manage documents specialists ground answers in",
+    component: KnowledgeCenter,
+    // Read-only browse/search for Support Agent + Manager (view_knowledge_base);
+    // upload/delete/reprocess is gated inline with <Can permission="manage_knowledge_base">
+    // (Administrator only) — same two-tier pattern Integrations uses.
+    permission: "view_knowledge_base",
+    icon: <BookOpen className="app-nav-icon" size={18} strokeWidth={2} />
   },
   inbox: {
     label: "Unified Inbox",

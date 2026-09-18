@@ -52,6 +52,8 @@ from sqlalchemy.orm import Session
 from app.db.models import Customer, KBArticle, Order, Payment, Room, Ticket, SystemSetting
 from app.services import shopify_service
 from app.services.shopify_service import ShopifyAPIError, ShopifyNotConnectedError
+from app.services.embeddings import EmbeddingError
+from app.services.knowledge_retrieval import search_knowledge
 from app.tools import mock_tools
 
 # ---------------------------------------------------------------------------
@@ -159,6 +161,20 @@ def _call_shopify(db: Session, fn: Callable[[], Any]) -> Any:
         return {"connected": False, "error": str(exc)}
     except ShopifyAPIError as exc:
         return {"connected": True, "error": str(exc), "status_code": exc.status_code}
+
+
+def _call_search_knowledge(db: Session, query: str) -> dict:
+    """[RAG] #253/#256 — wraps `knowledge_retrieval.search_knowledge()`
+    into the same honest-dict-on-failure shape `_call_shopify` already
+    established: an `EmbeddingError` (no/invalid Google API key, a rate
+    limit) becomes `{"results": [], "error": "..."}` — something the
+    model can reason about and explain to the customer — rather than a
+    raw exception aborting the whole tool-calling turn."""
+    try:
+        results = search_knowledge(db, query)
+        return {"results": results}
+    except EmbeddingError as exc:
+        return {"results": [], "error": str(exc)}
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +429,31 @@ TOOL_SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "search_knowledge",
+        "description": (
+            "[RAG] Semantic search over the Knowledge Center's uploaded "
+            "policy/manual/SOP documents (PDF/DOCX/TXT) — distinct from "
+            "search_kb, which only searches the older, short, seeded "
+            "KBArticle table. Use this when the customer's question needs "
+            "grounding in a longer real policy document (e.g. a detailed "
+            "warranty policy, a multi-step SOP) rather than a short KB "
+            "snippet. Pass a natural-language query; returns the most "
+            "relevant passages with their real source document title. "
+            "Returns an empty result honestly if nothing indexed matches — "
+            "never invent a policy that wasn't actually retrieved."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Natural-language question or keywords to search the knowledge base for.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "lookup_shopify_fulfillment",
         "description": (
             "Get the REAL fulfillment/shipping status for a Shopify order — "
@@ -514,7 +555,11 @@ def build_tool_registry(
             handler=lambda args: _call_shopify(db, lambda: _lookup_shopify_customer(db, args)),
         ),
         _BoundTool(
-            schema=TOOL_SCHEMAS[13],  # lookup_shopify_fulfillment
+            schema=TOOL_SCHEMAS[13],  # search_knowledge
+            handler=lambda args: _call_search_knowledge(db, args["query"]),
+        ),
+        _BoundTool(
+            schema=TOOL_SCHEMAS[14],  # lookup_shopify_fulfillment
             handler=lambda args: _call_shopify(db, lambda: shopify_service.get_fulfillment_status(db, args["order_id"])),
         ),
     ]
@@ -603,11 +648,19 @@ SPECIALIST_TOOL_PERMISSIONS: dict[str, frozenset[str]] = {
         # in scope for this integration.
         "lookup_shopify_order",
         "lookup_shopify_customer",
+        # [RAG] #254: real policy documents (e.g. a detailed refund/
+        # warranty policy) live in the Knowledge Center, not just the
+        # short seeded KBArticle table search_kb covers.
+        "search_knowledge",
     }),
     "technical": frozenset({
         "get_customer",
         "get_customer_tickets",
         "search_kb",
+        # [RAG] #254: troubleshooting SOPs/manuals are exactly what the
+        # Knowledge Center is for — Technical is the specialist most
+        # likely to need a real multi-step document, not just a KB blurb.
+        "search_knowledge",
     }),
     "order": frozenset({
         "get_customer",
@@ -621,6 +674,8 @@ SPECIALIST_TOOL_PERMISSIONS: dict[str, frozenset[str]] = {
         "lookup_shopify_order",
         "lookup_shopify_customer",
         "lookup_shopify_fulfillment",
+        # [RAG] #254: real shipping/delay policy documents.
+        "search_knowledge",
     }),
     "account": frozenset({
         "get_customer",

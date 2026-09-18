@@ -40,6 +40,9 @@ _GROUNDING_TOOLS = {
     # Payment-table lookups ground an answer the same way an order lookup
     # does — same 0.6 tier.
     "get_customer_payments", "check_payment_anomaly",
+    # [RAG] #262: a real semantic search over the Knowledge Center grounds
+    # an answer the same way search_kb does — same 0.6 tier.
+    "search_knowledge",
 }
 
 
@@ -147,6 +150,15 @@ def _describe_evidence(tool_name: str, args: dict, result) -> str:
         error = result.get("error") if isinstance(result, dict) else "unknown error"
         return f"Refund attempt for payment #{args.get('payment_id')} failed: {error}."
 
+    if tool_name == "search_knowledge":
+        hits = result.get("results") if isinstance(result, dict) else None
+        if isinstance(result, dict) and result.get("error"):
+            return f"Knowledge Center search failed: {result['error']}"
+        if not hits:
+            return "Searched the Knowledge Center — no matching passages found."
+        titles = "; ".join(sorted({h["document_title"] for h in hits}))
+        return f"Searched the Knowledge Center — found {len(hits)} relevant passage(s) from: {titles}."
+
     if tool_name == "lookup_shopify_order":
         if isinstance(result, dict) and result.get("error"):
             return f"Shopify order lookup for #{args.get('order_id')} — {result['error']}"
@@ -216,6 +228,17 @@ def _describe_evidence_refs(tool_name: str, args: dict, result) -> list[dict]:
         if isinstance(result, dict) and result.get("payment_id") is not None:
             return [{"type": "payment", "ref_id": result["payment_id"], "label": f"Payment #{result['payment_id']}"}]
         return []
+
+    if tool_name == "search_knowledge":
+        hits = result.get("results") if isinstance(result, dict) else None
+        return [
+            {
+                "type": "knowledge_chunk",
+                "ref_id": h["chunk_id"],
+                "label": f"{h['document_title']} (match {h['score']:.0%})",
+            }
+            for h in (hits or [])
+        ]
 
     if tool_name == "lookup_shopify_order":
         # Only a genuine, found Shopify order produces a ref — a "not
@@ -432,6 +455,11 @@ so plainly — don't treat that as the order not existing, just fall back \
 to this system's own order lookup instead. You do not have a Shopify \
 refund tool — issue_refund only ever affects this system's own records.
 
+If the customer references a detailed policy (warranty terms, a specific \
+refund window, a multi-step process) that search_kb's short articles \
+don't fully cover, call search_knowledge — it searches the full Knowledge \
+Center document library, not just the short KB articles.
+
 If the customer's issue doesn't clearly match one of their orders — a \
 charge they don't recognize, a subscription, or a refund that's been \
 pending a while — call get_customer_payments instead of assuming it's an \
@@ -461,7 +489,9 @@ a fix from memory.
 
 Typical flow:
 1. Call search_kb with keywords from the customer's issue to find a \
-relevant troubleshooting article.
+relevant troubleshooting article. If the issue needs a longer, more \
+detailed manual/SOP than a short KB article covers, also call \
+search_knowledge to search the full Knowledge Center document library.
 2. Optionally call get_customer_tickets to check whether this customer has \
 reported the same or a related issue before — a repeat, unresolved issue \
 is worth naming explicitly in your reply, since it matters for escalation.
@@ -498,7 +528,8 @@ Do NOT blindly issue a refund here.
 6. If an order is delayed (in "processing" or "shipped" for an unusually \
 long time), call search_kb (e.g. query "shipping delay" or "discount") \
 to find the exact policy for delayed orders, and if eligible, you may offer \
-a courtesy discount (but do not issue a refund).
+a courtesy discount (but do not issue a refund). For a longer shipping/ \
+delivery policy document, call search_knowledge instead.
 7. Reply in plain, friendly language explaining the exact status and \
 what policy applies. Do not reveal hidden tool data.
 
