@@ -2554,6 +2554,136 @@ Average Resolution Time + Agent Success Rate),
 broader Part 10 production-readiness audit — out of scope for a single
 pre-finale session).
 
+### 2026-09-18 (continued) — [RAG] Enterprise Knowledge Retrieval epic
+fully implemented (all 60 sub-issues), [RBAC] Phase 10 closed out,
+Future Scope #300/#301 done, and a bounded #302 audit pass
+
+Explicit instruction this session: work through the full open backlog
+(the [RAG] epic, the remaining [RBAC] Phase 10 issues, and the 3 Future
+Scope issues) rather than a single feature. Picked up on top of
+already-uncommitted Phase 1/3/4 groundwork from an earlier, unfinished
+session (models, `document_processing.py`, `embeddings.py`,
+`vector_store.py`, `knowledge_retrieval.py` — see their own docstrings)
+and completed everything around it. Three PRs, each independently
+green on CI:
+
+- **PR #304** (`feat/rag-knowledge-center`, this branch) — the full RAG
+  epic (#225, all 11 phases, #226-#284) plus [Future Scope] #300 (Average
+  Resolution Time + Agent Success Rate) and #301
+  (`Order.promised_delivery_date` + a real `delayed_past_promised_date`
+  anomaly check). New `search_knowledge` tool (permission-scoped to
+  billing/technical/order, matching `search_kb`'s own boundary),
+  `app/api/knowledge.py` (upload/list/detail/delete/reprocess/search),
+  a new `view_knowledge_base` permission (Support Agent/Manager) reusing
+  the existing admin-only `manage_knowledge_base` for writes, a new
+  `KnowledgeSearchLog` table backing real retrieval analytics, 3 seeded
+  policy documents indexed at real startup, a full Knowledge Center
+  frontend page, and `knowledge_chunk` wired into every existing
+  evidence-type lookup (Evidence Explorer, the Explainability
+  drill-down drawer). 62 new backend tests; full suite 543 passed, 1
+  skipped.
+
+  **Two real bugs found and fixed before they shipped**: (1) the
+  inherited Phase 1 schemas (`KnowledgeDocumentOut`/`KnowledgeChunkOut`)
+  declared `str` datetime fields but relied on Pydantic's
+  `from_attributes` against raw ORM `datetime` objects — confirmed
+  directly that Pydantic v2 does NOT coerce this (a real validation
+  error, not a silent pass), fixed with explicit `isoformat()`
+  construction in the API layer. (2) ChromaDB's persist directory and
+  the upload directory were hardcoded relative paths — would have let
+  `pytest` read/write the real dev server's `chroma_data/`/`uploads/`
+  directories, the same test-pollution bug class this project has hit
+  and fixed twice before (the SQLite test DB, `LLM_PROVIDER`); made both
+  env-overridable (`CHROMA_PERSIST_DIR`/`UPLOAD_DIR`) and isolated in
+  `conftest.py`. Also gated the knowledge-doc seed function behind
+  `SEED_KNOWLEDGE_DOCUMENTS` (forced off in tests) — without it, every
+  test run would have made 3 real Gemini embedding calls against this
+  dev environment's real `GOOGLE_API_KEY`.
+
+  **A real schema-drift gap found live** (not this branch's own doing):
+  starting the backend against the real Neon dev database threw
+  `UndefinedColumn: tickets.resolved_at` — a column from an EARLIER
+  session's own migration that this particular Neon database had
+  apparently never received (the "must ALTER, `create_all()` won't add
+  a column to an existing table" gap this file has flagged as an open
+  question for a while, now actually hit rather than just theorized).
+  Applied two real, additive `ALTER TABLE ... ADD COLUMN` migrations
+  directly against the live dev DB while verifying: `orders.
+  promised_delivery_date` (this branch's own new column) and `tickets.
+  resolved_at` (the pre-existing gap). Diffed the full SQLAlchemy
+  metadata against the live schema first (not just reacting one error
+  at a time) to confirm nothing else was missing.
+
+  **Verified live end-to-end** against the real dev servers and a real
+  Gemini-backed backend, not just mocked tests: uploaded/searched/
+  inspected real seeded policy documents; confirmed RBAC (Support Agent
+  read-only, no upload/delete controls — Administrator full access);
+  drove a real customer chat question ("What is your warranty policy
+  for a defective product?") that produced a genuine [SWARM] #88
+  parallel Billing+Account fan-out where Billing called
+  `search_knowledge` for real (confirmed via Connected Systems and the
+  Investigation Board's evidence grid); opened the Explainability
+  drill-down drawer and confirmed the "Knowledge Chunk" Source Record
+  card renders the real document/chunk/text; confirmed Analytics'
+  new Knowledge Center Metrics / Agent Success Rate / Avg Resolution
+  Time sections all render real, non-fabricated data.
+
+- **PR #305** (`rbac-phase10-demo-walkthrough`) — closes out [RBAC]
+  Phase 10 (#170's final phase). #221 ("Demo Role Selector") was closed
+  separately, NOT implemented as written — it asks for a one-click role
+  picker, but that mechanism was deliberately and completely removed in
+  the 2026-09-17 real-authentication session (see that entry); rebuilding
+  it would reintroduce the exact gap real auth was built to close. The
+  real Login screen's "Demo accounts" hint box already serves the same
+  judging-demo need. #222 (role-based walkthrough) landed as a new
+  Scenario 7 in `docs/DEMO_SCRIPT.md`, rewritten around the real login
+  flow rather than a role selector. #224 (end-to-end validation) was
+  done for real, live, not assumed from code review: Support Agent
+  (correct sidebar, real assign-escalation `POST` verified to persist
+  across a reload), Manager (correct sidebar, real non-zero Analytics
+  numbers), Administrator (all tabs, a real staff role change via
+  `PATCH /api/users/{id}` verified to persist, then reverted), and a
+  direct unauthenticated `curl` against `/api/users` confirming a real
+  403. Backend suite: 500 passed (matches the pre-existing baseline,
+  zero regressions from a docs-only PR). `npm run build`: clean.
+
+- **PR #306** (`fix/ticket-created-at-invalid-date`) — a bounded first
+  pass at [Future Scope] #302's audit ask (that issue's own text says a
+  full open-ended audit doesn't fit one session; this is one concrete
+  bug actually found and fixed, not the whole audit). Grepped the whole
+  codebase for TODO/FIXME/placeholder markers first — none found in
+  `backend/app`; the few `frontend/src` hits are comments explicitly
+  documenting the ABSENCE of placeholder data. Found and fixed a real
+  bug flagged-but-never-fixed since 2026-09-17: `TicketOut`/
+  `NotificationOut` never declared a `created_at` field at all, so it
+  was silently dropped from every response they shape — the frontend's
+  own `new Date(ticket.created_at)` rendered as "Invalid Date" in
+  Resolution History (flagged, not fixed, in that day's entry) and the
+  Customer Dashboard's notification list (not previously noticed, same
+  bug class). Fixed with a plain `created_at: datetime` field on both
+  (confirmed Pydantic v2's `from_attributes` auto-serializes a real
+  `datetime.datetime` correctly, unlike the `str`-field bug found in the
+  same session's RAG work) — no endpoint changes needed. 2 new
+  regression tests; full suite 501 passed. Verified live: Alice's
+  Resolution History shows real dates, zero console errors. Also added
+  the `CONTRIBUTING.md` note about deleting `servora.db` after a schema
+  change, flagged as "not done yet" in this file's own Next Up list for
+  a while.
+
+  #302 itself was closed with an honest summary of what this pass did
+  and did not cover — the genuinely out-of-scope items (Anthropic
+  billing, CI branch protection, no public URL, no backup demo video)
+  are left exactly where they already were, in Open Questions below, not
+  duplicated.
+
+**None of these 3 PRs were merged by this session** — deliberately left
+for review, since merging into `main` is a shared-state action outside
+this session's own authorization. All three are independently green on
+CI (`gh pr checks 304/305/306`). Whoever merges them should do so in any
+order (they're independent, not stacked) and, per this file's own
+standing lesson, verify directly against `origin/main` afterward rather
+than trusting each PR's own MERGED status.
+
 ## Next up (in priority order)
 
 1. ~~Confirm `call_llm()` against a real Anthropic API key~~ — **done,
@@ -2591,14 +2721,23 @@ pre-finale session).
    every one of #136-#165 is CLOSED on GitHub, and live-verified working
    (found and fixed 4 real regressions along the way — see the
    2026-09-16 "Frontend/UX Track audit" entries and PR #294).
-6. Two small, well-scoped fixes identified previously, still not done:
-   (a) a `CONTRIBUTING.md` note about deleting `servora.db` after a
-   schema change (`create_all()` doesn't migrate existing SQLite
-   tables — hit repeatedly across sessions, once per new migration-
-   touching PR), (b) wire up a real Gmail/SMS provider behind
+6. Two small, well-scoped fixes identified previously: (a) ~~a
+   `CONTRIBUTING.md` note about deleting `servora.db` after a schema
+   change~~ — **done, 2026-09-18, via PR #306** (not yet merged). (b)
+   wire up a real Gmail/SMS provider behind
    `app/services/notifications.py` (see #21's entry above for why it's
    mocked today) — self-contained, doesn't change any caller, not
-   blocking a demo.
+   blocking a demo, still not done.
+6a. **Merge PRs #304/#305/#306** (2026-09-18, see that day's entry) —
+   the [RAG] Knowledge Center epic, [RBAC] Phase 10, and a bounded
+   #302 audit pass, all implemented, tested, and live-verified this
+   session but deliberately left unmerged for review. All three green
+   on CI. Once merged: (i) re-verify `git log origin/main..<branch>` is
+   empty for each per this file's own recurring stacked-PR lesson, (ii)
+   the real Neon dev DB already has the two column migrations PR #304
+   needed (`orders.promised_delivery_date`, `tickets.resolved_at`)
+   applied directly — a genuinely fresh Postgres database would still
+   need them run manually, there is still no migration tool.
 7. ~~[RBAC] Track A~~ — **merged to `main`** (PR #290). ~~Track B's Role
    Switcher (issue #206)~~ — **also done**, merged via PR #293
    (`AuthContext`/`ProtectedRoute`/`Can`/`RoleSwitcher.jsx`/`roles.js`),
