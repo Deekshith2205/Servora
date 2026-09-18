@@ -23,6 +23,7 @@ underlying tool calls and routing decisions should be consistent.
 - [Scenario 4 — Genuine parallel multi-agent investigation](#scenario-4--genuine-parallel-multi-agent-investigation)
 - [Scenario 5 — Critic Agent: an independent second opinion](#scenario-5--critic-agent-an-independent-second-opinion)
 - [Scenario 6 — The Multi-Channel Journey](#scenario-6--the-multi-channel-journey)
+- [Scenario 7 — Role-based walkthrough (RBAC)](#scenario-7--role-based-walkthrough-rbac)
 
 ## Setup
 
@@ -239,3 +240,57 @@ mention if the demo is going well:
      Dashboard**'s escalation drawer for any escalated ticket (Scenario
      3) — worth showing once to make clear it's one shared component, not
      a customer-only feature.
+
+## Scenario 7 — Role-based walkthrough (RBAC)
+
+**What it shows:** all 4 roles reaching their own real, permission-gated
+surfaces through the real login screen — no demo role-switcher exists
+in this app anymore (see [`CLAUDE.md`](../CLAUDE.md)'s 2026-09-17 "Real
+authentication" entry for why it was deliberately removed); every
+identity below is a real seeded account, gated by the real
+`app/auth/permissions.py` map, not a UI convention.
+
+**Setup**: go to `http://localhost:5173/app` while signed out (or click
+Sign Out from the user menu, top-right, if already signed in). Every
+account below shares the demo password `Demo1234!` — also shown
+directly on the login screen's own "Demo accounts" hint box, so no
+credential needs to be memorized or copied from this doc.
+
+1. **Customer** (`alice@example.com`) — toggle **Customer** on the login
+   screen (it's the default), sign in. Lands on **My Dashboard**. Go to
+   **Customer Chat**, send a real message (e.g. "Where is my order?"),
+   wait for a real reply, then go to **Resolution History** and confirm
+   the same conversation now appears there with its real outcome — the
+   one signature loop every Customer session can run end to end.
+2. **Support Agent** (`jordan.lee@servora.example`) — toggle **Staff
+   member**, sign in. Lands on **Staff Dashboard**. Open any open/
+   escalated ticket in the queue, type something in **Assigned to** and
+   click **Assign**, then add resolution notes and click **Mark
+   Resolved** (or **Resolve**, depending on the ticket's state) — a real
+   `PATCH`/`POST` against the real ticket, not a local-only UI update
+   (reload the page and confirm the assignment/status persisted).
+   Confirm the sidebar does **not** show Omnichannel Dashboard, Book a
+   Room, Analytics, User Management, or System Configuration — Support
+   Agent has none of those permissions.
+3. **Manager** (`priya.shah@servora.example`) — sign in. Lands on
+   **Analytics** (Manager's real permission set has `view_analytics`,
+   not `view_investigation_board`, so Investigation Board/Agent Swarm
+   are correctly absent from the sidebar too). Confirm the page shows
+   real numbers (Resolution Rate, Escalation Rate, the charts below) —
+   not zeros or placeholders, unless the seeded/demo data genuinely has
+   none in the lookback window.
+4. **Administrator** (`sam.okafor@servora.example`) — sign in. Lands on
+   **Admin Dashboard**, and every tab in the sidebar is visible (the
+   real permission union — see `permissions.py`'s own comment on why
+   Administrator is computed, never hand-duplicated). Go to **User
+   Management**, change an existing staff member's role in the dropdown
+   (e.g. Support Agent → Manager), confirm it saves without a page
+   reload, then change it back — a real, live `PATCH /api/users/{id}`.
+5. **Cross-check, not just per-role**: while still signed in as
+   Administrator, open a second browser tab/window and try
+   `http://localhost:8000/api/users` directly with no
+   `Authorization` header (e.g. via `curl` or the browser's dev tools) —
+   confirm it returns a real `403`, not the user list. This is the same
+   boundary the frontend's own role-based nav filtering relies on; the
+   nav hiding a tab is a UX convenience, the backend 403 is the actual
+   security guarantee.
