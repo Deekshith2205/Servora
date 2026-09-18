@@ -2,7 +2,13 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("servoraToken");
-  const headers = { "Content-Type": "application/json", ...options.headers };
+  // A FormData body (the Knowledge Center's file upload) must NOT get a
+  // hardcoded "application/json" Content-Type — the browser needs to set
+  // its own "multipart/form-data; boundary=..." from the FormData object,
+  // or the request body is unparseable on the server side.
+  const headers = options.body instanceof FormData
+    ? { ...options.headers }
+    : { "Content-Type": "application/json", ...options.headers };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -308,4 +314,39 @@ export function updateSetting(key, value) {
     method: "PATCH",
     body: JSON.stringify({ value }),
   });
+}
+
+// --------------------------------------------------------------------- //
+// [RAG] issue #225 — Knowledge Center
+// --------------------------------------------------------------------- //
+
+export function fetchKnowledgeDocuments() {
+  return request("/api/knowledge/documents");
+}
+
+export function fetchKnowledgeDocument(documentId) {
+  return request(`/api/knowledge/documents/${documentId}`);
+}
+
+export function uploadKnowledgeDocument(file, title = "") {
+  const form = new FormData();
+  form.append("file", file);
+  const qs = title ? `?title=${encodeURIComponent(title)}` : "";
+  return request(`/api/knowledge/documents${qs}`, { method: "POST", body: form });
+}
+
+export function reprocessKnowledgeDocument(documentId) {
+  return request(`/api/knowledge/documents/${documentId}/reprocess`, { method: "POST" });
+}
+
+export function deleteKnowledgeDocument(documentId) {
+  return request(`/api/knowledge/documents/${documentId}`, { method: "DELETE" });
+}
+
+export function searchKnowledge(q, topK = 5) {
+  return request(`/api/knowledge/search?q=${encodeURIComponent(q)}&top_k=${topK}`);
+}
+
+export function fetchKnowledgeChunkRecord(chunkId) {
+  return request(`/api/records/knowledge-chunks/${chunkId}`);
 }
