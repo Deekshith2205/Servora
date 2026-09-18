@@ -149,6 +149,10 @@ export function fetchResolvedHistory() {
   return request("/api/tickets/resolved");
 }
 
+export function fetchNotifications() {
+  return request("/api/notifications");
+}
+
 export function fetchEscalationDetail(ticketId) {
   return request(`/api/escalations/${ticketId}`);
 }

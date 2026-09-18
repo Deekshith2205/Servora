@@ -25,7 +25,16 @@ import { hasPermission } from "./auth/roles";
 import RoleBadge from "./components/RoleBadge";
 import UserProfileMenu from "./components/UserProfileMenu";
 
+import CustomerDashboard from "./pages/CustomerDashboard";
+
 const TABS = {
+  dashboard_customer: {
+    label: "My Dashboard",
+    description: "Overview of your support activity",
+    component: CustomerDashboard,
+    permission: "view_own_tickets",
+    icon: <LayoutDashboard className="app-nav-icon" size={18} strokeWidth={2} />
+  },
   dashboard_omni: {
     label: "Omnichannel Dashboard",
     description: "Live operational view across every support channel",
@@ -112,11 +121,35 @@ const TABS = {
   },
 };
 
+const DEFAULT_TABS = {
+  customer: "dashboard_customer",
+  support_agent: "dashboard",
+  manager: "analytics",
+  administrator: "dashboard_admin"
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("chat");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { currentRole, loading } = useAuth();
-  const activeTabInfo = TABS[activeTab];
+  const [lastRole, setLastRole] = useState(null);
+
+  // Implement Role-Specific Default Landing
+  useEffect(() => {
+    if (currentRole && currentRole !== lastRole) {
+      setLastRole(currentRole);
+      const defaultTab = DEFAULT_TABS[currentRole];
+      if (defaultTab && TABS[defaultTab]) {
+        setActiveTab(defaultTab);
+      } else {
+        // Fallback for custom roles or safety if default is missing
+        setActiveTab("chat"); 
+      }
+    }
+  }, [currentRole, lastRole]);
+
+  // Fallback if activeTab gets removed or invalid
+  const activeTabInfo = TABS[activeTab] || Object.values(TABS)[0];
   const ActiveComponent = activeTabInfo.component;
 
   const handleTabClick = (key) => {
@@ -206,7 +239,7 @@ export default function App() {
         <div className="app-content">
           <ErrorBoundary resetKey={activeTab}>
             <ProtectedRoute permission={activeTabInfo.permission}>
-              <ActiveComponent />
+              <ActiveComponent setActiveTab={setActiveTab} />
             </ProtectedRoute>
           </ErrorBoundary>
         </div>
