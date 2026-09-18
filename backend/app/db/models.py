@@ -104,6 +104,7 @@ class Ticket(Base):
     status: Mapped[str] = mapped_column(String, default="open")  # open|resolved|escalated
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     # [Omnichannel] issue #133: which Channel.key this conversation came in
     # on. Not a real FK (see Channel's own docstring for why) — nullable-

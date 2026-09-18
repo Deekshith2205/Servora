@@ -22,6 +22,7 @@ from app.api.schemas import (
     CustomerProfileOut,
     CustomerHistoryTicketOut,
     AssignTicketRequest,
+    EscalationQueueOut,
 )
 from app.auth.dependency import CurrentActor, get_current_actor, require_permission
 from app.auth.investigation_visibility import can_handle_escalation, can_view_escalation_queue
@@ -48,10 +49,13 @@ def list_my_tickets(
     return db.query(Ticket).filter(Ticket.customer_id == actor.customer_id).order_by(Ticket.created_at.desc()).all()
 
 
-@router.get("/escalations", response_model=list[TicketOut])
+from datetime import datetime, timezone
+
+@router.get("/escalations", response_model=list[TicketOut] | EscalationQueueOut)
 def list_escalations(
+    include_metrics: bool = False,
     db: Session = Depends(get_db), actor: CurrentActor = Depends(get_current_actor)
-) -> list[Ticket]:
+) -> list[Ticket] | dict:
     """[RBAC] issues #190/#196/#220: `can_view_escalation_queue()` — a
     Manager (`view_escalation_queue`) or a Support Agent/Administrator
     (`handle_escalations`) may both list the real queue; only
@@ -59,7 +63,18 @@ def list_escalations(
     endpoints below)."""
     if not can_view_escalation_queue(actor):
         raise HTTPException(status_code=403, detail=_FORBIDDEN_DETAIL)
-    return db.query(Ticket).filter(Ticket.status.in_(["open", "escalated"])).all()
+    
+    open_tickets = db.query(Ticket).filter(Ticket.status.in_(["open", "escalated"])).all()
+    
+    if include_metrics:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_resolved_count = db.query(Ticket).filter(
+            Ticket.status == "resolved",
+            Ticket.resolved_at >= today_start
+        ).count()
+        return {"value": open_tickets, "today_resolved_count": today_resolved_count}
+        
+    return open_tickets
 
 
 @router.get("/tickets/resolved", response_model=list[TicketOut])
@@ -147,6 +162,7 @@ def resolve_escalation(
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
 
     ticket.status = "resolved"
+    ticket.resolved_at = datetime.utcnow()
     db.commit()
     db.refresh(ticket)
 

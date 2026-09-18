@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import analytics, auth, booking, bookings, channels, chat, explanations, inbox, integrations, investigations, kb, notifications, records, settings as settings_api, stream, tickets, users
 from app.config import settings
-from app.db.database import Base, engine
+from app.db.database import Base, engine, run_migrations
 from app.db.seed import seed_if_empty
 
 _log = logging.getLogger(__name__)
@@ -16,6 +16,7 @@ _log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    run_migrations(engine)
     seed_if_empty()
     yield
 

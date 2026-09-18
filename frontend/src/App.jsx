@@ -25,7 +25,17 @@ import { isPermitted } from "./auth/roles";
 import RoleBadge from "./components/RoleBadge";
 import UserProfileMenu from "./components/UserProfileMenu";
 
+import CustomerDashboard from "./pages/CustomerDashboard";
+import AdminDashboard from "./pages/AdminDashboard";
+
 const TABS = {
+  dashboard_customer: {
+    label: "My Dashboard",
+    description: "Overview of your support activity",
+    component: CustomerDashboard,
+    permission: "view_own_tickets",
+    icon: <LayoutDashboard className="app-nav-icon" size={18} strokeWidth={2} />
+  },
   dashboard_omni: {
     label: "Omnichannel Dashboard",
     description: "Live operational view across every support channel",
@@ -38,6 +48,13 @@ const TABS = {
     // decision. Every role that could actually use this page
     // (Manager/Administrator) already has view_analytics.
     permission: "view_analytics",
+    icon: <LayoutDashboard className="app-nav-icon" size={18} strokeWidth={2} />
+  },
+  admin_dashboard: {
+    label: "Admin Dashboard",
+    description: "System administration and organizational analytics",
+    component: AdminDashboard,
+    permission: "manage_users", // Only admins have manage_users in this app
     icon: <LayoutDashboard className="app-nav-icon" size={18} strokeWidth={2} />
   },
   chat: {
@@ -119,10 +136,18 @@ const TABS = {
   },
 };
 
+const DEFAULT_TABS = {
+  customer: "dashboard_customer",
+  support_agent: "dashboard",
+  manager: "analytics",
+  administrator: "admin_dashboard"
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { currentRole, loading } = useAuth();
+  const [lastRole, setLastRole] = useState(null);
 
   // The real, permission-filtered set of tabs this role can actually
   // reach — recomputed whenever the resolved role changes (sign-in,
@@ -137,12 +162,27 @@ export default function App() {
   // (first load, or a role switch that drops access to whatever was
   // open), land on the first tab this role can actually see instead of
   // showing a dead nav item or an Access Denied banner.
+  // We also incorporate Role-Specific Default Landing here.
   useEffect(() => {
     if (visibleTabs.length === 0) return;
+    
+    // Role switch logic: if role changed, try to land on default tab
+    if (currentRole && currentRole !== lastRole) {
+      setLastRole(currentRole);
+      const defaultTab = DEFAULT_TABS[currentRole];
+      
+      // If the default tab is valid and permitted for this role, use it
+      if (defaultTab && visibleTabs.some(([key]) => key === defaultTab)) {
+        setActiveTab(defaultTab);
+        return;
+      }
+    }
+    
+    // Fallback enforcement: if the current tab is invalid or not visible
     if (!visibleTabs.some(([key]) => key === activeTab)) {
       setActiveTab(visibleTabs[0][0]);
     }
-  }, [visibleTabs, activeTab]);
+  }, [visibleTabs, activeTab, currentRole, lastRole]);
 
   const activeTabInfo = activeTab ? TABS[activeTab] : null;
   const ActiveComponent = activeTabInfo?.component;
@@ -239,7 +279,7 @@ export default function App() {
         <div className="app-content">
           <ErrorBoundary resetKey={activeTab}>
             <ProtectedRoute permission={activeTabInfo.permission}>
-              <ActiveComponent />
+              <ActiveComponent setActiveTab={setActiveTab} />
             </ProtectedRoute>
           </ErrorBoundary>
         </div>

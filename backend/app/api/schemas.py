@@ -175,6 +175,9 @@ class ResolveTicketResponse(BaseModel):
     ticket: TicketOut
     kb_suggestion: KBArticleDraftOut | None = None
 
+class EscalationQueueOut(BaseModel):
+    value: list[TicketOut]
+    today_resolved_count: int
 
 class ApproveKBArticleRequest(BaseModel):
     title: str
