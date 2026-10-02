@@ -96,6 +96,26 @@ def query(embedding: list[float], n_results: int = 5) -> list[tuple[int, float]]
     return [(m["chunk_id"], 1.0 - d) for m, d in zip(metadatas, distances)]
 
 
+def existing_ids(ids: list[str]) -> set[str]:
+    """Which of these embedding ids actually exist in the collection —
+    used by `knowledge_retrieval.reconcile_vector_index()` to detect SQL
+    rows whose vector was lost (a wiped/ephemeral local disk)."""
+    if not ids:
+        return set()
+    return set(_get_collection().get(ids=ids).get("ids") or [])
+
+
+def upsert_chunk(chunk_id: int, embedding: list[float], document_id: int) -> str:
+    """Like `add_chunk()` but safe to re-run for an id that already exists."""
+    embedding_id = f"chunk-{chunk_id}"
+    _get_collection().upsert(
+        ids=[embedding_id],
+        embeddings=[embedding],
+        metadatas=[{"chunk_id": chunk_id, "document_id": document_id}],
+    )
+    return embedding_id
+
+
 def delete_document(document_id: int) -> None:
     """Deletes every chunk vector belonging to one document — [RAG] #230
     (document lifecycle) calls this when a document (and its

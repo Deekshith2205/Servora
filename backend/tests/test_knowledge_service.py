@@ -305,3 +305,35 @@ def test_search_knowledge_propagates_embedding_error(db_session, tmp_path, monke
     with patch("app.services.knowledge_retrieval.embed_text", side_effect=EmbeddingError("no key configured")):
         with pytest.raises(EmbeddingError):
             knowledge_retrieval.search_knowledge(db_session, "policy question")
+
+
+def test_reconcile_vector_index_restores_vectors_lost_from_a_wiped_disk(db_session, tmp_path, monkeypatch):
+    """Real bug found running the app: chunk text lives in SQL (persistent)
+    but vectors live in a local ChromaDB dir — wiping that dir left
+    documents "indexed" with zero searchable vectors, and search silently
+    returned nothing. reconcile_vector_index() must rebuild them from the
+    stored chunk text alone (no source file) and be a no-op afterward."""
+    doc = _index_one_document(
+        db_session, tmp_path, monkeypatch,
+        title="Wiped Policy", filename="wiped.txt", content=b"Returns are accepted within 30 days.",
+    )
+    assert doc.status == "indexed"
+
+    vector_store.reset_for_tests()  # simulate the lost/ephemeral disk
+    with patch("app.services.knowledge_retrieval.embed_text", side_effect=_fake_embed_text):
+        assert knowledge_retrieval.search_knowledge(db_session, "return window") == []
+
+    with patch("app.services.knowledge_retrieval.embed_texts", side_effect=_fake_embed_texts):
+        assert knowledge_retrieval.reconcile_vector_index(db_session) == 1
+        assert knowledge_retrieval.reconcile_vector_index(db_session) == 0  # idempotent
+
+    with patch("app.services.knowledge_retrieval.embed_text", side_effect=_fake_embed_text):
+        results = knowledge_retrieval.search_knowledge(db_session, "return window")
+    assert len(results) == 1 and results[0]["document_title"] == "Wiped Policy"
+
+
+def test_reconcile_vector_index_never_raises_when_embedding_fails(db_session, tmp_path, monkeypatch):
+    _index_one_document(db_session, tmp_path, monkeypatch, title="P", filename="p.txt", content=b"Some policy text.")
+    vector_store.reset_for_tests()
+    with patch("app.services.knowledge_retrieval.embed_texts", side_effect=EmbeddingError("no key")):
+        assert knowledge_retrieval.reconcile_vector_index(db_session) == 0

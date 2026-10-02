@@ -672,3 +672,7 @@ def seed_knowledge_documents_if_missing(db) -> None:
             db, title=title, filename=filename, file_type="txt", content=text.encode("utf-8"),
         )
         knowledge_retrieval.process_document_task(document.id)
+
+    # Runs even when every seeded document already exists — that is
+    # exactly the case where the local vector index was lost.
+    knowledge_retrieval.reconcile_vector_index(db)
