@@ -209,6 +209,40 @@ def delete_document(db: Session, document: KnowledgeDocument) -> None:
             pass  # the DB record is already gone; a leftover file is harmless
 
 
+def reconcile_vector_index(db: Session) -> int:
+    """Self-heals SQL/vector drift. The authoritative chunk text lives in
+    SQL (Neon Postgres — persistent) but the vectors live in a local
+    on-disk ChromaDB — so a wiped, moved, or ephemeral disk (any
+    container redeploy) leaves documents marked "indexed" with ZERO
+    searchable vectors, and search silently returns nothing. This
+    re-embeds only the chunks of "indexed" documents whose vector is
+    missing, straight from the stored chunk text (no source file needed),
+    and returns how many were restored. A failure (e.g. no API key)
+    leaves things as they were — never raises.
+    """
+    try:
+        chunks = (
+            db.query(KnowledgeChunk)
+            .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
+            .filter(KnowledgeDocument.status == "indexed")
+            .all()
+        )
+        if not chunks:
+            return 0
+        present = vector_store.existing_ids([f"chunk-{c.id}" for c in chunks])
+        missing = [c for c in chunks if f"chunk-{c.id}" not in present]
+        if not missing:
+            return 0
+        embeddings = embed_texts([c.text for c in missing], task_type="RETRIEVAL_DOCUMENT")
+        for chunk, embedding in zip(missing, embeddings):
+            chunk.embedding_id = vector_store.upsert_chunk(chunk.id, embedding, chunk.document_id)
+        db.commit()
+        return len(missing)
+    except Exception:  # noqa: BLE001 — startup self-heal must never block boot
+        db.rollback()
+        return 0
+
+
 def search_knowledge(db: Session, query_text: str, top_k: int = 5) -> list[dict]:
     """[RAG] #248-#252 — real semantic search: embeds ``query_text`` as
     a RETRIEVAL_QUERY vector, asks the vector store for the closest
